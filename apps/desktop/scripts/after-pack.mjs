@@ -9,8 +9,11 @@ export default async function afterPack(context) {
   const appPath = path.join(context.appOutDir, `${appName}.app`);
   const result = ensureMacCodesignIdentifier(appPath, bundleId);
   if (result.status === "adhoc-signed") {
+    const nested = result.nestedSigned
+      ? ` (${result.nestedSigned} nested code objects signed first)`
+      : "";
     console.log(
-      `macOS codesign identifier ${result.previous ?? "(unsigned)"} → ${result.identifier}`,
+      `macOS codesign identifier ${result.previous ?? "(unsigned)"} → ${result.identifier}${nested}`,
     );
   }
 }

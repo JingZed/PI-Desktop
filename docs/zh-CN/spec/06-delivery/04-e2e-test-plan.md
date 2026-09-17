@@ -3503,7 +3503,7 @@ IPC 请求无法关闭。
 - **状态**：工作流脚本/单元已覆盖；每次发布仍需在干净机器上验证（适用变更合入前需在具备条件的环境中运行 E2E）
 
 #### E2E-196d：未签名 macOS 包的代码签名标识与 Bundle ID 一致
-
+- **先决条件**：默认未签名 macOS 打包（`CSC_IDENTITY_AUTO_DISCOVERY=false`）已为两种原生架构生成 `PI-Desktop.app`；Intel 包中的嵌套 helper 与 framework 不带任何签名。
 - **先决条件**：默认未签名 macOS 打包（`CSC_IDENTITY_AUTO_DISCOVERY=false`）已生成至少一个原生架构的 `PI-Desktop.app`。
 - **步骤**：1) 读取 `Contents/Info.plist` 中的 `CFBundleIdentifier`。2) 对应用包运行 `codesign -dv --verbose=4`。3) 确认 Identifier 不是 `Electron`。4) 在窗口失焦时完成一轮会请求原生任务通知的对话。
 - **预期**：`CFBundleIdentifier` 与 codesign `Identifier` 均为 `net.aiuo.pi-desktop`；Info.plist 已绑定；系统设置 → 通知中出现该应用，且不要求 `com.apple.private.usernotifications.bundle-identifiers`。Developer ID 包保留其证书并使用同一 Identifier。

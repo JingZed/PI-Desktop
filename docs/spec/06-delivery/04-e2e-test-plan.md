@@ -338,7 +338,8 @@ identify the platform validation still needed.
 #### E2E-196d: Unsigned macOS packs bind the product codesign identifier
 
 - **Preconditions**: A default unsigned macOS pack (`CSC_IDENTITY_AUTO_DISCOVERY=false`)
-  has produced `PI-Desktop.app` for at least one native architecture.
+  has produced `PI-Desktop.app` for both native architectures. The Intel pack
+  ships nested helpers and frameworks without a signature.
 - **Steps**: 1) Read `CFBundleIdentifier` from `Contents/Info.plist`. 2) Run
   `codesign -dv --verbose=4` on the outer app. 3) Confirm the identifier is not
   `Electron`. 4) With the app unfocused, complete a turn that requests a native

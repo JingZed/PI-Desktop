@@ -26,8 +26,10 @@ itself is not the defect: the identifier must equal `CFBundleIdentifier`.
    Development macOS hosts use `net.aiuo.pi-desktop.dev`.
 2. After packing a macOS app, if the outer bundle is not Developer ID
    signed, adhoc-sign it with `--identifier` equal to that ID. Do not use
-   `--deep`. A Developer ID signature whose identifier disagrees is a
-   packaging failure, not an adhoc overwrite.
+   `--deep`. When the pack ships nested code that carries no signature at all
+   — the Intel lane's Electron bundle — adhoc-sign that nested code first,
+   deepest first, so the outer bundle can be sealed. A Developer ID signature
+   whose identifier disagrees is a packaging failure, not an adhoc overwrite.
 3. NSIS/AppUserModelID follow the same ID. Existing `com.pi-desktop.app`
    installs are a new identity after this cut.
 
@@ -35,6 +37,9 @@ itself is not the defect: the identifier must equal `CFBundleIdentifier`.
 
 - Unsigned GitHub macOS artifacts can register in System Settings →
   Notifications.
+- Unsigned packs whose nested helpers and frameworks are unsigned are signed
+  deepest-first before the outer identifier is bound, so the Intel lane
+  packages and publishes like the Apple Silicon lane.
 - Signed/notarized builds keep their Developer ID signature.
 - Windows upgrades from a `com.pi-desktop.app` NSIS install are a new
   product identity; users may see a parallel shortcut until the old install
