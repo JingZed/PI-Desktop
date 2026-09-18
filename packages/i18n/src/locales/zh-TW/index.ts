@@ -1645,6 +1645,16 @@ sklm: {
     fsOwnFiles: "自己建立的檔案",
     fsAsksEachTime: "每次都會詢問",
     legacyFsDowngraded: "此外掛宣告的是舊版檔案許可權，實際範圍已被收窄。更新外掛可恢復完整功能。",
+    /**
+     * Trust-tier notice for the install review (spec 07-plugins/16 §2A.1). Shown
+     * only when a manifest declares an entry that runs outside a sandbox.
+     */
+    trustTier: {
+      renderer: "在應用程式視窗內執行",
+      rendererHelp: "它繪製在應用程式自己的視窗裡，因此與應用程式共用同一個行程。",
+      agent: "在 agent 行程內執行",
+      agentHelp: "它以 agent 自身的權限執行，與呼叫模型的行程相同。",
+    },
     permissions: {
       "ui.panel": "顯示外掛面板",
       "ui.microphone": "使用麥克風",

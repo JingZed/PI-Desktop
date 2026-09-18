@@ -1647,6 +1647,16 @@ sklm: {
     "fsOwnFiles": "Von ihm erstellte Dateien",
     "fsAsksEachTime": "fragt Sie jedes Mal",
     "legacyFsDowngraded": "Dieses Plugin deklariert Dateiberechtigungen von vor der Existenz von Bereichen, daher wurde seine Reichweite reduziert. Aktualisieren Sie es, um die volle Funktion wiederherzustellen.",
+    /**
+     * Trust-tier notice for the install review (spec 07-plugins/16 §2A.1). Shown
+     * only when a manifest declares an entry that runs outside a sandbox.
+     */
+    trustTier: {
+      renderer: "Läuft im App-Fenster",
+      rendererHelp: "Es zeichnet im Fenster der App selbst und teilt sich damit deren Prozess.",
+      agent: "Läuft im Agent-Prozess",
+      agentHelp: "Es läuft mit dem Zugriff des Agenten, im selben Prozess, der deine Modelle aufruft.",
+    },
     "permissions": {
       "ui.panel": "Plugin-Panel anzeigen",
       "ui.microphone": "Mikrofon verwenden",

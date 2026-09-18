@@ -2056,3 +2056,37 @@
     transition: none;
   }
 }
+
+/*
+ * Trust-tier notice in the install review (spec 07-plugins/16 §2A.1). It sits
+ * above the permission list because it answers a different question: not "what
+ * may this plugin do" but "where does its code run".
+ */
+.plugins-trust-tier {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--ds-border-default);
+  border-radius: var(--radius-md);
+  background: color-mix(in oklab, var(--ds-warning) 8%, transparent);
+}
+
+.plugins-trust-tier-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  color: var(--ds-text-primary);
+}
+
+.plugins-trust-tier-row svg {
+  flex: none;
+  color: var(--ds-warning);
+}
+
+.plugins-trust-tier-row span {
+  color: var(--ds-text-secondary);
+  line-height: var(--leading-body);
+}

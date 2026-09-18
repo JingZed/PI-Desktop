@@ -1663,6 +1663,16 @@ importConfirm: "가져온 확장은 에이전트 프로세스 안에서 에이�
     fsAsksEachTime: "매번 확인 요청",
     legacyFsDowngraded:
       "이 플러그인은 범위 기능이 생기기 전의 파일 권한을 선언했으므로 접근 범위가 줄었습니다. 전체 기능을 복원하려면 업데이트하세요.",
+    /**
+     * Trust-tier notice for the install review (spec 07-plugins/16 §2A.1). Shown
+     * only when a manifest declares an entry that runs outside a sandbox.
+     */
+    trustTier: {
+      renderer: "앱 창 안에서 실행됩니다",
+      rendererHelp: "앱 자체 창에 그리므로 앱 프로세스를 공유합니다.",
+      agent: "에이전트 프로세스 안에서 실행됩니다",
+      agentHelp: "에이전트 자체 권한으로, 모델을 호출하는 동일한 프로세스에서 실행됩니다.",
+    },
     permissions: {
       "ui.panel": "플러그인 패널 표시",
       "ui.microphone": "마이크 사용",

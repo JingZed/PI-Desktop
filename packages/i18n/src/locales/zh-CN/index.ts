@@ -1645,6 +1645,16 @@ sklm: {
     fsOwnFiles: "自己创建的文件",
     fsAsksEachTime: "每次都会询问",
     legacyFsDowngraded: "此插件声明的是旧版文件权限，实际范围已被收窄。更新插件可恢复完整功能。",
+    /**
+     * Trust-tier notice for the install review (spec 07-plugins/16 §2A.1). Shown
+     * only when a manifest declares an entry that runs outside a sandbox.
+     */
+    trustTier: {
+      renderer: "在应用窗口内运行",
+      rendererHelp: "它绘制在应用自己的窗口里，因此与应用共享同一个进程。",
+      agent: "在 agent 进程内运行",
+      agentHelp: "它以 agent 自身的权限运行，与调用模型的进程相同。",
+    },
     permissions: {
       "ui.panel": "显示插件面板",
       "ui.microphone": "使用麦克风",

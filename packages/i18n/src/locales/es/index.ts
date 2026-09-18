@@ -1647,6 +1647,16 @@ sklm: {
     "fsOwnFiles": "archivos que creó",
     "fsAsksEachTime": "pregunta usted cada vez",
     "legacyFsDowngraded": "Este complemento declara permisos de archivos anteriores a que existieran los ámbitos, por lo que su alcance se ha reducido. Actualícelo para restaurar la función completa.",
+    /**
+     * Trust-tier notice for the install review (spec 07-plugins/16 §2A.1). Shown
+     * only when a manifest declares an entry that runs outside a sandbox.
+     */
+    trustTier: {
+      renderer: "Se ejecuta dentro de la ventana de la aplicación",
+      rendererHelp: "Dibuja en la propia ventana de la aplicación, por lo que comparte su proceso.",
+      agent: "Se ejecuta dentro del proceso del agente",
+      agentHelp: "Se ejecuta con el propio acceso del agente, en el mismo proceso que llama a tus modelos.",
+    },
     "permissions": {
       "ui.panel": "Mostrar un panel de complementos",
       "ui.microphone": "Usar el micrófono",

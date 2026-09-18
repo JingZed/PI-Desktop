@@ -1663,6 +1663,16 @@ importConfirm: "İçe aktarılan uzantılar ajan sürecinde, ajanın kendi araç
     fsAsksEachTime: "her seferinde sorar",
     legacyFsDowngraded:
       "Bu eklenti kapsamlar yokken tanımlanmış dosya izinleri bildiriyor, bu yüzden erişimi azaltıldı. Tam işlev için güncelleyin.",
+    /**
+     * Trust-tier notice for the install review (spec 07-plugins/16 §2A.1). Shown
+     * only when a manifest declares an entry that runs outside a sandbox.
+     */
+    trustTier: {
+      renderer: "Uygulama penceresinin içinde çalışır",
+      rendererHelp: "Uygulamanın kendi penceresine çizer, dolayısıyla sürecini paylaşır.",
+      agent: "Agent süreci içinde çalışır",
+      agentHelp: "Ajanın kendi erişimiyle, modellerinizi çağıran sürecin içinde çalışır.",
+    },
     permissions: {
       "ui.panel": "Eklenti paneli göster",
       "ui.microphone": "Mikrofonu kullan",

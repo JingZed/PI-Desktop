@@ -12,7 +12,7 @@ import {
   permissionRisk,
 } from "./model";
 import type { PluginsPageModel } from "./usePluginsPage";
-import type { PluginPermissionReview } from "@pi-desktop/shared";
+import type { PluginManifestEntries, PluginPermissionReview } from "@pi-desktop/shared";
 
 export function PluginDialogs({
   t,
@@ -70,6 +70,7 @@ export function PluginDialogs({
 
             <div className="plugins-modal-body">
               <p className="plugins-modal-lede">{t("plugins.devReviewBody")}</p>
+              <TrustTierNotice t={t} entries={pendingReview.entries} />
               <PermissionGroups
                 t={t}
                 permissions={pendingReview.permissions}
@@ -322,5 +323,42 @@ function PermissionGroups({
         );
       })}
     </>
+  );
+}
+
+/**
+ * The trust tier an install is asking for (spec 07-plugins/16 §2A.1).
+ *
+ * Only entries that run outside a sandbox are listed, and they are listed
+ * before the permissions because this is the part a permission name cannot
+ * carry on its own: `renderer.extension` says "code in the app window", and
+ * what that means for the user is what this line is for. A base-tier plugin
+ * shows nothing here.
+ */
+function TrustTierNotice({
+  t,
+  entries,
+}: {
+  t: PluginsPageModel["t"];
+  entries?: PluginManifestEntries;
+}) {
+  const rows: Array<{ key: string; label: string; help: string }> = [];
+  if (entries?.renderer) {
+    rows.push({ key: "renderer", label: "renderer", help: "rendererHelp" });
+  }
+  if (entries?.agent) {
+    rows.push({ key: "agent", label: "agent", help: "agentHelp" });
+  }
+  if (!rows.length) return null;
+  return (
+    <div className="plugins-trust-tier" role="note">
+      {rows.map((row) => (
+        <p className="plugins-trust-tier-row" data-tier={row.key} key={row.key}>
+          <IconShield size={14} aria-hidden />
+          <strong>{t(`plugins.trustTier.${row.label}`)}</strong>
+          <span>{t(`plugins.trustTier.${row.help}`)}</span>
+        </p>
+      ))}
+    </div>
   );
 }

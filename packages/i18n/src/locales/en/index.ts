@@ -1662,6 +1662,16 @@ importConfirm: "Imported extensions run inside the agent process with the same a
     fsAsksEachTime: "asks you each time",
     legacyFsDowngraded:
       "This plugin declares file permissions from before scopes existed, so its reach has been reduced. Update it to restore full function.",
+    /**
+     * Trust-tier notice for the install review (spec 07-plugins/16 §2A.1). Shown
+     * only when a manifest declares an entry that runs outside a sandbox.
+     */
+    trustTier: {
+      renderer: "Runs inside the app window",
+      rendererHelp: "It draws in the app's own window, so it shares the app's process.",
+      agent: "Runs inside the agent process",
+      agentHelp: "It runs with the agent's own access, in the same process that calls your models.",
+    },
     permissions: {
       "ui.panel": "Show a plugin panel",
       "ui.microphone": "Use the microphone",
