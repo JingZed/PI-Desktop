@@ -81,16 +81,21 @@ governs the host that loads slot implementations and the rules they are held to.
    renders costs nothing at startup.
 
 6. **Same realm is accepted, deliberately.** No `iframe`, no worker, no second
-   sandbox: the module shares the host's global object and React tree. Two
-   mitigations ship with it. First, the app deletes `window.piDesktop` after
-   capturing the bridge it needs at startup, so the global bridge handle is not
-   reachable from later-loaded modules. Second, the plugin module's import map
-   resolves only `react`, `react-dom` and `react-dom/client`, all three to the
-   host's own copies; nothing else is mapped, so a bare specifier a plugin
-   invents fails at import rather than resolving to a host module. The host API
-   is not a specifier at all: it arrives as the `pi` argument of `onLoad`, which
-   is what keeps it per-plugin — an import-map entry would have had to be the
-   same URL for every plugin in the document.
+   sandbox: the module shares the host's global object and React tree. One
+   mitigation ships with it: the plugin module's import map resolves only
+   `react`, `react-dom` and `react-dom/client`, all three to the host's own
+   copies; nothing else is mapped, so a bare specifier a plugin invents fails at
+   import rather than resolving to a host module. The bridge global is *not*
+   mitigated. An earlier version of this decision claimed the app deletes
+   `window.piDesktop` after capturing the bridge, and a real Electron run
+   measured that claim to be false: `contextBridge.exposeInMainWorld` defines the
+   property non-configurable, so `delete window.piDesktop` is a silent no-op —
+   `typeof window.piDesktop === "object"`, `"piDesktop" in window === true`, and
+   `piDesktop.invoke` reaches all 242 whitelisted channels (219 invoke + 23
+   event) with no per-caller check. The host API is not a specifier at all: it
+   arrives as the `pi` argument of `onLoad`, which is what keeps it per-plugin —
+   an import-map entry would have had to be the same URL for every plugin in the
+   document.
 
 7. **Plugin code is fetched over a new custom scheme, `plugin-renderer`.** The
    existing `plugin-asset` scheme is not widened: its MIME allowlist is
@@ -188,6 +193,14 @@ the code, the spec, or this ADR can mistake their absence for an oversight.
 - **No publishing review gate.** Any plugin can be installed and the marketplace
   sets no trust limit, so nothing upstream of the user inspects what a
   `renderer` entry does.
+- **The preload IPC surface is reachable from plugin code.** Same realm means
+  `window.piDesktop` is an ordinary own property of the window — measured as
+  `typeof window.piDesktop === "object"` and `"piDesktop" in window === true` —
+  and `contextBridge` defines it non-configurable, so the app cannot delete it.
+  A plugin module can call all 242 whitelisted channels (219 invoke + 23 event)
+  with no per-caller check. Plugins are trusted and broadly permissioned on
+  purpose: the boundary is marketplace review plus install-time consent, not
+  isolation, and nothing here should be read as a sandbox.
 - **Plugin code sits in the app's own window.** Declaring `renderer` puts plugin
   code in the host renderer: same realm, no process isolation, no second
   sandbox. A misbehaving module is in the same process as the UI it renders

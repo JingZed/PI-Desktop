@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Trusted renderer host build-contract E2E (headless).
- *
+ * Trusted renderer host E2E: the build contract, plus the single-React import map
+ * and the recorded preload exposure, read out of a real window.
  * E2E-PLUGIN-renderer-slots-survive-a-packaged-build
  *   The renderer host's contract only breaks where it cannot be debugged: a
  *   packaged renderer loads `plugin-renderer:` module source from a `file://`
@@ -13,12 +13,24 @@
  *   protocol handler with a stubbed Electron, the real IPC whitelist — instead
  *   of comparing copies of them.
  *
- * Nothing here boots Electron, installs a plugin into a profile, or touches the
- * network. The main process modules are bundled with esbuild and a stubbed
- * `electron` so their real code runs in Node; the renderer-side modules are
- * covered by `apps/desktop/test/plugin-renderer-slots.test.mjs`.
+ * The first seven checks are headless. The main process modules are bundled
+ * with esbuild and a stubbed `electron` so their real code runs in Node, and
+ * the renderer-side modules are covered by
+ * `apps/desktop/test/plugin-renderer-slots.test.mjs`. The last two launch the
+ * built app with a throwaway profile, load the example plugin and a hook-using
+ * fixture into the real renderer, and read the live window over CDP: one records
+ * what a plugin-realm module can actually reach — `window.piDesktop` is exposed,
+ * not removed — and the other checks that the import map hands React out once.
+ * Neither path touches the network, a user profile, or an installed plugin.
+ *
+ * Prerequisites: `packages/plugin-sdk/dist` for every check, and the built
+ * desktop app plus Electron and a host-core binary (target/debug,
+ * target/release, or PI_DESKTOP_HOST_BIN) for the real-window journey.
  */
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { createServer } from "node:net";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -138,6 +150,385 @@ function callSource(source, name) {
   return null;
 }
 
+
+/** A loopback port for the CDP connection, so a stray one never collides. */
+async function freePort() {
+  const server = createServer();
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const { port } = server.address();
+  await new Promise((resolve) => server.close(resolve));
+  return port;
+}
+
+/** The pages a running Electron advertises, or an empty list while it boots. */
+async function listTargets(port) {
+  const response = await fetch(`http://127.0.0.1:${port}/json/list`, {
+    signal: AbortSignal.timeout(2_000),
+  });
+  return response.json();
+}
+
+/** Poll a predicate until it answers truthy, like the other UI runners. */
+async function waitFor(predicate, label, timeoutMs = 60_000) {
+  const deadline = Date.now() + timeoutMs;
+  let lastError = null;
+  while (Date.now() < deadline) {
+    try {
+      const value = await predicate();
+      if (value) return value;
+    } catch (error) {
+      lastError = error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+  throw new Error(`timeout waiting for ${label}${lastError ? `: ${lastError.message}` : ""}`);
+}
+
+/** One CDP websocket, request ids, and the page console for failure details. */
+class CdpClient {
+  constructor(ws) {
+    this.ws = ws;
+    this.seq = 0;
+    this.pending = new Map();
+    this.console = [];
+    ws.onmessage = (event) => {
+      const message = JSON.parse(event.data);
+      if (message.method === "Runtime.consoleAPICalled" || message.method === "Runtime.exceptionThrown") {
+        this.console.push(`[${message.method}] ${JSON.stringify(message.params).slice(0, 300)}`);
+        if (this.console.length > 40) this.console.shift();
+        return;
+      }
+      const entry = this.pending.get(message.id);
+      if (!entry) return;
+      this.pending.delete(message.id);
+      if (message.error) entry.reject(new Error(JSON.stringify(message.error)));
+      else entry.resolve(message.result);
+    };
+  }
+
+  static connect(url) {
+    return new Promise((resolve, reject) => {
+      const ws = new WebSocket(url);
+      ws.onerror = () => reject(new Error(`CDP websocket failed: ${url}`));
+      ws.onopen = () => resolve(new CdpClient(ws));
+    });
+  }
+
+  send(method, params = {}) {
+    const id = ++this.seq;
+    return new Promise((resolve, reject) => {
+      this.pending.set(id, { resolve, reject });
+      this.ws.send(JSON.stringify({ id, method, params }));
+    });
+  }
+
+  async evaluate(expression) {
+    const result = await this.send("Runtime.evaluate", {
+      expression,
+      awaitPromise: true,
+      returnByValue: true,
+    });
+    if (result.exceptionDetails) {
+      throw new Error(
+        result.exceptionDetails.exception?.description ?? JSON.stringify(result.exceptionDetails),
+      );
+    }
+    return result.result.value;
+  }
+
+  close() {
+    try {
+      this.ws.close();
+    } catch {
+      // A socket that is already gone needs no closing.
+    }
+  }
+}
+
+/** Stop the app and everything it spawned, including its host-core sidecar. */
+async function killTree(child) {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  if (process.platform === "win32") {
+    spawn("taskkill", ["/pid", String(child.pid), "/t", "/f"], { stdio: "ignore" });
+  } else {
+    try {
+      process.kill(-child.pid, "SIGKILL");
+    } catch {
+      try {
+        child.kill("SIGKILL");
+      } catch {
+        // The close event below is the authoritative signal either way.
+      }
+    }
+  }
+  await new Promise((resolve) => {
+    const timer = setTimeout(resolve, 5_000);
+    child.once("close", () => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+}
+
+/**
+ * A hook-using fixture plugin, owned by this check rather than by the repo. It
+ * records the `react` bindings its own bare import resolved to, records what
+ * plugin-realm module code can reach on the window, and renders a `useState`
+ * counter, so the assertions can compare module identity, measure the recorded
+ * exposure from inside plugin code, and drive a real hook round trip instead of
+ * inferring any of it from a rendered string.
+ */
+const FIXTURE_RENDERER = `import { createElement, useState } from "react";
+
+globalThis.__PI_E2E_PLUGIN_REACT__ = { createElement, useState };
+
+// Read by the module itself, in the realm it shares with the host: this is the
+// exposure the design records, not a control. A plugin module reaches the
+// preload bridge and, through it, the whole whitelisted IPC surface.
+globalThis.__PI_E2E_PLUGIN_BRIDGE__ = {
+  typeofPiDesktop: typeof window.piDesktop,
+  piDesktopInWindow: "piDesktop" in window,
+  typeofInvoke: typeof window.piDesktop?.invoke,
+  invokeChannels: Object.keys(window.piDesktop?.channels?.invoke ?? {}).length,
+  eventChannels: Object.keys(window.piDesktop?.channels?.event ?? {}).length,
+};
+
+function Counter() {
+  const [clicks, setClicks] = useState(0);
+  return createElement("span", { className: "pi-e2e-slots__counter" }, [
+    createElement("span", { key: "value" }, "clicks=" + clicks),
+    createElement(
+      "button",
+      {
+        key: "bump",
+        type: "button",
+        className: "pi-e2e-slots__bump",
+        onClick: () => setClicks((value) => value + 1),
+      },
+      "bump",
+    ),
+  ]);
+}
+
+export function onLoad(pi) {
+  pi.slots.register("entryExtra", Counter);
+}
+`;
+
+/**
+ * Everything the real-window checks are about, read from the live window after a
+ * plugin module has rendered: the preload global and what the plugin realm saw
+ * of it, the document import map, the React bindings the plugin-facing specifier
+ * and the plugin module resolved, and two clicks through the fixture's own
+ * `useState`.
+ */
+const RUNTIME_PROBE = `(async () => {
+  const bridgeDescriptor = Object.getOwnPropertyDescriptor(window, "piDesktop") ?? null;
+  const importMap = document.querySelector('script[type="importmap"]');
+  const host = globalThis.__PI_RENDERER_HOST__ ?? null;
+  const plugin = globalThis.__PI_E2E_PLUGIN_REACT__ ?? null;
+  const mapped = await import("react");
+  const mappedDom = await import("react-dom");
+  const mappedDomClient = await import("react-dom/client");
+  const counter = document.querySelector('[data-pi-plugin="acme.e2e-slots"]');
+  const button = counter?.querySelector("button.pi-e2e-slots__bump") ?? null;
+  const read = () => counter?.textContent ?? null;
+  const before = read();
+  button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  const afterFirst = read();
+  button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  return {
+    bridge: {
+      typeofPiDesktop: typeof window.piDesktop,
+      piDesktopInWindow: "piDesktop" in window,
+      descriptor: bridgeDescriptor
+        ? { configurable: bridgeDescriptor.configurable, enumerable: bridgeDescriptor.enumerable }
+        : null,
+      // What the fixture module itself recorded when it was evaluated, so the
+      // assertions measure the exposure from inside plugin code rather than
+      // from the host's own copy of the same fact.
+      pluginRealm: globalThis.__PI_E2E_PLUGIN_BRIDGE__ ?? null,
+    },
+    importMap: importMap ? JSON.parse(importMap.textContent) : null,
+    hostReactVersion: host?.react?.version ?? null,
+    mappedReactVersion: mapped.version ?? null,
+    mappedIdentity: {
+      useState: Boolean(host) && mapped.useState === host.react.useState,
+      createElement: Boolean(host) && mapped.createElement === host.react.createElement,
+      createPortal: Boolean(host) && mappedDom.createPortal === host.reactDom.createPortal,
+      createRoot: Boolean(host) && mappedDomClient.createRoot === host.reactDomClient.createRoot,
+    },
+    pluginIdentity: plugin && host
+      ? {
+          useState: plugin.useState === host.react.useState,
+          createElement: plugin.createElement === host.react.createElement,
+        }
+      : null,
+    demoBadge:
+      document.querySelector('[data-pi-plugin="acme.slots-demo"] .acme-slots-demo__badge')?.textContent ?? null,
+    demoStyleInjected: Array.from(document.querySelectorAll("style")).some((node) =>
+      (node.textContent ?? "").includes(".acme-slots-demo__badge"),
+    ),
+    counter: { before, afterFirst, afterTwo: read() },
+  };
+})()`;
+
+/**
+ * Launch the built app with a throwaway profile, install the example plugin and
+ * the hook fixture through the host's own `plugins.loadDev`, wait until both
+ * have rendered a slot component inside a transcript row, and read the window.
+ */
+async function inspectRendererWindow() {
+  const { Host, resolveHostBinary } = await import("./e2e/host.mjs");
+  const { assertDesktopBuild, resolveElectronBinary } = await import("./e2e/boot.mjs");
+  const { appDir, electronBinary } = resolveElectronBinary(root);
+  assertDesktopBuild(root);
+  const hostBinary = resolveHostBinary();
+  const runRoot = mkdtempSync(join(tmpdir(), "pi-plugin-slots-window-"));
+  const dataDir = join(runRoot, "data");
+  const profileDir = join(runRoot, "profile");
+  const projectDir = join(runRoot, "project");
+  const fixtureDir = join(runRoot, "plugins", "acme.e2e-slots");
+  mkdirSync(join(fixtureDir, "renderer"), { recursive: true });
+  mkdirSync(profileDir, { recursive: true });
+  mkdirSync(projectDir, { recursive: true });
+  writeFileSync(join(fixtureDir, "main.js"), "module.exports = {};\n");
+  writeFileSync(
+    join(fixtureDir, "manifest.json"),
+    JSON.stringify(
+      {
+        schemaVersion: 1,
+        id: "acme.e2e-slots",
+        name: "E2E slots fixture",
+        version: "0.0.1",
+        main: "main.js",
+        renderer: "renderer/index.mjs",
+        permissions: ["renderer.extension"],
+      },
+      null,
+      2,
+    ),
+  );
+  writeFileSync(join(fixtureDir, "renderer", "index.mjs"), FIXTURE_RENDERER);
+
+  const cdpPort = await freePort();
+  let child = null;
+  let client = null;
+  const output = [];
+  const capture = (chunk) => output.push(String(chunk));
+  const describe = (error) =>
+    `${error instanceof Error ? error.message : String(error)}\n` +
+    `--- renderer console ---\n${(client?.console ?? []).join("\n")}\n` +
+    `--- app output (tail) ---\n${output.join("").slice(-1_500)}`;
+  try {
+    // Seed first, through the host protocol, and let the seeding host exit: the
+    // app starts its own host-core on the same data directory.
+    const host = new Host(hostBinary, dataDir);
+    let sessionId;
+    await host.start();
+    try {
+      await host.call("workspace.set", { path: projectDir });
+      const created = await host.call("session.create", {
+        title: "Renderer slot journey",
+        mode: "agent",
+        projectPath: projectDir,
+      });
+      sessionId = created.session.id;
+      await host.call("session.appendMessage", {
+        sessionId,
+        message: {
+          id: randomUUID(),
+          role: "user",
+          content: "renderer slot journey",
+          status: "complete",
+          createdAt: new Date().toISOString(),
+        },
+      });
+      // A development load enables a plugin with the permissions its manifest
+      // declares, which is what makes both of them renderer candidates at boot.
+      await host.call("plugins.loadDev", { path: EXAMPLE_PLUGIN });
+      await host.call("plugins.loadDev", { path: fixtureDir });
+    } finally {
+      await host.stop();
+    }
+
+    child = spawn(
+      electronBinary,
+      [`--remote-debugging-port=${cdpPort}`, `--user-data-dir=${profileDir}`, "."],
+      {
+        cwd: appDir,
+        env: {
+          ...process.env,
+          PI_DESKTOP_DATA_DIR: dataDir,
+          PI_DESKTOP_HOST_BIN: hostBinary,
+          PI_DESKTOP_START_MAXIMIZED: "0",
+          ELECTRON_RENDERER_URL: "",
+        },
+        detached: process.platform !== "win32",
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+    child.stdout?.on("data", capture);
+    child.stderr?.on("data", capture);
+
+    const target = await waitFor(
+      async () => {
+        const targets = await listTargets(cdpPort).catch(() => []);
+        return targets.find(
+          (candidate) =>
+            candidate.type === "page" &&
+            candidate.webSocketDebuggerUrl &&
+            candidate.url.includes("out/renderer/index.html") &&
+            // The plugin launcher is a second page on the same document; only
+            // the main window renders the shell and the transcript slots.
+            !candidate.url.includes("surface="),
+        );
+      },
+      "main window CDP target",
+      90_000,
+    );
+    client = await CdpClient.connect(target.webSocketDebuggerUrl);
+    await client.send("Runtime.enable");
+    await waitFor(() => client.evaluate(`!!document.querySelector(".main-pane")`), "app shell");
+    await waitFor(
+      () => client.evaluate(`!document.querySelector(".startup-splash")`),
+      "startup splash cleared",
+    );
+    await client.evaluate(`window.__PI_DESKTOP__.selectSession(${JSON.stringify(sessionId)})`);
+    // The recorded exposure belongs to a plugin module that really ran, so the
+    // bridge is not read until both slot components are on screen.
+    await waitFor(
+      () =>
+        client.evaluate(
+          `!!document.querySelector('[data-pi-plugin="acme.slots-demo"] .acme-slots-demo__badge')`,
+        ),
+      "the example plugin's slot component",
+    );
+    await waitFor(
+      () =>
+        client.evaluate(
+          `!!document.querySelector('[data-pi-plugin="acme.e2e-slots"] button.pi-e2e-slots__bump')`,
+        ),
+      "the fixture plugin's slot component",
+    );
+    return await client.evaluate(RUNTIME_PROBE);
+  } catch (error) {
+    throw new Error(describe(error));
+  } finally {
+    client?.close();
+    if (child) await killTree(child);
+    try {
+      rmSync(runRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    } catch {
+      // A held profile lock must not turn a completed journey into a failure.
+    }
+  }
+}
 const temp = mkdtempSync(join(tmpdir(), "pi-plugin-slots-e2e-"));
 
 try {
@@ -439,6 +830,158 @@ export const protocol = {
     record("E2E-PLUGIN-slots-demo-manifest-and-entries", true, "manifest valid, renderer.extension granted, both entries present");
   } catch (error) {
     record("E2E-PLUGIN-slots-demo-manifest-and-entries", false, error.message);
+  }
+
+  // ── E2E-PLUGIN-renderer-bridge-global-reachable-recorded ────────────────
+  // ── E2E-PLUGIN-renderer-one-react-via-import-map ────────────────────────
+  // Records what same-realm execution really ships (ADR 0287), and only a real
+  // window can answer either half. The import map is the mitigation: the
+  // plugin-facing bare specifiers `react`, `react-dom` and `react-dom/client`
+  // resolve to the host's single React. The preload global is a recorded
+  // exposure, not a control: `contextBridge` defines `window.piDesktop`
+  // non-configurable, so the `delete` in `bridge.ts` cannot work and plugin-realm
+  // module code reaches the bridge and every channel the preload whitelist
+  // carries — 219 invoke plus 23 event today. The journey boots the built app
+  // with a throwaway profile, installs `examples/plugins/slots-demo` plus a
+  // hook-using fixture through the host's own `plugins.loadDev`, waits until both
+  // have rendered a slot component in a transcript row, and then reads the live
+  // window — the same realm a plugin module already ran in.
+  let journey = null;
+  let journeyError = null;
+  try {
+    journey = await inspectRendererWindow();
+  } catch (error) {
+    journeyError = error;
+  }
+  const missingJourney = () =>
+    journeyError?.message ?? "the renderer window journey did not run";
+
+  try {
+    assert(journey, missingJourney());
+    assert.equal(
+      journey.bridge.typeofPiDesktop,
+      "object",
+      `window.piDesktop is not reachable from plugin code: typeof ${journey.bridge.typeofPiDesktop}`,
+    );
+    assert.equal(
+      journey.bridge.piDesktopInWindow,
+      true,
+      "window.piDesktop is not an own property of the window",
+    );
+    assert.equal(
+      journey.bridge.descriptor?.configurable,
+      false,
+      `window.piDesktop is configurable, so the delete attempt could have removed it: descriptor=${JSON.stringify(journey.bridge.descriptor)}`,
+    );
+    const pluginRealm = journey.bridge.pluginRealm;
+    assert(pluginRealm, "the fixture module recorded no reading of the preload global");
+    assert.equal(
+      pluginRealm.typeofPiDesktop,
+      "object",
+      `a plugin-realm module saw typeof window.piDesktop=${pluginRealm.typeofPiDesktop}`,
+    );
+    assert.equal(
+      pluginRealm.piDesktopInWindow,
+      true,
+      "a plugin-realm module did not see piDesktop on the window",
+    );
+    assert.equal(
+      pluginRealm.typeofInvoke,
+      "function",
+      `a plugin-realm module reached typeof piDesktop.invoke=${pluginRealm.typeofInvoke}`,
+    );
+    // The plugin realm and the shipped constants have to agree on the size of
+    // the surface, so this keeps holding when a channel is added instead of
+    // pinning today's numbers.
+    const protocol = await import(pathToFileURL(SHARED_PROTOCOL).href);
+    assert.equal(
+      pluginRealm.invokeChannels,
+      Object.keys(protocol.IPC.invoke).length,
+      "the plugin realm reaches fewer invoke channels than the preload exposes",
+    );
+    assert.equal(
+      pluginRealm.eventChannels,
+      Object.keys(protocol.IPC.event).length,
+      "the plugin realm reaches fewer event channels than the preload exposes",
+    );
+    record(
+      "E2E-PLUGIN-renderer-bridge-global-reachable-recorded",
+      true,
+      `typeof window.piDesktop=${journey.bridge.typeofPiDesktop}, "piDesktop" in window=${journey.bridge.piDesktopInWindow}, descriptor=${JSON.stringify(journey.bridge.descriptor)}, plugin realm reached piDesktop.invoke and ${pluginRealm.invokeChannels} invoke + ${pluginRealm.eventChannels} event channels`,
+    );
+  } catch (error) {
+    record(
+      "E2E-PLUGIN-renderer-bridge-global-reachable-recorded",
+      false,
+      `${error.message} — window says ${JSON.stringify(journey?.bridge ?? null)}`,
+    );
+  }
+
+  try {
+    assert(journey, missingJourney());
+    const imports = journey.importMap?.imports ?? null;
+    assert(imports, "the renderer document declares no import map");
+    assert.deepEqual(
+      Object.keys(imports).sort(),
+      ["react", "react-dom", "react-dom/client"],
+      `the import map resolves something else: ${JSON.stringify(imports)}`,
+    );
+    for (const [specifier, url] of Object.entries(imports)) {
+      assert(/^blob:/.test(url), `${specifier} maps to ${url}, not a host-generated module`);
+    }
+    assert(journey.hostReactVersion, "the host published no React namespace to the window");
+    assert.equal(
+      journey.mappedReactVersion,
+      journey.hostReactVersion,
+      "the mapped React is a different version from the host's",
+    );
+    for (const [name, same] of Object.entries(journey.mappedIdentity)) {
+      assert(same, `the mapped ${name} is not the host's own binding`);
+    }
+    assert(journey.pluginIdentity, "the plugin recorded no react bindings, so it never ran");
+    for (const [name, same] of Object.entries(journey.pluginIdentity)) {
+      assert(same, `the plugin resolved a different React ${name}`);
+    }
+    assert(journey.demoBadge, "the example plugin's own component did not render in the host tree");
+    assert(journey.demoStyleInjected, "the example plugin's injected stylesheet is missing");
+    assert.match(
+      journey.counter.before ?? "",
+      /clicks=0/,
+      `the fixture's first render is ${journey.counter.before}`,
+    );
+    assert.match(
+      journey.counter.afterFirst ?? "",
+      /clicks=1/,
+      `a click did not re-render through the host's React: ${journey.counter.afterFirst}`,
+    );
+    assert.match(
+      journey.counter.afterTwo ?? "",
+      /clicks=2/,
+      `the second click did not re-render: ${journey.counter.afterTwo}`,
+    );
+    record(
+      "E2E-PLUGIN-renderer-one-react-via-import-map",
+      true,
+      `import map resolves react/react-dom/react-dom/client to host blobs; useState/createElement/createPortal/createRoot are the host's own bindings and the plugin's too; hooks round-tripped 0→1→2`,
+    );
+  } catch (error) {
+    record(
+      "E2E-PLUGIN-renderer-one-react-via-import-map",
+      false,
+      `${error.message} — window says ${JSON.stringify(
+        journey
+          ? {
+              importMap: journey.importMap,
+              hostReactVersion: journey.hostReactVersion,
+              mappedReactVersion: journey.mappedReactVersion,
+              mappedIdentity: journey.mappedIdentity,
+              pluginIdentity: journey.pluginIdentity,
+              demoBadge: journey.demoBadge,
+              counter: journey.counter,
+            }
+          : null,
+      )}`,
+    );
   }
 } catch (error) {
   // A failure before the first check (missing build output, unusable toolchain)

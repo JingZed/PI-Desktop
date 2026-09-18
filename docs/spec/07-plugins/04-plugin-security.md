@@ -143,10 +143,6 @@ sandbox (ADR 0287). The mitigations that do ship with it:
 - **React singleton.** The host injects its own React through the module's
   import map; a plugin that ships its own React is refused at load with a
   diagnostic, because two React copies break hooks and context.
-- **No global bridge handle.** The app deletes `window.piDesktop` after
-  capturing the bridge it needs at startup, so the bridge is not reachable from
-  a later-loaded module; the renderer entry receives only the host object the
-  renderer API hands it.
 - **Namespaced styling.** Every slot is wrapped in a
   `data-pi-plugin="<plugin-id>"` container, plugin styles must go through
   `pi.ui.injectStyle(css)`, the host removes them on unload, and a stylesheet
@@ -157,6 +153,13 @@ sandbox (ADR 0287). The mitigations that do ship with it:
 - **Distribution is left ungated.** A plugin declaring `renderer` installs
   through the ordinary local, development, and marketplace paths; the
   `renderer.extension` grant is where the user sees the risk.
+
+The global bridge handle is the boundary that does not exist: `contextBridge`
+defines `window.piDesktop` as a non-configurable own property of the window, so
+the app cannot delete it and a later-loaded module reaches the host's whole
+preload surface — 242 whitelisted channels (219 invoke + 23 event) — with no
+per-caller check. Plugins are trusted and broadly permissioned on purpose: the
+boundary is marketplace review plus install-time consent, not isolation.
 
 What this tier gives up is recorded rather than implied: an infinite loop, a
 memory leak, or global pollution from the entry is not contained by the error

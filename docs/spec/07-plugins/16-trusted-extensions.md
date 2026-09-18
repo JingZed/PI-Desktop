@@ -117,13 +117,17 @@ grants nothing in another, and a plugin may declare any combination.
 ### 2A.3 Same realm and style isolation
 
 No `iframe`, no worker, no second sandbox: the module shares the host renderer's
-global object, module graph, and React tree. The two mitigations that ship:
+global object, module graph, and React tree. The mitigation that ships:
 
-- The app deletes `window.piDesktop` after capturing the bridge it needs at
-  startup, so the global bridge handle is not reachable from a later-loaded
-  module.
 - The import map resolves only the host modules named in §2A.2, so the module
   cannot import arbitrary host modules.
+
+The realm is not a boundary and the global bridge handle stays reachable:
+`contextBridge` defines `window.piDesktop` as a non-configurable own property, so
+the app cannot delete it, and the module reaches the host's whole preload surface
+— 242 whitelisted channels (219 invoke + 23 event) — with no per-caller check.
+Plugins are trusted and broadly permissioned on purpose: the boundary is
+marketplace review plus install-time consent, not isolation.
 
 Style isolation is a namespace scheme, not Shadow DOM:
 

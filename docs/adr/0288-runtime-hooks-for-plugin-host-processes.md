@@ -15,9 +15,9 @@
 Issue #561 names twelve runtime slots: points inside a running turn where a
 plugin is consulted and may change what happens. Today a plugin can only be
 consulted if it is an **agent extension** (`contributes.agentExtensions`),
-[16-trusted-extensions](../spec/07-plugins/16-trusted-extensions.md) §6).
+which runs in the agent sidecar and carries the high-risk `agent.extension`
 grant ([ADR 0215](0215-agent-extensions-as-plugin-contribution.md),
-[16-trusted-extensions](../spec/07-plugins/16-extensions.md) §6).
+[16-trusted-extensions](../spec/07-plugins/16-trusted-extensions.md) §6).
 
 The other two plugin hosts have no registration path at all:
 

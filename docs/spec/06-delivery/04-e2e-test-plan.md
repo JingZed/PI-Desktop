@@ -12050,9 +12050,13 @@ plugin-form fixtures in an isolated temporary directory at runtime.
 - **Acceptance**: Security, Quality
 - **Milestone**: Post-MVP (R7 v1)
 - **Status**: Automated by `pnpm test:e2e:plugin-slots` against the real modules
-  (a stubbed Electron only replaces the `electron` import); the boot-time journey
-  in a packaged app — Electron start, install into a real profile, rendered slots
-  — remains a separate validation surface.
+  (a stubbed Electron only replaces the `electron` import) and against a booted
+  app: the suite starts the built app with a throwaway profile, installs the example
+  plugin and a fixture plugin through the host's own `plugins.loadDev`, asserts both
+  render a slot component inside a transcript row, and reads the live window for the
+  single-React import map, a real `useState` click round trip, and the recorded
+  preload exposure (`window.piDesktop` stays reachable from plugin code and cannot
+  be deleted).
 
 
 ---

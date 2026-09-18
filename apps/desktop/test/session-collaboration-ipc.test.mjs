@@ -91,8 +91,9 @@ function rendererApi(invoke) {
     {
       "@pi-desktop/shared": shared,
       // Mirrors `src/lib/bridge.ts`: that module captures the preload global
-      // when it is imported and then deletes it, so the shell reads the bridge
-      // through it. The stub hands back the same captured object.
+      // when it is imported and the shell reads the bridge through it. The
+      // capture is a typed handle, not a boundary. The stub hands back the same
+      // captured object.
       "./bridge": { getBridge: () => bridge },
     },
     { window: { piDesktop: bridge } },

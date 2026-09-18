@@ -7139,9 +7139,11 @@ runner 会在运行时的隔离临时目录中生成六个插件形态 fixture�
 - **链接规格**：`07-plugins/16-trusted-extensions.md` §2A.1、§2A.2、§2A.4、§2A.5；ADR 0287
 - **验收**：安全、质量
 - **里程碑**：MVP 后（R7 v1）
-- **状态**：由 `pnpm test:e2e:plugin-slots` 针对真实模块自动化（打桩的 Electron 只替换
-  `electron` 导入）；打包应用中的启动旅程 —— Electron 启动、向真实 profile 安装、
-  渲染槽位 —— 保留为独立验证面。
+- **状态**：由 `pnpm test:e2e:plugin-slots` 针对真实模块（打桩的 Electron 只替换
+  `electron` 导入）以及真实启动的应用自动化：该套件用临时 profile 启动已构建的应用，
+  通过宿主自己的 `plugins.loadDev` 安装示例插件与夹具插件，断言两者都在转录行内渲染出
+  槽位组件，并读取实时窗口以验证单一 React 的 import map、真实的 `useState` 点击往返，
+  以及被记录下来的 preload 暴露（`window.piDesktop` 对插件代码始终可达且无法删除）。
 
 
 #### E2E-234：工作区安全拒绝名单与忽略层

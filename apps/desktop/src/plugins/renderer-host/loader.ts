@@ -41,9 +41,11 @@ export function rendererEntryUrl(pluginId: string, entry: string): string {
 }
 
 /**
- * The object a plugin's `onLoad` receives. It is the whole surface: there is no
- * `pi` global and no bridge, so a plugin gets slots, styles and its own id, and
- * nothing else the shell can reach.
+ * The object a plugin's `onLoad` receives. It is the whole host *API* surface —
+ * there is no `pi` global — and it carries only slots, styles and the plugin's
+ * own id, which is what keeps the API per-plugin. It is a contract, not a
+ * boundary: the module shares this realm (ADR 0287), so it can also reach
+ * `window.piDesktop`.
  */
 function buildApi(pluginId: string, version: string): PiRendererApi {
   const styles = new Set<PiRendererStyleHandle>();

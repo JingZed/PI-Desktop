@@ -71,9 +71,10 @@ export type PiRendererStyleHandle = {
 };
 
 /**
- * The object handed to a renderer module's `onLoad`. It is the only host
- * surface a renderer plugin gets: no `window.piDesktop`, no DOM authority
- * beyond its own container.
+ * The object handed to a renderer module's `onLoad`. It is the whole host API a
+ * renderer plugin is handed, kept per-plugin by the `onLoad` argument. It is a
+ * contract, not a boundary: the module shares the host's realm (ADR 0287), so
+ * `window.piDesktop` and the host DOM both stay reachable from plugin code.
  */
 export type PiRendererApi = {
   readonly plugin: {

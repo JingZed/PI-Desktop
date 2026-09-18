@@ -273,9 +273,10 @@ export interface ExternalMcpImportRunResult {
 }
 
 /**
- * The preload bridge, captured before `bridge.ts` removed the global. A trusted
- * plugin's renderer code shares this realm, so the bridge must not stay on
- * `window`; every call below goes through the captured reference instead.
+ * The preload bridge, captured once by `bridge.ts`. A trusted plugin's renderer
+ * code shares this realm, so plugin code can reach `window.piDesktop` too; the
+ * captured reference is the shell's typed handle on the bridge, not a boundary.
+ * Plugins are trusted on purpose — the boundary is install review plus consent.
  */
 const bridge = getBridge() as PiDesktopBridge;
 
