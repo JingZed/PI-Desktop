@@ -17,6 +17,9 @@ import {
   IconTrash,
 } from "../../../components/icons";
 import { TooltipButton } from "../../../components/ui";
+import { PluginSlot } from "../../../plugins/renderer-slots/SlotOutlet";
+import { rendererCandidates } from "../../../plugins/renderer-slots/candidates";
+import { entryExtraSlotProps, transcriptEntryIdentity } from "./model";
 import { SessionMessageOrigin } from "./SessionMessageOrigin";
 import {
   CopyButton,
@@ -41,6 +44,26 @@ export const MessageRow = memo(function MessageRow({
   const editableUserMessage = isUser && !isSessionMessage;
   const workspaceRoot = useAppStore((s) => s.workspace?.path);
   const openFileRef = useOpenChatFileRef();
+
+  // Slot 13 (`entryExtra`): the plugin area under this entry. It reads what the
+  // row and the store already hold — no new state, and nothing rendered unless
+  // a plugin registered for the slot.
+  const sessionId = useAppStore((s) => s.activeSessionId);
+  const plugins = useAppStore((s) => s.plugins);
+  const entryExtraCandidates = useMemo(
+    () => (sessionId ? rendererCandidates(plugins) : []),
+    [plugins, sessionId],
+  );
+  // D14: `pluginId` stays unset because no producer reports one yet (model.ts).
+  // Without a session the slot has no `sessionId` to report, so it is not
+  // mounted at all rather than handed a made-up one.
+  const entryExtraProps = useMemo(
+    () =>
+      sessionId
+        ? entryExtraSlotProps(transcriptEntryIdentity(message), sessionId)
+        : undefined,
+    [message, sessionId],
+  );
   // Slash prompts are stored expanded; editing works on the typed form so the
   // resent turn re-expands the template (D123).
   const editSeed =
@@ -262,6 +285,16 @@ export const MessageRow = memo(function MessageRow({
               </TooltipButton>
             ) : null}
           </div>
+        ) : null}
+        {/* Slot 13: appended below everything the host itself renders. This
+          * area only adds to the entry — slot 1 owns replacing it — so the
+          * boundary's fallback is nothing (ADR 0287). */}
+        {sessionId ? (
+          <PluginSlot
+            slot="entryExtra"
+            slotProps={entryExtraProps}
+            candidates={entryExtraCandidates}
+          />
         ) : null}
       </div>
     </div>

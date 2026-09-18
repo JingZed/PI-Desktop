@@ -84,6 +84,7 @@ export type PiRendererApi = {
     register<Props>(
       slot: PluginRendererSlot,
       component: PiRendererComponent<Props>,
+      options?: PiRendererSlotOptions,
     ): PiRendererRegistration;
   };
   readonly ui: {
@@ -111,3 +112,47 @@ export type PiRendererModule = {
  * these appears as a top-level selector instead of silently narrowing it.
  */
 export const PLUGIN_STYLE_FORBIDDEN_ROOT_SELECTORS = ["html", "body", ":root", "*"] as const;
+
+/**
+ * Extra registration data a slot needs. Only `codeBlock` uses it today: the
+ * host has to know which fenced language a component claims, and the language
+ * name must carry the plugin's own prefix so a plugin cannot shadow `json`,
+ * `ts` or `mermaid` (spec 07-plugins/16 §2A.5).
+ */
+export type PiRendererSlotOptions = {
+  /** `codeBlock` only: the fenced language this component renders. */
+  language?: string;
+};
+
+/**
+ * What the host hands a `codeBlock` renderer. The three protections the issue
+ * asks for are visible here: a block whose fence is still open never reaches a
+ * component, an oversized block is degraded to source text before this runs,
+ * and a component that throws falls back to the host's own code block.
+ */
+export type PiRendererCodeBlockProps = {
+  /** The fenced language as written, e.g. `acme:chart`. */
+  language: string;
+  /** The block's source, exactly as the model wrote it. */
+  code: string;
+  /** True while the fence is still open; the host does not render these. */
+  isIncomplete: boolean;
+  /** The host's current theme, so a diagram can match its surroundings. */
+  theme: "light" | "dark";
+};
+
+/**
+ * What the host hands an `entryExtra` renderer: the entry it is appended to, so
+ * a plugin can decide for itself whether it has anything to add. The entry id is
+ * the identity the transcript is keyed by, which is also what lets a failed
+ * component be reported against the row the user is looking at.
+ */
+export type PiRendererEntryExtraProps = {
+  entry: {
+    id: string;
+    role: "user" | "assistant" | "system";
+    /** Set when the host attributes this entry to a plugin (D14). */
+    pluginId?: string;
+  };
+  sessionId: string;
+};

@@ -54,6 +54,14 @@ function loadComponent(name, extras = {}) {
       openChatHttpUrl: () => {},
     },
     "./shared": shared,
+    // `MessageRow` mounts the `entryExtra` slot; that test renders with no
+    // session, so the slot is never entered.
+    "../../../plugins/renderer-slots/SlotOutlet": { PluginSlot: () => null },
+    "../../../plugins/renderer-slots/candidates": { rendererCandidates: () => [] },
+    "./model": {
+      transcriptEntryIdentity: (message) => ({ id: message.id, role: message.role }),
+      entryExtraSlotProps: (entry, sessionId) => ({ entry, sessionId }),
+    },
     ...extras,
   };
   const module = { exports: {} };

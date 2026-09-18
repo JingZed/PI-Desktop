@@ -63,6 +63,16 @@ const { forbiddenSelector, injectPluginStyle, removePluginStyles } = await impor
   "../src/plugins/renderer-slots/style-injection.ts"
 );
 const { rendererCandidates } = await import("../src/plugins/renderer-slots/candidates.ts");
+const { entryExtraSlotProps, transcriptEntryIdentity } = await import(
+  "../src/features/chat/transcript/model.ts"
+);
+const {
+  MAX_PLUGIN_CODE_BLOCK_SOURCE_LENGTH,
+  RESERVED_LANGUAGES,
+  codeBlockComponentFor,
+  codeBlockSourceTooLarge,
+} = await import("../src/plugins/renderer-slots/code-blocks.ts");
+const { MAX_MERMAID_SOURCE_LENGTH } = await import("../src/lib/mermaid.ts");
 
 function component() {
   return null;
@@ -211,4 +221,196 @@ test("the loader refuses a plugin that never declared the entry, with a diagnost
   const [diagnostic] = pluginSlots.listDiagnostics();
   assert.equal(diagnostic.code, "PLUGIN_SLOT_NOT_DECLARED");
   assert.equal(diagnostic.pluginId, "acme.sandboxed");
+});
+
+test("entryExtra props map each transcript role onto the contract's three", () => {
+  const contractRole = {
+    user: "user",
+    assistant: "assistant",
+    system: "system",
+    // A tool row is host-rendered assistant work, not user input or a notice.
+    tool: "assistant",
+  };
+  for (const [role, expected] of Object.entries(contractRole)) {
+    const props = entryExtraSlotProps({ id: `entry-${role}`, role }, "session-1");
+    assert.equal(props.entry.id, `entry-${role}`);
+    assert.equal(props.entry.role, expected);
+    assert.equal(props.sessionId, "session-1");
+    assert.equal(Object.hasOwn(props.entry, "pluginId"), false);
+  }
+});
+
+test("entry.pluginId appears only when the host knows the producer (D14)", () => {
+  const own = entryExtraSlotProps(
+    { id: "entry-1", role: "assistant", pluginId: "acme.charts" },
+    "session-1",
+  );
+  assert.equal(own.entry.pluginId, "acme.charts");
+
+  // Unknown, blank, and whitespace-only producers must all be absent rather
+  // than blank, so `props.entry.pluginId === pi.plugin.id` cannot match a
+  // value no plugin owns.
+  for (const pluginId of [undefined, "", "   "]) {
+    const props = entryExtraSlotProps({ id: "entry-1", role: "assistant", pluginId }, "session-1");
+    assert.equal(Object.hasOwn(props.entry, "pluginId"), false);
+    assert.equal(props.entry.pluginId, undefined);
+  }
+});
+
+test("the host leaves pluginId unset until a producer can report itself", () => {
+  const identity = transcriptEntryIdentity({ id: "entry-1", role: "user" });
+  assert.deepEqual(identity, { id: "entry-1", role: "user" });
+  assert.equal(Object.hasOwn(identity, "pluginId"), false);
+
+  const props = entryExtraSlotProps(identity, "session-1");
+  assert.deepEqual(Object.keys(props).sort(), ["entry", "sessionId"]);
+  assert.deepEqual(Object.keys(props.entry).sort(), ["id", "role"]);
+});
+
+test("a codeBlock registration without a language is refused with PLUGIN_SLOT_LANGUAGE_MISSING", () => {
+  resetPluginSlots();
+  const handle = pluginSlots.register("acme.notes", "codeBlock", component);
+  assert.equal(handle, null);
+  assert.equal(pluginSlots.list("codeBlock").length, 0);
+  const [diagnostic] = pluginSlots.listDiagnostics();
+  assert.equal(diagnostic.code, "PLUGIN_SLOT_LANGUAGE_MISSING");
+  assert.equal(diagnostic.pluginId, "acme.notes");
+  assert.equal(diagnostic.slot, "codeBlock");
+
+  // Whitespace and a non-string are the same failure: no language was named.
+  assert.equal(
+    pluginSlots.register("acme.notes", "codeBlock", component, { language: "   " }),
+    null,
+  );
+  assert.equal(
+    pluginSlots.register("acme.notes", "codeBlock", component, { language: 7 }),
+    null,
+  );
+  assert.deepEqual(
+    pluginSlots.listDiagnostics().map((entry) => entry.code),
+    [
+      "PLUGIN_SLOT_LANGUAGE_MISSING",
+      "PLUGIN_SLOT_LANGUAGE_MISSING",
+      "PLUGIN_SLOT_LANGUAGE_MISSING",
+    ],
+  );
+});
+
+test("a host-reserved language is refused with PLUGIN_SLOT_LANGUAGE_RESERVED", () => {
+  resetPluginSlots();
+  assert.deepEqual([...RESERVED_LANGUAGES], ["json", "ts", "mermaid"]);
+  for (const language of RESERVED_LANGUAGES) {
+    assert.equal(
+      pluginSlots.register("acme.notes", "codeBlock", component, { language }),
+      null,
+      `expected ${language} to be refused`,
+    );
+    assert.equal(codeBlockComponentFor(language), null);
+  }
+  assert.equal(pluginSlots.list("codeBlock").length, 0);
+  assert.deepEqual(
+    pluginSlots.listDiagnostics().map((entry) => entry.code),
+    [
+      "PLUGIN_SLOT_LANGUAGE_RESERVED",
+      "PLUGIN_SLOT_LANGUAGE_RESERVED",
+      "PLUGIN_SLOT_LANGUAGE_RESERVED",
+    ],
+  );
+});
+
+test("a language that is not the plugin's own namespace is refused", () => {
+  resetPluginSlots();
+  for (const language of ["chart", "other.plugin:chart", "acme.notes:", "acme.notes.chart"]) {
+    assert.equal(
+      pluginSlots.register("acme.notes", "codeBlock", component, { language }),
+      null,
+      `expected refusal: ${language}`,
+    );
+    assert.equal(codeBlockComponentFor(language), null);
+  }
+  assert.deepEqual(
+    pluginSlots.listDiagnostics().map((entry) => entry.code),
+    [
+      "PLUGIN_SLOT_LANGUAGE_INVALID",
+      "PLUGIN_SLOT_LANGUAGE_INVALID",
+      "PLUGIN_SLOT_LANGUAGE_INVALID",
+      "PLUGIN_SLOT_LANGUAGE_INVALID",
+    ],
+  );
+});
+
+test("a well-formed language resolves to the component that claimed it", () => {
+  resetPluginSlots();
+  const chart = () => null;
+  const handle = pluginSlots.register("acme.notes", "codeBlock", chart, {
+    language: "acme.notes:chart",
+  });
+  assert.notEqual(handle, null);
+  const [registration] = pluginSlots.list("codeBlock");
+  assert.equal(registration.pluginId, "acme.notes");
+  assert.equal(registration.slot, "codeBlock");
+  assert.equal(registration.language, "acme.notes:chart");
+  assert.equal(registration.component, chart);
+  assert.equal(codeBlockComponentFor("acme.notes:chart").component, chart);
+  assert.equal(codeBlockComponentFor("acme.notes:other"), null);
+  assert.equal(codeBlockComponentFor("acme.other:chart"), null);
+  assert.equal(codeBlockComponentFor(""), null);
+});
+
+test("a language has one renderer: the first registration keeps it and the second is refused (D13)", () => {
+  resetPluginSlots();
+  const owner = () => null;
+  const intruder = () => null;
+  pluginSlots.register("acme.one", "codeBlock", owner, { language: "acme.one:chart" });
+  const second = pluginSlots.register("acme.two", "codeBlock", intruder, {
+    language: "acme.one:chart",
+  });
+  assert.equal(second, null);
+  assert.equal(codeBlockComponentFor("acme.one:chart").pluginId, "acme.one");
+  assert.equal(codeBlockComponentFor("acme.one:chart").component, owner);
+  const [diagnostic] = pluginSlots.listDiagnostics();
+  assert.equal(diagnostic.code, "PLUGIN_SLOT_LANGUAGE_INVALID");
+  assert.equal(diagnostic.pluginId, "acme.two");
+
+  // Within one plugin the same language may be registered twice; the first one
+  // still wins, so a language never has two renderers.
+  pluginSlots.unregisterPlugin("acme.two");
+  pluginSlots.register("acme.one", "codeBlock", intruder, { language: "acme.one:chart" });
+  assert.equal(pluginSlots.list("codeBlock").length, 2);
+  assert.equal(codeBlockComponentFor("acme.one:chart").component, owner);
+});
+
+test("withdrawing the registration or unloading the plugin makes the language unresolved again", () => {
+  resetPluginSlots();
+  const handle = pluginSlots.register("acme.notes", "codeBlock", component, {
+    language: "acme.notes:chart",
+  });
+  assert.notEqual(codeBlockComponentFor("acme.notes:chart"), null);
+  handle.remove();
+  assert.equal(codeBlockComponentFor("acme.notes:chart"), null);
+
+  pluginSlots.register("acme.notes", "codeBlock", component, {
+    language: "acme.notes:chart",
+  });
+  assert.notEqual(codeBlockComponentFor("acme.notes:chart"), null);
+  pluginSlots.unregisterPlugin("acme.notes");
+  assert.equal(codeBlockComponentFor("acme.notes:chart"), null);
+  assert.equal(pluginSlots.list("codeBlock").length, 0);
+});
+
+test("the options argument belongs to codeBlock and leaves every other slot untouched", () => {
+  resetPluginSlots();
+  const handle = pluginSlots.register("acme.one", "entry", component, {
+    language: "acme.one:chart",
+  });
+  assert.notEqual(handle, null);
+  assert.equal(pluginSlots.list("entry")[0].language, undefined);
+  assert.deepEqual(pluginSlots.listDiagnostics(), []);
+});
+
+test("a plugin block is capped at the same source ceiling the host uses for mermaid", () => {
+  assert.equal(MAX_PLUGIN_CODE_BLOCK_SOURCE_LENGTH, MAX_MERMAID_SOURCE_LENGTH);
+  const atLimit = "x".repeat(MAX_PLUGIN_CODE_BLOCK_SOURCE_LENGTH);
+  assert.equal(codeBlockSourceTooLarge(atLimit), false);
+  assert.equal(codeBlockSourceTooLarge(`${atLimit}x`), true);
 });

@@ -2075,9 +2075,12 @@ export {
   PLUGIN_RENDERER_SLOTS,
   PLUGIN_STYLE_FORBIDDEN_ROOT_SELECTORS,
   type PiRendererApi,
+  type PiRendererCodeBlockProps,
   type PiRendererComponent,
+  type PiRendererEntryExtraProps,
   type PiRendererModule,
   type PiRendererRegistration,
+  type PiRendererSlotOptions,
   type PiRendererStyleHandle,
   type PluginRendererSlot,
 } from "./renderer.js";

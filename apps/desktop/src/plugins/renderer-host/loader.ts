@@ -15,6 +15,7 @@ import {
   PLUGIN_RENDERER_SCHEME,
   type PiRendererApi,
   type PiRendererModule,
+  type PiRendererSlotOptions,
   type PiRendererStyleHandle,
   type PluginRendererSlot,
 } from "@pi-desktop/plugin-sdk";
@@ -52,8 +53,9 @@ function buildApi(pluginId: string, version: string): PiRendererApi {
       register<Props>(
         slot: PluginRendererSlot,
         component: (props: Props) => unknown,
+        options?: PiRendererSlotOptions,
       ): ReturnType<PiRendererApi["slots"]["register"]> {
-        const handle = pluginSlots.register(pluginId, slot, component);
+        const handle = pluginSlots.register(pluginId, slot, component, options);
         if (!handle) {
           // `register` already reported why; returning a no-op handle would
           // only invite the plugin to think it succeeded.

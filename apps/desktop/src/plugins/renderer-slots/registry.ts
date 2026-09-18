@@ -7,7 +7,12 @@
  * plugin registering a slot must not re-render the shell.
  */
 import type { ReactNode } from "react";
-import type { PluginRendererSlot } from "@pi-desktop/plugin-sdk";
+import type { PiRendererSlotOptions, PluginRendererSlot } from "@pi-desktop/plugin-sdk";
+import {
+  codeBlockLanguageProblem,
+  normalizeCodeBlockLanguage,
+  type CodeBlockLanguageDiagnostic,
+} from "./code-blocks";
 
 /**
  * A component a plugin handed over. The SDK types this as returning `unknown`
@@ -20,6 +25,8 @@ export type PluginSlotRegistration = {
   pluginId: string;
   slot: PluginRendererSlot;
   component: PluginSlotComponent;
+  /** `codeBlock` only: the fenced language this component claimed. */
+  language?: string;
 };
 
 /**
@@ -33,6 +40,8 @@ export type PluginSlotDiagnostic = {
   code:
     | "PLUGIN_SLOT_NOT_DECLARED"
     | "PLUGIN_SLOT_INVALID_COMPONENT"
+    // Language admission for `codeBlock`; the rule itself lives in code-blocks.ts.
+    | CodeBlockLanguageDiagnostic
     | "PLUGIN_SLOT_RENDER_FAILED"
     | "PLUGIN_SLOT_LOAD_FAILED"
     | "PLUGIN_INVALID: renderer entry must export onLoad";
@@ -54,11 +63,16 @@ class PluginSlotRegistry {
 
   private version = 0;
 
-  /** Registers one component. Returns the handle the plugin uses to withdraw it. */
+  /**
+   * Registers one component. Returns the handle the plugin uses to withdraw it,
+   * or null when the host refused the registration — `codeBlock` additionally
+   * needs the language it claims, which must be namespaced with its own id.
+   */
   register(
     pluginId: string,
     slot: PluginRendererSlot,
     component: unknown,
+    options?: PiRendererSlotOptions,
   ): { remove(): void } | null {
     if (typeof component !== "function") {
       this.report({
@@ -69,12 +83,24 @@ class PluginSlotRegistry {
       });
       return null;
     }
+    let language: string | undefined;
+    if (slot === "codeBlock") {
+      language = normalizeCodeBlockLanguage(options?.language);
+      const problem = codeBlockLanguageProblem(pluginId, language);
+      if (problem) {
+        // A plugin that cannot claim the language must not keep a position it
+        // will never be asked to draw (D13).
+        this.report({ pluginId, slot, code: problem.code, detail: problem.detail });
+        return null;
+      }
+    }
     const key = keyFor(pluginId, slot);
     const list = this.registrations.get(key) ?? [];
     const entry: PluginSlotRegistration = {
       pluginId,
       slot,
       component: component as PluginSlotComponent,
+      ...(language === undefined ? {} : { language }),
     };
     list.push(entry);
     this.registrations.set(key, list);

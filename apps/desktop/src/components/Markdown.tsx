@@ -1,4 +1,5 @@
 import {
+  Component,
   createContext,
   Fragment,
   isValidElement,
@@ -75,6 +76,12 @@ import {
   type LineCache,
   type ThemeMode,
 } from "../lib/shiki";
+import { useSlotRegistrations } from "../plugins/renderer-slots/SlotOutlet";
+import { pluginSlots, type PluginSlotComponent } from "../plugins/renderer-slots/registry";
+import {
+  codeBlockComponentFor,
+  codeBlockSourceTooLarge,
+} from "../plugins/renderer-slots/code-blocks";
 
 /*
  * Streaming-optimized chat markdown renderer.
@@ -419,12 +426,90 @@ function extractCode(children: ReactNode): { code: string; lang: string } | null
   return { code: code.replace(/\n$/, ""), lang };
 }
 
+/**
+ * A `codeBlock` registration sits behind the same containment as every other
+ * slot (spec 07-plugins/16 §2A.4): a component that throws collapses to the
+ * host's own code block instead of taking the transcript with it, and the crash
+ * is reported. `PluginSlot`'s boundary belongs to a list of registrations, which
+ * is not what this slot is — a block belongs to one language and to the first
+ * plugin that claimed it.
+ */
+class PluginCodeBlockBoundary extends Component<
+  { pluginId: string; fallback: ReactNode; children: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+
+  static getDerivedStateFromError(): { failed: boolean } {
+    return { failed: true };
+  }
+
+  componentDidCatch(error: unknown): void {
+    pluginSlots.report({
+      pluginId: this.props.pluginId,
+      slot: "codeBlock",
+      code: "PLUGIN_SLOT_RENDER_FAILED",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  render(): ReactNode {
+    return this.state.failed ? this.props.fallback : this.props.children;
+  }
+}
+
+/**
+ * The container contract every slot shares (`data-pi-plugin`), kept here too so
+ * a plugin's own CSS reaches it and the block keeps its source anchors.
+ */
+function PluginCodeBlock({
+  pluginId,
+  component: PluginComponent,
+  language,
+  code,
+  isIncomplete,
+  theme,
+  fallback,
+  ...position
+}: {
+  pluginId: string;
+  component: PluginSlotComponent;
+  language: string;
+  code: string;
+  isIncomplete: boolean;
+  theme: ThemeMode;
+  fallback: ReactNode;
+} & SourcePositionProps) {
+  return (
+    // Keyed by owner: a language that changes hands starts from a clean state.
+    <PluginCodeBlockBoundary key={pluginId} pluginId={pluginId} fallback={fallback}>
+      <div
+        className="pi-plugin-slot"
+        data-pi-plugin={pluginId}
+        data-pi-plugin-slot="codeBlock"
+        {...position}
+      >
+        <PluginComponent
+          language={language}
+          code={code}
+          isIncomplete={isIncomplete}
+          theme={theme}
+        />
+      </div>
+    </PluginCodeBlockBoundary>
+  );
+}
+
 function PreBlock({
   node: _node,
   children,
   ...rest
 }: ComponentProps<"pre"> & SourcePositionProps & { node?: unknown }) {
   const { closedFence, renderDiagrams } = useContext(MarkdownBlockContext);
+  // The registry is an external store: a plugin that registers after the first
+  // paint still has to reach the blocks whose language it owns.
+  const codeBlockSlots = useSlotRegistrations("codeBlock");
+  const theme = useThemeMode();
   const info = extractCode(children);
   if (!info) return <pre {...rest}>{children}</pre>;
   if (
@@ -434,7 +519,29 @@ function PreBlock({
   ) {
     return <MermaidBlock code={info.code} {...sourcePositionProps(rest)} />;
   }
-  return <CodeBlock code={info.code} lang={info.lang} {...sourcePositionProps(rest)} />;
+  const code = (
+    <CodeBlock code={info.code} lang={info.lang} {...sourcePositionProps(rest)} />
+  );
+  // A plugin draws a closed, in-limit block only: an open fence never reaches a
+  // component (`isIncomplete` stays derived, never assumed) and an oversized
+  // block degrades to the host's own source rendering. No claim means no change.
+  const claimed =
+    closedFence && !codeBlockSourceTooLarge(info.code)
+      ? codeBlockComponentFor(info.lang, codeBlockSlots)
+      : null;
+  if (!claimed) return code;
+  return (
+    <PluginCodeBlock
+      pluginId={claimed.pluginId}
+      component={claimed.component}
+      language={info.lang}
+      code={info.code}
+      isIncomplete={!closedFence}
+      theme={theme}
+      fallback={code}
+      {...sourcePositionProps(rest)}
+    />
+  );
 }
 
 /** Preview-in-panel tooltip for file and URL chat references. */
