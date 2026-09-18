@@ -1,5 +1,4 @@
 import {
-  Component,
   createContext,
   Fragment,
   isValidElement,
@@ -76,8 +75,8 @@ import {
   type LineCache,
   type ThemeMode,
 } from "../lib/shiki";
-import { useSlotRegistrations } from "../plugins/renderer-slots/SlotOutlet";
-import { pluginSlots, type PluginSlotComponent } from "../plugins/renderer-slots/registry";
+import { PluginSlot, useSlotRegistrations } from "../plugins/renderer-slots/SlotOutlet";
+import { rendererCandidates } from "../plugins/renderer-slots/candidates";
 import {
   codeBlockComponentFor,
   codeBlockSourceTooLarge,
@@ -132,7 +131,9 @@ function getThemeSnapshot(): ThemeMode {
 }
 
 function useThemeMode(): ThemeMode {
-  return useSyncExternalStore(subscribeTheme, getThemeSnapshot);
+  // The snapshot doubles as the server snapshot so a server render (tests,
+  // previews) does not throw; it reads the same source as the client value.
+  return useSyncExternalStore(subscribeTheme, getThemeSnapshot, getThemeSnapshot);
 }
 
 /* ---------- syntax highlighting ---------- */
@@ -167,7 +168,9 @@ function useHighlightedTokens(
 ): ThemedToken[][] | null {
   const resolved = resolveLang(lang);
   const mode = useThemeMode();
-  const version = useSyncExternalStore(subscribeHighlighter, getHighlightVersion);
+  // The readiness counter doubles as the server snapshot: a server render has
+  // no highlighter yet, which is exactly what the client's first snapshot says.
+  const version = useSyncExternalStore(subscribeHighlighter, getHighlightVersion, getHighlightVersion);
   useEffect(() => {
     if (resolved) ensureLang(resolved);
   }, [resolved]);
@@ -426,80 +429,6 @@ function extractCode(children: ReactNode): { code: string; lang: string } | null
   return { code: code.replace(/\n$/, ""), lang };
 }
 
-/**
- * A `codeBlock` registration sits behind the same containment as every other
- * slot (spec 07-plugins/16 §2A.4): a component that throws collapses to the
- * host's own code block instead of taking the transcript with it, and the crash
- * is reported. `PluginSlot`'s boundary belongs to a list of registrations, which
- * is not what this slot is — a block belongs to one language and to the first
- * plugin that claimed it.
- */
-class PluginCodeBlockBoundary extends Component<
-  { pluginId: string; fallback: ReactNode; children: ReactNode },
-  { failed: boolean }
-> {
-  state = { failed: false };
-
-  static getDerivedStateFromError(): { failed: boolean } {
-    return { failed: true };
-  }
-
-  componentDidCatch(error: unknown): void {
-    pluginSlots.report({
-      pluginId: this.props.pluginId,
-      slot: "codeBlock",
-      code: "PLUGIN_SLOT_RENDER_FAILED",
-      detail: error instanceof Error ? error.message : String(error),
-    });
-  }
-
-  render(): ReactNode {
-    return this.state.failed ? this.props.fallback : this.props.children;
-  }
-}
-
-/**
- * The container contract every slot shares (`data-pi-plugin`), kept here too so
- * a plugin's own CSS reaches it and the block keeps its source anchors.
- */
-function PluginCodeBlock({
-  pluginId,
-  component: PluginComponent,
-  language,
-  code,
-  isIncomplete,
-  theme,
-  fallback,
-  ...position
-}: {
-  pluginId: string;
-  component: PluginSlotComponent;
-  language: string;
-  code: string;
-  isIncomplete: boolean;
-  theme: ThemeMode;
-  fallback: ReactNode;
-} & SourcePositionProps) {
-  return (
-    // Keyed by owner: a language that changes hands starts from a clean state.
-    <PluginCodeBlockBoundary key={pluginId} pluginId={pluginId} fallback={fallback}>
-      <div
-        className="pi-plugin-slot"
-        data-pi-plugin={pluginId}
-        data-pi-plugin-slot="codeBlock"
-        {...position}
-      >
-        <PluginComponent
-          language={language}
-          code={code}
-          isIncomplete={isIncomplete}
-          theme={theme}
-        />
-      </div>
-    </PluginCodeBlockBoundary>
-  );
-}
-
 function PreBlock({
   node: _node,
   children,
@@ -509,6 +438,11 @@ function PreBlock({
   // The registry is an external store: a plugin that registers after the first
   // paint still has to reach the blocks whose language it owns.
   const codeBlockSlots = useSlotRegistrations("codeBlock");
+  // The mount also carries the plugin rows, so the outlet loads a renderer entry
+  // and records what that plugin declared from a code block too — not only from
+  // a slot that happens to render elsewhere on screen.
+  const plugins = useAppStore((s) => s.plugins);
+  const pluginCandidates = useMemo(() => rendererCandidates(plugins), [plugins]);
   const theme = useThemeMode();
   const info = extractCode(children);
   if (!info) return <pre {...rest}>{children}</pre>;
@@ -523,24 +457,23 @@ function PreBlock({
     <CodeBlock code={info.code} lang={info.lang} {...sourcePositionProps(rest)} />
   );
   // A plugin draws a closed, in-limit block only: an open fence never reaches a
-  // component (`isIncomplete` stays derived, never assumed) and an oversized
-  // block degrades to the host's own source rendering. No claim means no change.
-  const claimed =
-    closedFence && !codeBlockSourceTooLarge(info.code)
-      ? codeBlockComponentFor(info.lang, codeBlockSlots)
-      : null;
-  if (!claimed) return code;
+  // component, and an oversized block degrades to the host's own source
+  // rendering before the outlet is involved. A language has exactly one renderer
+  // (D13), so the mount hands the outlet exactly that registration — an empty
+  // list when nothing claims the language, which renders the host's own block
+  // and is also the boundary's fallback.
+  if (!closedFence || codeBlockSourceTooLarge(info.code)) return code;
+  const claimed = codeBlockComponentFor(info.lang, codeBlockSlots);
   return (
-    <PluginCodeBlock
-      pluginId={claimed.pluginId}
-      component={claimed.component}
-      language={info.lang}
-      code={info.code}
-      isIncomplete={!closedFence}
-      theme={theme}
-      fallback={code}
-      {...sourcePositionProps(rest)}
-    />
+    <PluginSlot
+      slot="codeBlock"
+      registrations={claimed ? [claimed] : []}
+      candidates={pluginCandidates}
+      slotProps={{ language: info.lang, code: info.code, isIncomplete: false, theme }}
+      containerProps={sourcePositionProps(rest)}
+    >
+      {code}
+    </PluginSlot>
   );
 }
 

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
- * Trusted renderer host E2E: the build contract, plus the single-React import map
- * and the recorded preload exposure, read out of a real window.
+ * Trusted renderer host E2E: the build contract, the single-React import map, the
+ * recorded preload exposure, and the action channel a slot component dispatches
+ * through, all read out of a real window where they can be.
  * E2E-PLUGIN-renderer-slots-survive-a-packaged-build
  *   The renderer host's contract only breaks where it cannot be debugged: a
  *   packaged renderer loads `plugin-renderer:` module source from a `file://`
@@ -16,11 +17,14 @@
  * The first seven checks are headless. The main process modules are bundled
  * with esbuild and a stubbed `electron` so their real code runs in Node, and
  * the renderer-side modules are covered by
- * `apps/desktop/test/plugin-renderer-slots.test.mjs`. The last two launch the
+ * `apps/desktop/test/plugin-renderer-slots.test.mjs`. The last five launch the
  * built app with a throwaway profile, load the example plugin and a hook-using
  * fixture into the real renderer, and read the live window over CDP: one records
  * what a plugin-realm module can actually reach — `window.piDesktop` is exposed,
- * not removed — and the other checks that the import map hands React out once.
+ * not removed — one checks that the import map hands React out once, and three
+ * read the action channel off the fixture's own slot component: the `dispatch`
+ * prop it was handed, the refusal an undeclared action answers with, and that
+ * the refusal arrives as a rejection instead of a synchronous throw.
  * Neither path touches the network, a user profile, or an installed plugin.
  *
  * Prerequisites: `packages/plugin-sdk/dist` for every check, and the built
@@ -276,10 +280,12 @@ async function killTree(child) {
 /**
  * A hook-using fixture plugin, owned by this check rather than by the repo. It
  * records the `react` bindings its own bare import resolved to, records what
- * plugin-realm module code can reach on the window, and renders a `useState`
- * counter, so the assertions can compare module identity, measure the recorded
- * exposure from inside plugin code, and drive a real hook round trip instead of
- * inferring any of it from a rendered string.
+ * plugin-realm module code can reach on the window, renders a `useState`
+ * counter, and records what the host handed its component as props together
+ * with what a refused dispatch answered. The assertions can therefore compare
+ * module identity, measure the recorded exposure from inside plugin code, drive
+ * a real hook round trip, and read the action channel off the component instead
+ * of inferring any of it from a rendered string.
  */
 const FIXTURE_RENDERER = `import { createElement, useState } from "react";
 
@@ -296,8 +302,124 @@ globalThis.__PI_E2E_PLUGIN_BRIDGE__ = {
   eventChannels: Object.keys(window.piDesktop?.channels?.event ?? {}).length,
 };
 
-function Counter() {
+// The action this fixture's manifest declares, and one it deliberately does
+// not. The manifest has to declare something, otherwise a refusal would say
+// nothing about the declaration the check is about.
+const DECLARED_ACTION = "ui.toast";
+const UNDECLARED_ACTION = "composer.replaceDraft";
+// The forwarded half of the interface: the "plugin.call" action runs a method
+// inside this plugin's own headless entry and answers with what it returned,
+// which is why the value below cannot be produced by the renderer alone.
+// plugin's own headless entry and answers with what it returned, which is why
+// the value below cannot be produced by the renderer alone.
+const FORWARDED_ACTION = "plugin.call";
+const FORWARDED_METHOD = "slots.echo";
+const FORWARDED_ARGS = { text: "e2e" };
+
+// Facts the checks read, recorded from inside plugin code the way the bridge
+// reading above is. Merged rather than replaced, so an outcome a click recorded
+// survives a later re-render of the same component.
+function noteDispatch(fields) {
+  const bag = globalThis.__PI_E2E_PLUGIN_DISPATCH__ ?? {};
+  Object.assign(bag, fields);
+  globalThis.__PI_E2E_PLUGIN_DISPATCH__ = bag;
+  return bag;
+}
+
+// One resolution of a forwarded call, appended rather than overwritten so two
+// clicks are two entries: the counter in the answers is what the
+// runs-in-the-plugin-entry check reads.
+function noteForwarded(entry) {
+  const bag = noteDispatch({ forwardedStatus: entry.status });
+  const forwardedAnswers = [...(bag.forwardedAnswers ?? []), entry];
+  return noteDispatch({ forwardedAnswers });
+}
+
+function Counter(props) {
   const [clicks, setClicks] = useState(0);
+
+  // What the host really handed this component, recorded at render time from
+  // inside plugin code: the prop and what it is, not what the host says it sent.
+  noteDispatch({
+    typeofDispatch: typeof props.dispatch,
+    propNames: Object.keys(props).sort().join(","),
+    declaredAction: DECLARED_ACTION,
+    undeclaredAction: UNDECLARED_ACTION,
+    forwardedAction: FORWARDED_ACTION,
+  });
+
+  // A refusal has to arrive as a rejected promise. A synchronous throw would be
+  // caught by the host's slot boundary, which takes the component off screen
+  // (D10), so both halves are recorded: what the call returned, and what it said.
+  const askUndeclared = () => {
+    noteDispatch({
+      returnedThenable: false,
+      threwSynchronously: false,
+      rejected: false,
+      resolved: false,
+      refusalCode: null,
+      refusalMessage: null,
+    });
+    try {
+      const answer = props.dispatch(UNDECLARED_ACTION, { text: "e2e" });
+      const thenable = typeof answer?.then === "function";
+      noteDispatch({ returnedThenable: thenable });
+      if (!thenable) {
+        noteDispatch({ refusalMessage: String(answer) });
+        return;
+      }
+      answer.then(
+        () => noteDispatch({ resolved: true }),
+        (error) => noteDispatch({
+          rejected: true,
+          refusalTypeof: typeof error,
+          refusalCode: error?.code ?? null,
+          refusalMessage: error?.message ?? String(error),
+        }),
+      );
+    } catch (error) {
+      noteDispatch({
+        threwSynchronously: true,
+        refusalCode: error?.code ?? null,
+        refusalMessage: error?.message ?? String(error),
+      });
+    }
+  };
+  // The forwarded call: the "plugin.call" action is declared too, so the host
+  // relays { method, args } to this plugin's own headless entry and resolves
+  // that entry's answer. Both what was sent and what came back are recorded
+  // per call, because the answer is the only evidence the checks can read from
+  // inside plugin code.
+  const askForwarded = () => {
+    noteDispatch({ forwardedStatus: "pending" });
+    const sent = { method: FORWARDED_METHOD, args: FORWARDED_ARGS };
+    try {
+      const answer = props.dispatch(FORWARDED_ACTION, sent);
+      if (typeof answer?.then !== "function") {
+        noteForwarded({ status: "no-promise", sent, answer: null });
+        return;
+      }
+      answer.then(
+        (value) => noteForwarded({ status: "resolved", sent, answer: value }),
+        (error) => noteForwarded({
+          status: "rejected",
+          sent,
+          answer: null,
+          code: error?.code ?? null,
+          message: error?.message ?? String(error),
+        }),
+      );
+    } catch (error) {
+      noteForwarded({
+        status: "threw",
+        sent,
+        answer: null,
+        code: error?.code ?? null,
+        message: error?.message ?? String(error),
+      });
+    }
+  };
+
   return createElement("span", { className: "pi-e2e-slots__counter" }, [
     createElement("span", { key: "value" }, "clicks=" + clicks),
     createElement(
@@ -310,6 +432,26 @@ function Counter() {
       },
       "bump",
     ),
+    createElement(
+      "button",
+      {
+        key: "undeclared",
+        type: "button",
+        className: "pi-e2e-slots__undeclared",
+        onClick: askUndeclared,
+      },
+      "undeclared",
+    ),
+    createElement(
+      "button",
+      {
+        key: "forwarded",
+        type: "button",
+        className: "pi-e2e-slots__forwarded",
+        onClick: askForwarded,
+      },
+      "forwarded",
+    ),
   ]);
 }
 
@@ -319,11 +461,38 @@ export function onLoad(pi) {
 `;
 
 /**
+ * The fixture's headless entry, and the only place a forwarded call can run.
+ * `calls` is module state inside this plugin's own process, so two renderer
+ * clicks can only read 1 and 2 if the call really re-entered here, and
+ * `entryPid` names the process that answered. `marker` is a string that exists
+ * nowhere else, so an answer carrying it cannot have been composed by the
+ * renderer.
+ */
+const FIXTURE_MAIN = `
+let calls = 0;
+module.exports = {
+  async onRendererCall(method, args) {
+    calls += 1;
+    return {
+      marker: "acme.e2e-slots/main.js:onRendererCall",
+      method,
+      args,
+      counter: calls,
+      entryPid: process.pid,
+    };
+  },
+};
+`;
+
+/**
  * Everything the real-window checks are about, read from the live window after a
  * plugin module has rendered: the preload global and what the plugin realm saw
  * of it, the document import map, the React bindings the plugin-facing specifier
- * and the plugin module resolved, and two clicks through the fixture's own
- * `useState`.
+ * and the plugin module resolved, two clicks through the fixture's own
+ * `useState`, two clicks of its forwarded `plugin.call` button, and what the
+ * fixture's slot component recorded about the `dispatch` prop it was handed,
+ * the undeclared action it called, and the answers the forwarded call resolved
+ * with.
  */
 const RUNTIME_PROBE = `(async () => {
   const bridgeDescriptor = Object.getOwnPropertyDescriptor(window, "piDesktop") ?? null;
@@ -335,6 +504,8 @@ const RUNTIME_PROBE = `(async () => {
   const mappedDomClient = await import("react-dom/client");
   const counter = document.querySelector('[data-pi-plugin="acme.e2e-slots"]');
   const button = counter?.querySelector("button.pi-e2e-slots__bump") ?? null;
+  const undeclaredButton = counter?.querySelector("button.pi-e2e-slots__undeclared") ?? null;
+  const forwardedButton = counter?.querySelector("button.pi-e2e-slots__forwarded") ?? null;
   const read = () => counter?.textContent ?? null;
   const before = read();
   button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -342,6 +513,29 @@ const RUNTIME_PROBE = `(async () => {
   const afterFirst = read();
   button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
   await new Promise((resolve) => setTimeout(resolve, 250));
+  const afterTwo = read();
+  // The refusal probe drives the plugin's own handler. What came back is
+  // recorded by plugin code; only that record is read, never the host's copy.
+  undeclaredButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  const survivedRefusal = Boolean(document.querySelector('[data-pi-plugin="acme.e2e-slots"] button.pi-e2e-slots__undeclared'));
+  // The forwarded call, twice, each click awaited through the plugin-realm
+  // record rather than a fixed sleep: the two answers are the plugin entry's
+  // own first and second, which is what the counter check reads.
+  const forwardedCount = () =>
+    (globalThis.__PI_E2E_PLUGIN_DISPATCH__?.forwardedAnswers ?? []).length;
+  const waitForForwarded = async (wanted, timeoutMs) => {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (forwardedCount() >= wanted) return true;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    return false;
+  };
+  forwardedButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  await waitForForwarded(1, 5000);
+  forwardedButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  await waitForForwarded(2, 5000);
   return {
     bridge: {
       typeofPiDesktop: typeof window.piDesktop,
@@ -374,7 +568,9 @@ const RUNTIME_PROBE = `(async () => {
     demoStyleInjected: Array.from(document.querySelectorAll("style")).some((node) =>
       (node.textContent ?? "").includes(".acme-slots-demo__badge"),
     ),
-    counter: { before, afterFirst, afterTwo: read() },
+    counter: { before, afterFirst, afterTwo },
+    pluginDispatch: globalThis.__PI_E2E_PLUGIN_DISPATCH__ ?? null,
+    slotSurvivedRefusal: survivedRefusal,
   };
 })()`;
 
@@ -397,7 +593,11 @@ async function inspectRendererWindow() {
   mkdirSync(join(fixtureDir, "renderer"), { recursive: true });
   mkdirSync(profileDir, { recursive: true });
   mkdirSync(projectDir, { recursive: true });
-  writeFileSync(join(fixtureDir, "main.js"), "module.exports = {};\n");
+  writeFileSync(join(fixtureDir, "main.js"), FIXTURE_MAIN);
+  // The fixture declares two actions and calls a third: that is what makes a
+  // refusal attributable to the missing declaration rather than to a plugin
+  // that declared nothing at all, and what makes the declared `plugin.call`
+  // forwardable to the headless entry above.
   writeFileSync(
     join(fixtureDir, "manifest.json"),
     JSON.stringify(
@@ -408,6 +608,7 @@ async function inspectRendererWindow() {
         version: "0.0.1",
         main: "main.js",
         renderer: "renderer/index.mjs",
+        rendererActions: ["ui.toast", "plugin.call"],
         permissions: ["renderer.extension"],
       },
       null,
@@ -509,14 +710,20 @@ async function inspectRendererWindow() {
         ),
       "the example plugin's slot component",
     );
+    // Every button the probe clicks, so a probe click cannot land on a
+    // component that is still on its way in.
     await waitFor(
       () =>
         client.evaluate(
-          `!!document.querySelector('[data-pi-plugin="acme.e2e-slots"] button.pi-e2e-slots__bump')`,
+          `!!document.querySelector('[data-pi-plugin="acme.e2e-slots"] button.pi-e2e-slots__bump') && !!document.querySelector('[data-pi-plugin="acme.e2e-slots"] button.pi-e2e-slots__undeclared') && !!document.querySelector('[data-pi-plugin="acme.e2e-slots"] button.pi-e2e-slots__forwarded')`,
         ),
       "the fixture plugin's slot component",
     );
-    return await client.evaluate(RUNTIME_PROBE);
+    // The probe result plus the app's own process id: the forwarded answer
+    // carries the pid of the entry that produced it, and this is what tells the
+    // two apart — a pid that matches the app's main process would mean the
+    // answer never left it.
+    return { ...(await client.evaluate(RUNTIME_PROBE)), appPid: child?.pid ?? null };
   } catch (error) {
     throw new Error(describe(error));
   } finally {
@@ -981,6 +1188,228 @@ export const protocol = {
             }
           : null,
       )}`,
+    );
+  }
+
+  // ── E2E-PLUGIN-renderer-slot-component-receives-dispatch ────────────────
+  // Protects: the one way out of a slot component (ADR 0290 decision 1). The
+  // prop is recorded by the plugin's own component, not read off the host's
+  // copy of the same fact, because only the component can say what it was
+  // handed — and a data-only `slotProps` object is exactly the shape this
+  // interface replaced.
+  try {
+    assert(journey, missingJourney());
+    const recorded = journey.pluginDispatch;
+    assert(recorded, "the fixture's slot component recorded no props, so it never rendered");
+    assert.equal(
+      recorded.typeofDispatch,
+      "function",
+      `a slot component was handed typeof dispatch=${recorded.typeofDispatch}; the props it saw: ${recorded.propNames}`,
+    );
+    record(
+      "E2E-PLUGIN-renderer-slot-component-receives-dispatch",
+      true,
+      `the fixture's slot component saw typeof dispatch=function; props: ${recorded.propNames}`,
+    );
+  } catch (error) {
+    record(
+      "E2E-PLUGIN-renderer-slot-component-receives-dispatch",
+      false,
+      `${error.message} — the fixture recorded ${JSON.stringify(journey?.pluginDispatch ?? null)}`,
+    );
+  }
+
+  // ── E2E-PLUGIN-renderer-undeclared-action-refused ───────────────────────
+  // Protects: a renderer module cannot call a verb its manifest does not
+  // declare. The fixture declares `ui.toast` and calls `composer.replaceDraft`,
+  // so an implementation that routed an action before reading the declaration
+  // could not answer with this code, and neither could one that dropped the
+  // call silently (ADR 0290 decisions 4 and 5).
+  try {
+    assert(journey, missingJourney());
+    const recorded = journey.pluginDispatch;
+    assert(recorded, "the fixture's slot component recorded nothing, so the probe never ran");
+    assert.equal(
+      recorded.undeclaredAction,
+      "composer.replaceDraft",
+      `the fixture called ${recorded.undeclaredAction}, not the undeclared action this check is about`,
+    );
+    assert.equal(
+      recorded.refusalCode,
+      "PLUGIN_ACTION_UNDECLARED",
+      `an action the manifest does not declare was answered with code ${JSON.stringify(recorded.refusalCode)} and message ${JSON.stringify(recorded.refusalMessage)}`,
+    );
+    assert(
+      typeof recorded.refusalMessage === "string" && recorded.refusalMessage.trim().length > 0,
+      `the refusal carries no message: ${JSON.stringify(recorded.refusalMessage)}`,
+    );
+    record(
+      "E2E-PLUGIN-renderer-undeclared-action-refused",
+      true,
+      `${recorded.undeclaredAction} was refused while ${recorded.declaredAction} is declared: ${recorded.refusalCode} — ${recorded.refusalMessage}`,
+    );
+  } catch (error) {
+    record(
+      "E2E-PLUGIN-renderer-undeclared-action-refused",
+      false,
+      `${error.message} — the fixture recorded ${JSON.stringify(journey?.pluginDispatch ?? null)}`,
+    );
+  }
+
+  // ── E2E-PLUGIN-renderer-refused-dispatch-rejects-rather-than-throws ─────
+  // Protects: the refusal travels back through the promise the interface
+  // promises. A synchronous throw out of a slot component's handler is caught
+  // by the host's slot boundary, which takes the whole component off screen
+  // (D10), so this reads what the call returned and whether the plugin's own
+  // component is still mounted after the click.
+  try {
+    assert(journey, missingJourney());
+    const recorded = journey.pluginDispatch;
+    assert(recorded, "the fixture's slot component recorded nothing, so the probe never ran");
+    assert.equal(
+      recorded.threwSynchronously,
+      false,
+      `dispatch() threw synchronously out of the component: code=${JSON.stringify(recorded.refusalCode)} message=${JSON.stringify(recorded.refusalMessage)}`,
+    );
+    assert.equal(
+      recorded.returnedThenable,
+      true,
+      `dispatch() returned no promise, so a refusal has nowhere to arrive: ${JSON.stringify(recorded)}`,
+    );
+    assert.equal(
+      recorded.rejected,
+      true,
+      `the refused dispatch did not reject; resolved=${JSON.stringify(recorded.resolved)}: ${JSON.stringify(recorded)}`,
+    );
+    assert(
+      journey.slotSurvivedRefusal,
+      "the fixture's component left the screen after the refused dispatch, which is what a synchronous throw under the slot boundary looks like",
+    );
+    record(
+      "E2E-PLUGIN-renderer-refused-dispatch-rejects-rather-than-throws",
+      true,
+      "dispatch() returned a promise that rejected, nothing threw synchronously, and the slot component stayed mounted",
+    );
+  } catch (error) {
+    record(
+      "E2E-PLUGIN-renderer-refused-dispatch-rejects-rather-than-throws",
+      false,
+      `${error.message} — the fixture recorded ${JSON.stringify(journey?.pluginDispatch ?? null)}, slot survived the refusal: ${JSON.stringify(journey?.slotSurvivedRefusal)}`,
+    );
+  }
+
+  // ── E2E-PLUGIN-renderer-call-round-trip ─────────────────────────────────
+  // Protects: the forwarded half of the interface (ADR 0290 decision 4). A
+  // slot component dispatches `plugin.call { method, args }` and the promise
+  // resolves with what the plugin's own headless entry returned — a marker that
+  // exists nowhere in the renderer, the method it was asked for, and the
+  // arguments it was handed. The renderer records what it sent, so the check
+  // compares an echo through the process boundary, not two copies of a literal.
+  try {
+    assert(journey, missingJourney());
+    const recorded = journey.pluginDispatch;
+    assert(recorded, "the fixture's slot component recorded nothing, so the probe never ran");
+    assert.equal(
+      recorded.forwardedStatus,
+      "resolved",
+      `the forwarded ${recorded.forwardedAction} call did not resolve: ${JSON.stringify(recorded.forwardedAnswers ?? null)}`,
+    );
+    const answers = recorded.forwardedAnswers ?? [];
+    assert.equal(
+      answers.length,
+      2,
+      `the probe clicked the forwarded button twice but recorded ${answers.length} resolution(s): ${JSON.stringify(answers)}`,
+    );
+    const first = answers[0];
+    assert.equal(
+      first.status,
+      "resolved",
+      `the forwarded call was answered with ${first.status}: code=${JSON.stringify(first.code)} message=${JSON.stringify(first.message)}`,
+    );
+    assert.equal(
+      first.answer?.marker,
+      "acme.e2e-slots/main.js:onRendererCall",
+      `the answer carries no marker from the plugin's own entry: ${JSON.stringify(first.answer)}`,
+    );
+    assert.equal(
+      first.answer?.method,
+      first.sent?.method,
+      `the entry was asked for ${JSON.stringify(first.sent?.method)} but answered for ${JSON.stringify(first.answer?.method)}`,
+    );
+    assert.deepEqual(
+      first.answer?.args,
+      first.sent?.args,
+      `the entry did not echo the arguments the renderer sent: sent ${JSON.stringify(first.sent?.args)}, answered ${JSON.stringify(first.answer?.args)}`,
+    );
+    record(
+      "E2E-PLUGIN-renderer-call-round-trip",
+      true,
+      `${recorded.forwardedAction} ${JSON.stringify(first.sent)} resolved with the entry's own answer ${JSON.stringify(first.answer)}`,
+    );
+  } catch (error) {
+    record(
+      "E2E-PLUGIN-renderer-call-round-trip",
+      false,
+      `${error.message} — the fixture recorded ${JSON.stringify(journey?.pluginDispatch ?? null)}`,
+    );
+  }
+
+  // ── E2E-PLUGIN-renderer-call-runs-in-the-plugin-entry ───────────────────
+  // Protects: "its own entry" (ADR 0290 decision 4). The fixture's headless
+  // entry answers with a counter it increments per call and with its own pid, so
+  // two clicks have to come back 1 then 2 from one and the same process. The
+  // counter is state the renderer has no way to advance, and the pid must not be
+  // the app's own main process — an answer produced there would be a host-side
+  // imitation of the entry, not the entry.
+  try {
+    assert(journey, missingJourney());
+    const answers = journey.pluginDispatch?.forwardedAnswers ?? [];
+    assert.equal(
+      answers.length,
+      2,
+      `the counter needs two resolved calls, recorded ${answers.length}: ${JSON.stringify(answers)}`,
+    );
+    const [first, second] = answers;
+    assert.equal(
+      first.answer?.counter,
+      1,
+      `the entry's first answer counted ${JSON.stringify(first.answer?.counter)}, not 1: ${JSON.stringify(first.answer)}`,
+    );
+    assert.equal(
+      second.answer?.counter,
+      2,
+      `the entry's second answer counted ${JSON.stringify(second.answer?.counter)}, not 2 — the call did not re-enter the same entry: ${JSON.stringify(second.answer)}`,
+    );
+    assert.equal(
+      typeof first.answer?.entryPid,
+      "number",
+      `the entry named no process: ${JSON.stringify(first.answer)}`,
+    );
+    assert.equal(
+      second.answer?.entryPid,
+      first.answer?.entryPid,
+      `two calls to one entry were answered by different processes: ${first.answer?.entryPid} then ${second.answer?.entryPid}`,
+    );
+    assert.equal(
+      typeof journey.appPid,
+      "number",
+      "the journey did not record the app's own process id, so the entry's pid cannot be told apart from it",
+    );
+    assert.notEqual(
+      first.answer.entryPid,
+      journey.appPid,
+      `the answer came from the app's main process pid ${journey.appPid}, so the call never reached the plugin's own entry`,
+    );
+    record(
+      "E2E-PLUGIN-renderer-call-runs-in-the-plugin-entry",
+      true,
+      `two clicks answered 1 then 2 by entry pid ${first.answer.entryPid}, which is not the app's pid ${journey.appPid}`,
+    );
+  } catch (error) {
+    record(
+      "E2E-PLUGIN-renderer-call-runs-in-the-plugin-entry",
+      false,
+      `${error.message} — the fixture recorded ${JSON.stringify(journey?.pluginDispatch ?? null)}, app pid ${JSON.stringify(journey?.appPid ?? null)}`,
     );
   }
 } catch (error) {

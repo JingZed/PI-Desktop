@@ -454,6 +454,30 @@ function normalizePlansChangedEvent(value: unknown): PlanningStateEvent {
   };
 }
 
+/**
+ * One forwarded renderer action (`plugin.call`, ADR 0290 decision 4): the main
+ * process re-checks the plugin id against the manifest it loaded and relays the
+ * call to that plugin's own headless entry; this returns the entry's answer
+ * unchanged.
+ *
+ * This module is the generic preload/IPC wrapper and stays one: it knows
+ * nothing about plugin rows. A coded refusal propagates to the caller, and the
+ * `plugin.call` handler in `plugins/renderer-host/host-actions.ts` is what
+ * turns one into a diagnostic, which is the only place a refusal becomes
+ * visible on a plugin's row.
+ */
+async function rendererCall(pluginId: string, method: string, args: unknown): Promise<unknown> {
+  // An absent answer arrives as `null` at the plugin boundary; the fallback
+  // keeps that true for a path that somehow resolves nothing at all.
+  return (
+    (await invoke<unknown>(IPC.invoke.pluginRendererCall, {
+      pluginId,
+      method,
+      args: args ?? null,
+    })) ?? null
+  );
+}
+
 export const api = {
   getVersion: () => invoke<AppVersionInfo>(IPC.invoke.appGetVersion),
   health: () => invoke<HostHealth>(IPC.invoke.appHealth),
@@ -819,6 +843,20 @@ export const api = {
    */
   pluginRendererEntry: (id: string) =>
     invoke<{ entry: string | null }>(IPC.invoke.pluginRendererEntry, id),
+  /**
+   * Runs one method inside the plugin's own headless entry and resolves with
+   * its answer (ADR 0290 decision 4, the `plugin.call` action). `id` is the
+   * plugin the component was rendered for, chosen by the host rather than by
+   * the caller, and the main process re-checks that plugin's declaration before
+   * anything is forwarded.
+   *
+   * A refusal is a coded error and nothing else: the caller that owns the
+   * plugin row — the `plugin.call` handler in
+   * `plugins/renderer-host/host-actions.ts` — reports it as a diagnostic, so
+   * this wrapper stays free of plugin UI.
+   */
+  pluginRendererCall: (id: string, method: string, args?: unknown) =>
+    rendererCall(id, method, args),
   /**
    * Picking a folder only reports what it declares; the load happens in
    * `confirmLoadDevPlugin` once the user has seen that.

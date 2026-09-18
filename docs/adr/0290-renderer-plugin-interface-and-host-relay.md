@@ -34,7 +34,7 @@ uses and what it does.
 
 Two facts from ADR 0287 bound what such a wire can be worth. The trusted
 renderer module shares the host's realm, module graph and React tree, and it can
-reach `window.piDesktop` and all 242 whitelisted preload channels with no
+reach `window.piDesktop` and all 243 whitelisted preload channels with no
 per-caller check (ADR 0287 decision 6, measured in a real Electron run). So this
 interface is a contract for plugins that behave, not a wall around plugins that
 do not.

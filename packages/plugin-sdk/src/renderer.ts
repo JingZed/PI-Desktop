@@ -82,33 +82,82 @@ export type PluginRendererDataKey = (typeof PLUGIN_RENDERER_DATA)[number];
 /**
  * Actions a renderer component may ask the host to run. The vocabulary is
  * host-owned, so a plugin declares intent instead of inventing verbs, and the
- * declaration is what an install review reads. Only `plugin.call`,
- * `composer.replaceDraft`, and `ui.toast` are wired up in this release; the
- * rest are declarable but refuse with an explicit error at call time rather
- * than failing silently.
+ * declaration is what an install review reads.
+ *
+ * Three are implemented in this release and say so below. Every other name is
+ * declarable but has no host handler yet: calling one rejects with a coded
+ * `PLUGIN_ACTION_UNROUTED` refusal rather than resolving `undefined`.
  */
 export const PLUGIN_RENDERER_ACTIONS = [
-  /** Runs a method on the plugin's own backend process. */
+  /**
+   * Runs a method inside the plugin's own headless entry (`onRendererCall`) and
+   * resolves with its answer. Payload `{ method: string, args?: unknown }`.
+   * Refused with a coded error when the plugin's manifest does not declare this
+   * action, when the plugin has no entry or no such handler, or when the call
+   * times out.
+   */
   "plugin.call",
-  /** Replaces the whole composer draft. */
+  /**
+   * Replaces the active session's whole composer draft. Payload
+   * `{ text: string }`; the resulting draft text is exactly that string and its
+   * attachment chips are cleared. Resolves once a mounted composer consumed the
+   * write, and refuses with `PLUGIN_ACTION_DRAFT_UNCONSUMED` when none did.
+   */
   "composer.replaceDraft",
-  /** Inserts text at the composer's current selection. Not implemented yet. */
+  /**
+   * Inserts text at the composer's current selection. Not implemented yet:
+   * calling it rejects with a coded `PLUGIN_ACTION_UNROUTED` refusal.
+   */
   "composer.insertText",
-  /** Attaches a path as a composer attachment chip. Not implemented yet. */
+  /**
+   * Attaches a path as a composer attachment chip. Not implemented yet: calling
+   * it rejects with a coded `PLUGIN_ACTION_UNROUTED` refusal.
+   */
   "composer.attachPath",
-  /** Opens an in-window overlay layer. Not implemented yet. */
+  /**
+   * Opens an in-window overlay layer. Not implemented yet: calling it rejects
+   * with a coded `PLUGIN_ACTION_UNROUTED` refusal.
+   */
   "ui.openOverlay",
-  /** Closes the overlay this plugin opened. Not implemented yet. */
+  /**
+   * Closes the overlay this plugin opened. Not implemented yet: calling it
+   * rejects with a coded `PLUGIN_ACTION_UNROUTED` refusal.
+   */
   "ui.closeOverlay",
-  /** Opens an app-level modal. Not implemented yet. */
+  /**
+   * Opens an app-level modal. Not implemented yet: calling it rejects with a
+   * coded `PLUGIN_ACTION_UNROUTED` refusal.
+   */
   "ui.openModal",
-  /** Closes the modal this plugin opened. Not implemented yet. */
+  /**
+   * Closes the modal this plugin opened. Not implemented yet: calling it
+   * rejects with a coded `PLUGIN_ACTION_UNROUTED` refusal.
+   */
   "ui.closeModal",
-  /** Shows a host notification. */
+  /**
+   * Shows the shell's toast. Payload
+   * `{ message: string, variant?: "info" | "success" | "error" }`; omitted
+   * variant uses the host default (`info`). A blank message or an unknown
+   * variant is refused with `PLUGIN_ACTION_INVALID_PAYLOAD`.
+   */
   "ui.toast",
 ] as const;
 
 export type PluginRendererActionName = (typeof PLUGIN_RENDERER_ACTIONS)[number];
+
+/**
+ * The host method a slot component calls to act (ADR 0290). It arrives as the
+ * `dispatch` prop on every render, bound to exactly one plugin: an action that
+ * plugin did not declare in `manifest.rendererActions` is refused with a
+ * `PLUGIN_ACTION_UNDECLARED` error, and a declared action the host has no
+ * handler for yet is refused with `PLUGIN_ACTION_UNROUTED` rather than resolving
+ * `undefined`. It is a contract for plugins that behave, not a security
+ * boundary.
+ */
+export type PiRendererDispatch = (
+  action: PluginRendererActionName,
+  payload?: unknown,
+) => Promise<unknown>;
 
 /**
  * A React component, typed structurally: the host renders it, and the plugin
@@ -140,6 +189,12 @@ export type PiRendererApi = {
     readonly version: string;
   };
   readonly slots: {
+    /**
+     * Registers one component for a slot. The host renders it with the slot's
+     * data as props plus a `dispatch` prop (`PiRendererDispatch`) bound to this
+     * plugin. The same function object is handed over on every render, so it is
+     * safe to list as a `useEffect` dependency.
+     */
     register<Props>(
       slot: PluginRendererSlot,
       component: PiRendererComponent<Props>,

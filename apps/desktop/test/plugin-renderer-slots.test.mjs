@@ -7,8 +7,13 @@
  * guard that refuses a sheet reaching for the host's own roots.
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { register } from "node:module";
 import { test } from "node:test";
+import * as React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import * as jsxRuntime from "react/jsx-runtime";
+import ts from "typescript";
 register(new URL("./helpers/ts-import-hooks.mjs", import.meta.url));
 
 /** A file's worth of DOM, enough for the style injection contract. */
@@ -56,6 +61,25 @@ const document = {
 
 globalThis.document = document;
 
+/**
+ * `lib/api` captures the preload bridge at import time, so the fake goes in
+ * before the first import below and each test programs the reply it needs.
+ * `plugin-renderer-call` covers the real main process with a real plugin
+ * process; these cases are about what the renderer sends and what it does with
+ * the answer.
+ */
+const bridgeCalls = [];
+let bridgeReply = () => ({ ok: true, data: null });
+globalThis.piDesktop = {
+  invoke: async (channel, ...args) => {
+    bridgeCalls.push({ channel, args });
+    return bridgeReply(channel, args);
+  },
+  on: () => () => {},
+  channels: {},
+  platform: "darwin",
+};
+
 const { pluginSlots, resetPluginSlots } = await import(
   "../src/plugins/renderer-slots/registry.ts"
 );
@@ -73,6 +97,61 @@ const {
   codeBlockSourceTooLarge,
 } = await import("../src/plugins/renderer-slots/code-blocks.ts");
 const { MAX_MERMAID_SOURCE_LENGTH } = await import("../src/lib/mermaid.ts");
+const loader = await import("../src/plugins/renderer-host/loader.ts");
+const relay = await import("../src/plugins/renderer-host/relay.ts");
+const registryModule = await import("../src/plugins/renderer-slots/registry.ts");
+const { ensureRendererPlugin, resetRendererPlugins } = loader;
+const { IPC } = await import("@pi-desktop/shared");
+const { PLUGIN_RENDERER_ACTIONS } = await import("@pi-desktop/plugin-sdk");
+const { installRendererHostActions, DRAFT_PREFILL_DEADLINE_MS } = await import(
+  "../src/plugins/renderer-host/host-actions.ts"
+);
+const { useAppStore } = await import("../src/stores/app-store.ts");
+const {
+  dispatchFromPlugin,
+  registerHostRendererAction,
+  resetRendererRelay,
+  slotDispatchFor,
+} = relay;
+
+/**
+ * `SlotOutlet.tsx` is the one TSX module here, so it is transpiled the same
+ * way the presentation tests load their components: the outlet's dependencies
+ * are handed over explicitly, which also proves the props contract at the
+ * component boundary instead of only inside the relay.
+ */
+function loadSlotOutlet() {
+  const file = new URL("../src/plugins/renderer-slots/SlotOutlet.tsx", import.meta.url);
+  const source = readFileSync(file, "utf8");
+  const { outputText } = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
+    fileName: file.pathname,
+  });
+  const imports = {
+    react: React,
+    "react/jsx-runtime": jsxRuntime,
+    "../renderer-host/loader": loader,
+    "../renderer-host/relay": relay,
+    "./registry": registryModule,
+  };
+  const module = { exports: {} };
+  new Function("require", "exports", "module", outputText)(
+    (id) => {
+      assert.ok(Object.hasOwn(imports, id), `unmocked slot outlet dependency: ${id}`);
+      return imports[id];
+    },
+    module.exports,
+    module,
+  );
+  return module.exports;
+}
+
+/** Action refusals, in order; other diagnostics from the setup are ignored. */
+function actionRefusals() {
+  return pluginSlots
+    .listDiagnostics()
+    .filter((entry) => entry.code.startsWith("PLUGIN_ACTION_"));
+}
 
 function component() {
   return null;
@@ -435,4 +514,460 @@ test("a plugin block is capped at the same source ceiling the host uses for merm
   const atLimit = "x".repeat(MAX_PLUGIN_CODE_BLOCK_SOURCE_LENGTH);
   assert.equal(codeBlockSourceTooLarge(atLimit), false);
   assert.equal(codeBlockSourceTooLarge(`${atLimit}x`), true);
+});
+
+test("a mount that owns one registration draws only it, keeping the container attributes it needs", () => {
+  resetPluginSlots();
+  resetRendererPlugins();
+  resetRendererRelay();
+  const { PluginSlot } = loadSlotOutlet();
+  const drawn = [];
+  pluginSlots.register(
+    "acme.notes",
+    "codeBlock",
+    (props) => {
+      drawn.push(["acme.notes", props.language]);
+      return null;
+    },
+    { language: "acme.notes:chart" },
+  );
+  pluginSlots.register(
+    "acme.plots",
+    "codeBlock",
+    (props) => {
+      drawn.push(["acme.plots", props.language]);
+      return null;
+    },
+    { language: "acme.plots:timeline" },
+  );
+  const [notes] = pluginSlots.list("codeBlock");
+  const markup = renderToStaticMarkup(
+    React.createElement(
+      PluginSlot,
+      {
+        slot: "codeBlock",
+        registrations: [notes],
+        slotProps: {
+          language: "acme.notes:chart",
+          code: "A --> B",
+          isIncomplete: false,
+          theme: "dark",
+        },
+        containerProps: { "data-source-start": 7, "data-source-end": 21 },
+      },
+      React.createElement("div", { className: "host-code" }, "host block"),
+    ),
+  );
+  assert.deepEqual(drawn, [["acme.notes", "acme.notes:chart"]]);
+  assert.match(markup, /data-pi-plugin="acme\.notes"/);
+  assert.match(markup, /data-pi-plugin-slot="codeBlock"/);
+  assert.match(markup, /data-source-start="7"/);
+  assert.match(markup, /data-source-end="21"/);
+  assert.doesNotMatch(markup, /acme\.plots|host-code/);
+
+  // An empty list is a position nothing owns: the host's own rendering shows.
+  drawn.length = 0;
+  const empty = renderToStaticMarkup(
+    React.createElement(
+      PluginSlot,
+      { slot: "codeBlock", registrations: [], slotProps: {} },
+      React.createElement("div", { className: "host-code" }, "host block"),
+    ),
+  );
+  assert.deepEqual(drawn, []);
+  assert.match(empty, /host-code/);
+  assert.doesNotMatch(empty, /data-pi-plugin/);
+});
+
+test("a candidate's declared actions are live from the outlet's first render, without a load", async () => {
+  resetPluginSlots();
+  resetRendererPlugins();
+  resetRendererRelay();
+  const { PluginSlot } = loadSlotOutlet();
+  // No `ensureRendererPlugin` call anywhere: the mount carries the row, so the
+  // relay must answer from what the render recorded.
+  renderToStaticMarkup(
+    React.createElement(PluginSlot, {
+      slot: "entry",
+      slotProps: {},
+      candidates: [
+        {
+          id: "acme.one",
+          declared: true,
+          rendererData: [],
+          rendererActions: ["ui.toast"],
+        },
+      ],
+    }),
+  );
+  const seen = [];
+  const remove = registerHostRendererAction("ui.toast", (payload, pluginId) => {
+    seen.push([pluginId, payload]);
+    return "shown";
+  });
+  assert.equal(await dispatchFromPlugin("acme.one", "ui.toast", { text: "hi" }), "shown");
+  assert.deepEqual(seen, [["acme.one", { text: "hi" }]]);
+  await assert.rejects(
+    () => dispatchFromPlugin("acme.one", "composer.replaceDraft"),
+    (error) => error.code === "PLUGIN_ACTION_UNDECLARED",
+  );
+  remove();
+});
+test("the outlet hands a plugin's component a dispatch bound to that plugin", () => {
+  resetPluginSlots();
+  resetRendererPlugins();
+  resetRendererRelay();
+  const { PluginSlot } = loadSlotOutlet();
+  let received = null;
+  pluginSlots.register("acme.one", "entry", (props) => {
+    received = props;
+    return null;
+  });
+  const candidates = [
+    {
+      id: "acme.one",
+      version: "1.0.0",
+      declared: true,
+      rendererData: ["entry"],
+      rendererActions: ["ui.toast"],
+    },
+  ];
+  const render = () =>
+    renderToStaticMarkup(
+      React.createElement(PluginSlot, {
+        slot: "entry",
+        // A slot prop named `dispatch` must lose to the host's own function.
+        slotProps: { entry: { id: "entry-1", role: "user" }, dispatch: "not a function" },
+        candidates,
+      }),
+    );
+
+  const markup = render();
+  assert.match(markup, /data-pi-plugin="acme\.one"/);
+  assert.equal(received.entry.id, "entry-1");
+  assert.equal(typeof received.dispatch, "function");
+  assert.notEqual(received.dispatch, "not a function");
+
+  // The same function object comes back on the next render, and everything one
+  // plugin renders shares it — a plugin may list `dispatch` as a dependency.
+  const first = received.dispatch;
+  render();
+  assert.equal(received.dispatch, first);
+  assert.equal(received.dispatch, slotDispatchFor("acme.one"));
+  assert.notEqual(received.dispatch, slotDispatchFor("acme.two"));
+});
+
+test("a dispatch for an action the plugin never declared is refused with PLUGIN_ACTION_UNDECLARED", async () => {
+  resetPluginSlots();
+  resetRendererPlugins();
+  resetRendererRelay();
+  const { PluginSlot } = loadSlotOutlet();
+  let dispatch = null;
+  pluginSlots.register("acme.quiet", "entry", (props) => {
+    dispatch = props.dispatch;
+    return null;
+  });
+  renderToStaticMarkup(
+    React.createElement(PluginSlot, {
+      slot: "entry",
+      slotProps: {},
+      candidates: [
+        { id: "acme.quiet", declared: true, rendererData: [], rendererActions: [] },
+      ],
+    }),
+  );
+  assert.equal(typeof dispatch, "function");
+
+  await assert.rejects(
+    () => dispatch("composer.replaceDraft", { text: "hello" }),
+    (error) =>
+      error.code === "PLUGIN_ACTION_UNDECLARED" &&
+      error.message === "PLUGIN_ACTION_UNDECLARED" &&
+      error.action === "composer.replaceDraft" &&
+      error.pluginId === "acme.quiet",
+    "an undeclared action must reject, never resolve",
+  );
+  const [refusal] = actionRefusals();
+  assert.equal(refusal.code, "PLUGIN_ACTION_UNDECLARED");
+  assert.equal(refusal.pluginId, "acme.quiet");
+  assert.match(refusal.detail, /did not declare "composer\.replaceDraft"/);
+});
+
+test("a declared action with no route yet is refused with PLUGIN_ACTION_UNROUTED, naming the action", async () => {
+  resetPluginSlots();
+  resetRendererPlugins();
+  resetRendererRelay();
+  // Recording the row's declaration is enough: the relay answers from what the
+  // mount point carried in, whether or not the module ever loads.
+  await ensureRendererPlugin("acme.one", {
+    declared: false,
+    actions: ["ui.toast", "plugin.call"],
+  });
+  for (const action of ["ui.toast", "plugin.call"]) {
+    await assert.rejects(
+      () => dispatchFromPlugin("acme.one", action, { method: "ping" }),
+      (error) =>
+        error.code === "PLUGIN_ACTION_UNROUTED" &&
+        error.message === "PLUGIN_ACTION_UNROUTED" &&
+        error.action === action,
+      `${action} must not resolve to undefined`,
+    );
+  }
+  assert.deepEqual(
+    actionRefusals().map((entry) => [entry.code, entry.detail]),
+    [
+      ["PLUGIN_ACTION_UNROUTED", 'the host has no handler for "ui.toast" yet'],
+      ["PLUGIN_ACTION_UNROUTED", 'the host has no handler for "plugin.call" yet'],
+    ],
+  );
+});
+
+test("a registered host handler receives the payload and its value is what dispatch resolves", async () => {
+  resetPluginSlots();
+  resetRendererPlugins();
+  resetRendererRelay();
+  const seen = [];
+  const remove = registerHostRendererAction("ui.toast", (payload, pluginId) => {
+    seen.push({ payload, pluginId });
+    return { shown: true };
+  });
+  await ensureRendererPlugin("acme.one", { declared: false, actions: ["ui.toast"] });
+
+  assert.deepEqual(await dispatchFromPlugin("acme.one", "ui.toast", { text: "hi" }), {
+    shown: true,
+  });
+  assert.deepEqual(seen, [{ payload: { text: "hi" }, pluginId: "acme.one" }]);
+  assert.deepEqual(actionRefusals(), []);
+
+  // Withdrawing the handler turns the same call back into an explicit refusal.
+  remove();
+  await assert.rejects(
+    () => dispatchFromPlugin("acme.one", "ui.toast", {}),
+    (error) => error.code === "PLUGIN_ACTION_UNROUTED",
+  );
+});
+
+test("one plugin's declaration does not authorise another plugin's dispatch", async () => {
+  resetPluginSlots();
+  resetRendererPlugins();
+  resetRendererRelay();
+  await ensureRendererPlugin("acme.one", { declared: false, actions: ["ui.toast"] });
+  await ensureRendererPlugin("acme.two", { declared: false, actions: [] });
+  const remove = registerHostRendererAction("ui.toast", () => "ok");
+  assert.equal(await dispatchFromPlugin("acme.one", "ui.toast"), "ok");
+  await assert.rejects(
+    () => dispatchFromPlugin("acme.two", "ui.toast"),
+    (error) => error.code === "PLUGIN_ACTION_UNDECLARED",
+  );
+  remove();
+});
+
+test("a handler for a name outside the action vocabulary is refused at registration", () => {
+  resetRendererRelay();
+  assert.throws(
+    () => registerHostRendererAction("ui.invented", () => null),
+    (error) => error.code === "PLUGIN_ACTION_UNKNOWN" && error.action === "ui.invented",
+  );
+});
+
+/** Every test here installs the real wiring and then drives the real relay. */
+async function installed(actions) {
+  resetPluginSlots();
+  resetRendererPlugins();
+  resetRendererRelay();
+  installRendererHostActions();
+  bridgeCalls.length = 0;
+  bridgeReply = () => ({ ok: true, data: null });
+  useAppStore.setState({ activeSessionId: undefined, composerPrefill: null, toasts: [] });
+  await ensureRendererPlugin("acme.one", { declared: false, actions });
+}
+
+test("installing the host actions routes the three implemented names and leaves the rest unrouted", async () => {
+  await installed([...PLUGIN_RENDERER_ACTIONS]);
+  for (const action of ["plugin.call", "ui.toast", "composer.replaceDraft"]) {
+    await assert.rejects(
+      () => dispatchFromPlugin("acme.one", action, undefined),
+      (error) => error.code === "PLUGIN_ACTION_INVALID_PAYLOAD" && error.action === action,
+      `${action} must be handled, not unrouted`,
+    );
+  }
+  for (const action of PLUGIN_RENDERER_ACTIONS.filter(
+    (name) => !["plugin.call", "ui.toast", "composer.replaceDraft"].includes(name),
+  )) {
+    await assert.rejects(
+      () => dispatchFromPlugin("acme.one", action, {}),
+      (error) => error.code === "PLUGIN_ACTION_UNROUTED" && error.action === action,
+      `${action} must be an explicit unrouted refusal`,
+    );
+  }
+});
+
+test("plugin.call forwards to the plugin's own entry and answers with its value", async () => {
+  await installed(["plugin.call"]);
+  bridgeReply = () => ({ ok: true, data: { echo: "pong" } });
+
+  assert.deepEqual(
+    await dispatchFromPlugin("acme.one", "plugin.call", {
+      method: "slots.echo",
+      args: { text: "hi" },
+    }),
+    { echo: "pong" },
+  );
+  assert.equal(bridgeCalls.length, 1);
+  assert.equal(bridgeCalls[0].channel, IPC.invoke.pluginRendererCall);
+  // The plugin id is the one the component was rendered for, chosen by the
+  // host — never the payload's.
+  assert.deepEqual(bridgeCalls[0].args[0], {
+    pluginId: "acme.one",
+    method: "slots.echo",
+    args: { text: "hi" },
+  });
+  assert.deepEqual(
+    pluginSlots.listDiagnostics().filter((entry) => entry.code.startsWith("PLUGIN_ACTION_")),
+    [],
+  );
+});
+
+test("a refused forwarded call is reported exactly once, by the plugin.call handler", async () => {
+  await installed(["plugin.call"]);
+  bridgeReply = () => ({
+    ok: false,
+    error: { code: "PLUGIN_CALL_UNKNOWN_PLUGIN", message: "no such plugin" },
+  });
+
+  await assert.rejects(
+    () => dispatchFromPlugin("acme.one", "plugin.call", { method: "slots.echo" }),
+    (error) => error.code === "PLUGIN_CALL_UNKNOWN_PLUGIN",
+  );
+  const refusals = pluginSlots
+    .listDiagnostics()
+    .filter((entry) => entry.code === "PLUGIN_CALL_UNKNOWN_PLUGIN");
+  assert.equal(refusals.length, 1, "the relay must not add a second diagnostic");
+  assert.equal(refusals[0].pluginId, "acme.one");
+  assert.match(refusals[0].detail, /slots\.echo/);
+});
+
+test("ui.toast reaches the store with the payload's message and variant", async () => {
+  await installed(["ui.toast"]);
+
+  assert.equal(
+    await dispatchFromPlugin("acme.one", "ui.toast", {
+      message: "from a plugin",
+      variant: "success",
+    }),
+    undefined,
+  );
+  assert.deepEqual(
+    useAppStore.getState().toasts.map((toast) => [toast.message, toast.variant]),
+    [["from a plugin", "success"]],
+  );
+  // An omitted variant is the store's own default, not one this host chooses.
+  await dispatchFromPlugin("acme.one", "ui.toast", { message: "plain" });
+  assert.deepEqual(
+    useAppStore.getState().toasts.map((toast) => [toast.message, toast.variant]),
+    [
+      ["from a plugin", "success"],
+      ["plain", "info"],
+    ],
+  );
+});
+
+test("a bad payload for each implemented action is refused with PLUGIN_ACTION_INVALID_PAYLOAD", async () => {
+  await installed(["plugin.call", "ui.toast", "composer.replaceDraft"]);
+  const cases = [
+    ["plugin.call", undefined],
+    ["plugin.call", { method: "   " }],
+    ["plugin.call", { method: 7 }],
+    ["ui.toast", {}],
+    ["ui.toast", { message: "  " }],
+    ["ui.toast", { message: "ok", variant: "warning" }],
+    ["composer.replaceDraft", {}],
+    ["composer.replaceDraft", { text: 7 }],
+  ];
+  for (const [action, payload] of cases) {
+    await assert.rejects(
+      () => dispatchFromPlugin("acme.one", action, payload),
+      (error) => error.code === "PLUGIN_ACTION_INVALID_PAYLOAD" && error.action === action,
+      `${action} with ${JSON.stringify(payload)} must be refused`,
+    );
+  }
+  // Refused before it could cross IPC, or touch the store.
+  assert.deepEqual(bridgeCalls, []);
+  assert.deepEqual(useAppStore.getState().toasts, []);
+  assert.equal(
+    pluginSlots.listDiagnostics().filter(
+      (entry) => entry.code === "PLUGIN_ACTION_INVALID_PAYLOAD",
+    ).length,
+    cases.length,
+  );
+});
+
+test("composer.replaceDraft resolves once a mounted composer consumes the write", async () => {
+  await installed(["composer.replaceDraft"]);
+  useAppStore.setState({ activeSessionId: "session-1" });
+
+  // Exactly what `useComposerDraft`'s prefill effect does: take the prefill for
+  // the active session and clear it.
+  const consumed = [];
+  const unsubscribe = useAppStore.subscribe(() => {
+    const prefill = useAppStore.getState().composerPrefill;
+    if (prefill && prefill.sessionId === "session-1") {
+      consumed.push(prefill);
+      useAppStore.getState().clearComposerPrefill();
+    }
+  });
+  const pending = dispatchFromPlugin("acme.one", "composer.replaceDraft", {
+    text: "written by a plugin",
+  });
+  assert.equal(await pending, undefined);
+  unsubscribe();
+
+  assert.deepEqual(
+    consumed.map((prefill) => [prefill.sessionId, prefill.text, prefill.fileReferences]),
+    [["session-1", "written by a plugin", []]],
+  );
+  assert.equal(useAppStore.getState().composerPrefill, null);
+  assert.deepEqual(
+    pluginSlots.listDiagnostics().filter((entry) => entry.code.startsWith("PLUGIN_ACTION_")),
+    [],
+  );
+});
+
+test("composer.replaceDraft rejects and clears the write when no composer consumes it", async () => {
+  await installed(["composer.replaceDraft"]);
+  useAppStore.setState({ activeSessionId: "session-1" });
+
+  const startedAt = Date.now();
+  await assert.rejects(
+    () => dispatchFromPlugin("acme.one", "composer.replaceDraft", { text: "dropped" }),
+    (error) =>
+      error.code === "PLUGIN_ACTION_DRAFT_UNCONSUMED" &&
+      error.action === "composer.replaceDraft",
+  );
+  assert.ok(
+    Date.now() - startedAt >= DRAFT_PREFILL_DEADLINE_MS - 50,
+    "an unconsumed write must wait for the deadline before refusing",
+  );
+  assert.equal(
+    useAppStore.getState().composerPrefill,
+    null,
+    "the unconsumed write must not linger in the store",
+  );
+  const [refusal] = pluginSlots
+    .listDiagnostics()
+    .filter((entry) => entry.code === "PLUGIN_ACTION_DRAFT_UNCONSUMED");
+  assert.equal(refusal.pluginId, "acme.one");
+  assert.match(refusal.detail, new RegExp(`${DRAFT_PREFILL_DEADLINE_MS} ms`));
+});
+
+test("composer.replaceDraft with no active session refuses immediately", async () => {
+  await installed(["composer.replaceDraft"]);
+  const startedAt = Date.now();
+  await assert.rejects(
+    () => dispatchFromPlugin("acme.one", "composer.replaceDraft", { text: "nowhere" }),
+    (error) =>
+      error.code === "PLUGIN_ACTION_DRAFT_UNCONSUMED" && /no active session/.test(error.detail),
+  );
+  assert.ok(Date.now() - startedAt < DRAFT_PREFILL_DEADLINE_MS);
+  assert.equal(useAppStore.getState().composerPrefill, null);
 });

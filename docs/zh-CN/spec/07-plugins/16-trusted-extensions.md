@@ -86,7 +86,8 @@ ES 模块，由宿主渲染器在应用自己的窗口内获取并求值，在�
   开发环境可用，打包后才坏。
 - 模块的 `onLoad(pi)` 钩子是必需的，注册就发生在那里；`onUnload()` 可选。`pi` 对象
   只携带 `plugin.id` / `plugin.version`、`pi.slots.register` 与
-  `pi.ui.injectStyle`，别无其他。
+  `pi.ui.injectStyle`，别无其他 —— 槽位组件的宿主数据与它的 `dispatch` 方法以 props
+  交给组件，不经过该对象（§2A.7）。
 - React 是单例：宿主注入自己的 React，并把裸标识符 `react`、`react-dom`、
   `react-dom/client` 映射到它；自带 React 副本的插件在加载时被拒绝并记录诊断，
   因为两份副本会破坏 hooks 与 context。
@@ -100,7 +101,7 @@ ES 模块，由宿主渲染器在应用自己的窗口内获取并求值，在�
 
 realm 本身不是边界，全局桥句柄始终可达：`contextBridge` 把 `window.piDesktop`
 定义为不可配置的自有属性，应用无法删除它，模块因此可以触及宿主的整个 preload
-面——242 个白名单通道（219 个 invoke 与 23 个 event），且没有任何按调用方的检查。
+面——243 个白名单通道（220 个 invoke 与 23 个 event），且没有任何按调用方的检查。
 插件是有意被信任并授予宽泛权限的：边界是市场审核加安装时同意，而不是隔离。
 
 样式隔离是命名空间方案，不是 Shadow DOM：
@@ -158,8 +159,25 @@ realm 本身不是边界，全局桥句柄始终可达：`contextBridge` 把 `wi
 与重载审查），两份列表都会展示；如果某个界面要展示的版本清单还没读到，它就什么都不显示 ——
 本地包导入根本没有安装前审查，插件中心目录也不携带这两份列表。它们是声明，不授予任何东西：
 不是权限、不出现在权限列表中、不改变授权；只声明它们而不声明 `renderer` 的清单
-依然通过校验。在派发时消费这些名字的线路契约属于组件槽位中继，记录在 ADR 0290；
-它尚未构建，因此本节只固定清单可以声明什么。
+依然通过校验。
+
+在派发时消费这些名字的中继随受信任渲染器宿主一并交付（ADR 0290）。挂载的槽位组件以
+props 拿到它的宿主数据和一个方法 `dispatch(action, payload)`；没有任何东西是隐式的。
+宿主会拒绝插件没有声明的操作，而声明了、宿主却还没有处理器的操作会以带错误码的
+拒绝而不是解析为 `undefined` —— 每次拒绝同时也会作为诊断记在插件的行上。
+九个名字中有三个已实现；调用其余六个会以带错误码的 `PLUGIN_ACTION_UNROUTED`
+拒绝。
+
+- `plugin.call { method: string, args?: unknown }` 转发到调用插件自己的 headless
+  入口，该入口通过 SDK 钩子 `onRendererCall(method, args)` 作答，答案原样返回给
+  调用方：只接受 JSON 可序列化的值，缺失的答案以 `null` 到达。Electron main 会
+  用自己已加载的清单复查这次调用，渲染层只提供 id 与参数。这是正常情形下的正确性
+  措施，不是安全边界（ADR 0287）。
+- `ui.toast { message: string, variant?: "info" | "success" | "error" }` 触发外壳
+  已有的 toast。
+- `composer.replaceDraft { text: string }` 写入当前会话的整份草稿，并且只在某个已
+  挂载的 composer 消费了这次写入后才 resolve；如果 500 ms 内没有任何 composer
+  消费，写入会被清除，调用以 `PLUGIN_ACTION_DRAFT_UNCONSUMED` 拒绝。
 
 `rendererData` —— 模块声明读取的宿主数据：
 
@@ -406,6 +424,7 @@ v1 不改任何 host-core RPC 方法、协议版本或 SQLite schema。
 | `extensions/event/status` | 事件 | `ui.setStatus` / `ui.setWorkingMessage` 文本变化 |
 | `plugin/list` | 请求 | 插件行携带 `agentExtension` 状态、工具与命令名和诊断 |
 | `event/pluginChanged` | 事件 | 会话发布命令或诊断时同样触发 |
+| `plugin/renderer/call` | 请求 | 一次转发的渲染器操作（`plugin.call`）：载荷 `{ pluginId, method, args }`；结果是调用插件自己入口的应答 |
 
 所有通道像其他插件通道一样做 sender 校验。MCP 控制面暴露 `extensions/commands/run`
 （写）和 `extensions/ui/respond`（危险，需 confirm）；导入是原生选择器，保持本地。

@@ -91,7 +91,7 @@ governs the host that loads slot implementations and the rules they are held to.
    measured that claim to be false: `contextBridge.exposeInMainWorld` defines the
    property non-configurable, so `delete window.piDesktop` is a silent no-op —
    `typeof window.piDesktop === "object"`, `"piDesktop" in window === true`, and
-   `piDesktop.invoke` reaches all 242 whitelisted channels (219 invoke + 23
+   `piDesktop.invoke` reaches all 243 whitelisted channels (220 invoke + 23
    event) with no per-caller check. The host API is not a specifier at all: it
    arrives as the `pi` argument of `onLoad`, which is what keeps it per-plugin —
    an import-map entry would have had to be the same URL for every plugin in the
@@ -197,7 +197,7 @@ the code, the spec, or this ADR can mistake their absence for an oversight.
   `window.piDesktop` is an ordinary own property of the window — measured as
   `typeof window.piDesktop === "object"` and `"piDesktop" in window === true` —
   and `contextBridge` defines it non-configurable, so the app cannot delete it.
-  A plugin module can call all 242 whitelisted channels (219 invoke + 23 event)
+  A plugin module can call all 243 whitelisted channels (220 invoke + 23 event)
   with no per-caller check. Plugins are trusted and broadly permissioned on
   purpose: the boundary is marketplace review plus install-time consent, not
   isolation, and nothing here should be read as a sandbox.

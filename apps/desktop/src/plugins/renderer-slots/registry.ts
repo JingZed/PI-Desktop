@@ -30,9 +30,10 @@ export type PluginSlotRegistration = {
 };
 
 /**
- * Something a plugin tried that the host will not honour. Registration failures
- * are never silent (D6/D12): the plugins page and the diagnostics list read
- * these, so a plugin author sees why nothing appeared.
+ * Something a plugin tried that the host will not honour. Registration
+ * failures and refused dispatches are never silent (D6/D12, ADR 0290): the
+ * plugins page and the diagnostics list read these, so a plugin author sees
+ * why nothing appeared or why a call was refused.
  */
 export type PluginSlotDiagnostic = {
   pluginId: string;
@@ -44,6 +45,26 @@ export type PluginSlotDiagnostic = {
     | CodeBlockLanguageDiagnostic
     | "PLUGIN_SLOT_RENDER_FAILED"
     | "PLUGIN_SLOT_LOAD_FAILED"
+    // Dispatch refusals from the action relay (ADR 0290): an action the plugin
+    // did not declare, or a declared one the host has no handler for yet.
+    | "PLUGIN_ACTION_UNDECLARED"
+    | "PLUGIN_ACTION_UNROUTED"
+    // Payloads the relay's handler wiring could not honour, and a draft write
+    // no mounted composer consumed (renderer-host/host-actions.ts).
+    | "PLUGIN_ACTION_INVALID_PAYLOAD"
+    | "PLUGIN_ACTION_DRAFT_UNCONSUMED"
+    // Refusals of a forwarded renderer call (ADR 0290 decision 4), reported by
+    // the `plugin.call` handler in renderer-host/host-actions.ts: anything the
+    // main process or the plugin's own headless entry refused the call with.
+    | "PLUGIN_CALL_INVALID"
+    | "PLUGIN_CALL_UNKNOWN_PLUGIN"
+    | "PLUGIN_CALL_UNDECLARED"
+    | "PLUGIN_CALL_NO_ENTRY"
+    | "PLUGIN_CALL_NO_PROCESS"
+    | "PLUGIN_CALL_TIMEOUT"
+    | "PLUGIN_CALL_NO_HANDLER"
+    | "PLUGIN_CALL_UNSERIALIZABLE"
+    | "PLUGIN_CALL_FAILED"
     | "PLUGIN_INVALID: renderer entry must export onLoad";
   detail?: string;
   ts: number;

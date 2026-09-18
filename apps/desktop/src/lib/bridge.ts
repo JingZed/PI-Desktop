@@ -9,7 +9,7 @@ import { IPC, type Result } from "@pi-desktop/shared";
  * the attempt cannot work, because `contextBridge.exposeInMainWorld` defines the
  * property non-configurable, so `delete` is a silent no-op. A real Electron run
  * measured `typeof window.piDesktop === "object"`, `"piDesktop" in window ===
- * true`, and `piDesktop.invoke` reaching all 242 whitelisted channels (219
+ * true`, and `piDesktop.invoke` reaching all 243 whitelisted channels (220
  * invoke + 23 event) with no per-caller check.
  *
  * The capture stays because it is the shell's single typed handle on the bridge

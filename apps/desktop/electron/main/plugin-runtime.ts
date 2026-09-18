@@ -539,6 +539,18 @@ const PLUGIN_TOOL_TIMEOUT_MS = 110_000;
 export const PLUGIN_COMPLETE_TIMEOUT_MS = 90_000;
 /** Fixed panel operations are user-facing and must not hang the renderer. */
 const PLUGIN_PANEL_TIMEOUT_MS = 30_000;
+/**
+ * A forwarded renderer action is awaited by a component the user is looking
+ * at, which is the promise a fixed panel operation makes, so it gets the same
+ * budget.
+ */
+const PLUGIN_RENDERER_CALL_TIMEOUT_MS = PLUGIN_PANEL_TIMEOUT_MS;
+/**
+ * The one renderer action this runtime forwards. The vocabulary is host-owned
+ * (ADR 0290 decision 2); this is the name a manifest has to declare before a
+ * call is relayed at all.
+ */
+const RENDERER_CALL_ACTION = "plugin.call";
 const PANEL_SKILL_CHANNELS = new Set([
   "skill.list",
   "skill.read",
@@ -692,6 +704,26 @@ function apiError(code: string, message: string): PluginApiError {
   const err = new Error(message) as PluginApiError;
   err.code = code;
   return err;
+}
+
+/**
+ * One refused or failed renderer call (ADR 0290 decision 4). `code` is what the
+ * caller branches on; `errorCode` carries the same value under the name the IPC
+ * result envelope reads before it falls back to a generic `INTERNAL`
+ * (register.ts `wrap`), so the code a plugin author sees is the code the host
+ * chose rather than a collapse of every failure into one.
+ */
+function rendererCallRefusal(code: string, message: string): PluginApiError {
+  return Object.assign(apiError(code, message), { errorCode: code });
+}
+
+/**
+ * The headless entry a manifest declares, or `""`. A UI-only plugin declares
+ * `renderer`, a page or a destination instead, and then nothing runs in a host
+ * process: it has no entry of its own for a forwarded call to reach.
+ */
+function headlessEntry(manifest: PluginManifest): string {
+  return typeof manifest.main === "string" ? manifest.main : "";
 }
 
 /**
@@ -1616,7 +1648,7 @@ export class PluginRuntime {
 
     // The headless module is optional: a UI-only plugin declares `renderer`, a
     // page, or a destination instead, and then nothing runs in a host process.
-    const headlessMain = typeof manifest.main === "string" ? manifest.main : "";
+    const headlessMain = headlessEntry(manifest);
     if (headlessMain) {
       const mainPath = resolveInsidePlugin(pluginPath, headlessMain);
       if (!mainPath) {
@@ -2108,6 +2140,86 @@ export class PluginRuntime {
           PLUGIN_PANEL_TIMEOUT_MS,
         );
     }
+  }
+
+  /**
+   * Relay one `plugin.call` renderer action to the calling plugin's own
+   * headless entry and answer with what that entry returned (ADR 0290
+   * decision 4).
+   *
+   * The plugin id arrives from the renderer, so nothing it claims is trusted:
+   * the record, the manifest and the declaration are all read from what this
+   * process loaded, which is what makes the call reach the calling plugin's own
+   * entry rather than a neighbour's (ADR 0290 decision 5). Every refusal is
+   * coded, because a silent no-op is indistinguishable from a plugin bug.
+   */
+  async invokeRendererCall(
+    pluginId: string,
+    method: string,
+    args: unknown,
+  ): Promise<unknown> {
+    if (!pluginId || !method) {
+      throw rendererCallRefusal(
+        "PLUGIN_CALL_INVALID",
+        "a forwarded renderer call needs a plugin id and a method name",
+      );
+    }
+    const loaded = this.loaded.get(pluginId);
+    if (!loaded || loaded.disposing) {
+      throw rendererCallRefusal("PLUGIN_CALL_UNKNOWN_PLUGIN", `plugin not loaded: ${pluginId}`);
+    }
+    if (!(loaded.manifest.rendererActions ?? []).includes(RENDERER_CALL_ACTION)) {
+      throw rendererCallRefusal(
+        "PLUGIN_CALL_UNDECLARED",
+        `plugin ${pluginId} does not declare "${RENDERER_CALL_ACTION}" in rendererActions`,
+      );
+    }
+    // A UI-only plugin has no headless entry, so there is nothing to forward to
+    // and no page relay to fall back on: "its own entry" simply does not exist
+    // (ADR 0290 decision 4). Refusing says so, where a fallback would run the
+    // call in an entry the renderer never named.
+    if (!headlessEntry(loaded.manifest)) {
+      throw rendererCallRefusal(
+        "PLUGIN_CALL_NO_ENTRY",
+        `plugin ${pluginId} declares no headless entry to forward to`,
+      );
+    }
+    if (!loaded.child) {
+      throw rendererCallRefusal("PLUGIN_CALL_NO_PROCESS", `plugin host process gone: ${pluginId}`);
+    }
+    try {
+      return await this.sendToChild(
+        loaded,
+        {
+          t: "call",
+          method: "renderer.call",
+          payload: { method, args: args ?? null },
+        },
+        PLUGIN_RENDERER_CALL_TIMEOUT_MS,
+      );
+    } catch (error) {
+      throw this.rendererCallFailure(pluginId, method, error);
+    }
+  }
+
+  /**
+   * One failed `renderer.call`, under the code that names it. A timeout is the
+   * one failure the child cannot report itself; everything else arrives with
+   * the child's own code — `PLUGIN_CALL_NO_HANDLER`,
+   * `PLUGIN_CALL_UNSERIALIZABLE`, or whatever code a throw from the plugin
+   * carried. The code is re-stamped so the result envelope keeps it instead of
+   * collapsing it into a generic `INTERNAL`.
+   */
+  private rendererCallFailure(pluginId: string, method: string, error: unknown): PluginApiError {
+    const raw = (error as PluginApiError | undefined)?.code;
+    const code = typeof raw === "string" && raw ? raw : "PLUGIN_CALL_FAILED";
+    if (code === "TIMEOUT") {
+      return rendererCallRefusal(
+        "PLUGIN_CALL_TIMEOUT",
+        `plugin ${pluginId} did not answer renderer call "${method}" in time`,
+      );
+    }
+    return rendererCallRefusal(code, error instanceof Error ? error.message : String(error));
   }
 
   // --- plugin host process plumbing -------------------------------------

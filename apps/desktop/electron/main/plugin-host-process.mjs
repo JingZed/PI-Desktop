@@ -11,7 +11,7 @@
  *   parent -> child  { t: "init", id, pluginId, pluginPath, main, manifest }
  *   parent -> child  { t: "call", id, method, payload, invocationId? } command.run | tool.execute |
  *                                                        service.start | service.stop |
- *                                                        lifecycle.unload
+ *                                                        renderer.call | lifecycle.unload
  *   child  -> parent { t: "call", id, api, args, invocationId? } host API request
  *   parent -> child  { t: "cancel", invocationId, reason } abort one tool invocation
  *   *      -> *      { t: "res", id, ok, value } | { t: "res", id, ok: false, error: { code, message } }
@@ -38,6 +38,25 @@ function onHostMessage(handler) {
 
 function log(level, message) {
   send({ t: "log", level, message: String(message) });
+}
+
+/**
+ * A renderer call's answer is carried by `postMessage`, Electron IPC and the
+ * `Result` envelope, so a value the transport cannot carry is refused here: a
+ * function answer fails once posted, with a `DOMException` that names neither
+ * the plugin nor the method it answered. `undefined` is not one of those
+ * values — it passes through and the reply frame turns an absent answer into
+ * `null`, so a hook that returns nothing is an answer rather than a gap.
+ */
+function assertDeliverable(value, method) {
+  try {
+    structuredClone(value);
+  } catch {
+    const error = new Error(`renderer call answer is not serializable: ${method}`);
+    error.code = "PLUGIN_CALL_UNSERIALIZABLE";
+    throw error;
+  }
+  return value;
 }
 
 let pluginId = "";
@@ -502,6 +521,19 @@ async function handleParentCall(method, payload, invocationId) {
         throw error;
       }
       return invoke(String(payload?.channel ?? ""), payload?.payload ?? {});
+    }
+    case "renderer.call": {
+      const invoke = pluginModule?.onRendererCall;
+      const name = String(payload?.method ?? "");
+      if (typeof invoke !== "function") {
+        // A structured answer, never `undefined`: the renderer has to be able
+        // to tell "this plugin implements no renderer methods" from a method
+        // that happened to return nothing.
+        const error = new Error(`plugin does not expose renderer calls: ${name}`);
+        error.code = "PLUGIN_CALL_NO_HANDLER";
+        throw error;
+      }
+      return assertDeliverable(await invoke(name, payload?.args ?? null), name);
     }
     case "command.run": {
       const run = commands.get(String(payload?.id ?? ""));

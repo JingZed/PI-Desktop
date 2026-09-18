@@ -29,6 +29,50 @@ const attempts = new Map<string, Promise<void>>();
 
 const modules = new Map<string, PiRendererModule>();
 
+/**
+ * What each plugin's manifest declared it dispatches, as the mount point
+ * carried it here. It is row data rather than load state: the relay reads it by
+ * plugin id, long after the render that started the load is gone.
+ */
+const declaredActions = new Map<string, ReadonlySet<string>>();
+
+/** Shared empty set: a plugin the host never saw has declared nothing. */
+const NO_DECLARED_ACTIONS: ReadonlySet<string> = new Set();
+
+/** The `rendererActions` one plugin declared; empty when the host never saw it. */
+export function declaredRendererActions(pluginId: string): ReadonlySet<string> {
+  return declaredActions.get(pluginId) ?? NO_DECLARED_ACTIONS;
+}
+
+/**
+ * Records what one plugin's manifest declared it dispatches, without starting
+ * or reusing a load. A mount point holds this row data before the module it
+ * names exists, so it is written as the mount renders rather than only from
+ * `ensureRendererPlugin`: a component that dispatches during its first commit
+ * is answered from the declaration, not from whether an effect has run. A
+ * declaration that has not changed does not rebuild its set.
+ */
+export function rememberRendererActions(pluginId: string, actions?: readonly string[]): void {
+  const next = actions ?? [];
+  const current = declaredActions.get(pluginId);
+  if (
+    current &&
+    current.size === next.length &&
+    next.every((action) => current.has(action))
+  ) {
+    return;
+  }
+  declaredActions.set(pluginId, new Set(next));
+}
+
+/** Everything one load attempt needs: the plugin row's own answers. */
+type RendererPluginLoadOptions = {
+  declared: boolean;
+  version?: string;
+  /** `manifest.rendererActions`, from the candidate that reached the slot. */
+  actions?: readonly string[];
+};
+
 /** `plugin-renderer://<pluginId>/<path>`, path segments encoded individually. */
 export function rendererEntryUrl(pluginId: string, entry: string): string {
   const clean = entry.replace(/^\.\//, "").replace(/\\/g, "/");
@@ -100,8 +144,12 @@ export function isRendererPluginLoaded(pluginId: string): boolean {
  */
 export function ensureRendererPlugin(
   pluginId: string,
-  options: { declared: boolean; version?: string },
+  options: RendererPluginLoadOptions,
 ): Promise<void> {
+  // The declaration is recorded before the load is started or reused: the host
+  // already knows it from the plugin row, and a dispatch is answered from it
+  // even while — or after — the module itself fails to arrive.
+  rememberRendererActions(pluginId, options.actions);
   const inFlight = attempts.get(pluginId);
   if (inFlight) return inFlight;
   const attempt = load(pluginId, options);
@@ -109,7 +157,7 @@ export function ensureRendererPlugin(
   return attempt;
 }
 
-async function load(pluginId: string, options: { declared: boolean; version?: string }): Promise<void> {
+async function load(pluginId: string, options: RendererPluginLoadOptions): Promise<void> {
   if (!options.declared) {
     pluginSlots.report({
       pluginId,
@@ -187,6 +235,7 @@ export async function disposeRendererPlugin(pluginId: string): Promise<void> {
   const module = modules.get(pluginId);
   modules.delete(pluginId);
   attempts.delete(pluginId);
+  declaredActions.delete(pluginId);
   pluginSlots.unregisterPlugin(pluginId);
   removePluginStyles(pluginId);
   if (typeof module?.onUnload === "function") {
@@ -212,4 +261,5 @@ export function loadedRendererPlugins(): string[] {
 export function resetRendererPlugins(): void {
   attempts.clear();
   modules.clear();
+  declaredActions.clear();
 }

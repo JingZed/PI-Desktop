@@ -7,6 +7,8 @@
   "author": "PI-Desktop",
   "main": "main.js",
   "renderer": "renderer/index.mjs",
+  "rendererData": ["entry"],
+  "rendererActions": ["ui.toast", "plugin.call"],
   "contributes": {
     "commands": [
       {

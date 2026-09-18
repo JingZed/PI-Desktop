@@ -155,6 +155,25 @@ export function registerPluginIpc({
   handle(IPC.invoke.pluginRendererEntry, async (id: string) => ({
     entry: plugins.rendererEntry(String(id ?? "")),
   }));
+
+  /**
+   * One forwarded renderer action: `dispatch("plugin.call", { method, args })`
+   * (ADR 0290 decision 4). The id is the calling plugin's own — the main window
+   * is one sender for every plugin in it, so the id has to be an argument — and
+   * nothing the renderer claims about it is trusted: the runtime looks the
+   * plugin up in the registry this process loaded and re-checks the declaration
+   * in that manifest before forwarding. Every refusal is a coded error, which is
+   * also what the caller records as a diagnostic on the plugin's row.
+   */
+  handle(
+    IPC.invoke.pluginRendererCall,
+    async (input: { pluginId?: unknown; method?: unknown; args?: unknown } = {}) =>
+      plugins.invokeRendererCall(
+        typeof input?.pluginId === "string" ? input.pluginId : "",
+        typeof input?.method === "string" ? input.method : "",
+        input?.args ?? null,
+      ),
+  );
   handle(IPC.invoke.pluginSettingsGet, async (id: string) => {
     const settings = await plugins.getPluginSettings(String(id ?? ""));
     return { settings };

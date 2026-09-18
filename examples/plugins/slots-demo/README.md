@@ -17,6 +17,24 @@ copy-me shape for `manifest.renderer` (spec `07-plugins/16-trusted-extensions.md
   loads with the entry skipped and audited.
 - **Component slots.** `entryExtra` (a component-only slot, one extra block below
   a transcript entry) and `modal` (a blocking, app-level dialog).
+- **Data in, actions out.** A slot component is handed two things: the slot's
+  host data as props, and `dispatch(action, payload)`, which acts for the plugin
+  that registered the component (ADR 0290). `rendererData` and
+  `rendererActions` in the manifest name what the module reads and calls, and
+  the vocabulary belongs to the host — this example reads `entry`, dispatches
+  `ui.toast` from the badge's first button, and `plugin.call` from its second.
+  An action the manifest does not declare is refused with a structured
+  `PLUGIN_ACTION_UNDECLARED` error rather than ignored, so a button that does
+  nothing is a bug you can see.
+- **Two classes of action, both relayed.** `ui.toast` is a *host-performed*
+  action: the window's own host runs it and answers. `plugin.call` is
+  *forwarded*: the host sends `{ method, args }` to the calling plugin's own
+  headless entry — `main.js` here, over the same child channel panel calls use —
+  and the promise resolves with whatever that entry returned. `main.js`
+  implements `onRendererCall`, answers `demo.echo` with the arguments it was
+  handed plus a counter kept **in that process**, and refuses any other method
+  by name. The badge prints the entry's answer, so what you see is a value the
+  window could not have produced on its own.
 - **The host's React, not the plugin's.** `react` is imported as a bare
   specifier; the host maps it to its own instance through an import map. The
   modal's counter uses `useState` from that shared instance — a plugin that
@@ -33,9 +51,9 @@ copy-me shape for `manifest.renderer` (spec `07-plugins/16-trusted-extensions.md
 
 | File | Role |
 |---|---|
-| `manifest.json` | Declares `main`, `renderer`, the `renderer.extension` permission, and one command |
-| `main.js` | Headless entry: registers the declared command in the plugin process |
-| `renderer/index.mjs` | Renderer entry: `onLoad(pi)` injects the stylesheet and registers two slots |
+| `manifest.json` | Declares `main`, `renderer`, the `rendererData` list, the `rendererActions` list (`ui.toast`, `plugin.call`), the `renderer.extension` permission, and one command |
+| `main.js` | Headless entry: registers the declared command, and implements `onRendererCall` — the method the badge's `plugin.call` dispatch runs in the plugin's own process |
+| `renderer/index.mjs` | Renderer entry: `onLoad(pi)` injects the stylesheet and registers two slots; the badge's first button dispatches `ui.toast`, its second one `plugin.call` |
 
 ## Install (development folder)
 
@@ -57,10 +75,26 @@ extension packages and is a different flow.
 
 The plugin row shows a `renderer` capability chip once the entry is served. The
 slots draw wherever the host's current surfaces mount them: the badge below a
-transcript entry, the dialog as an app-level modal. A slot no visible surface
-renders simply leaves the module unloaded — that is the design, not a failure. If
-a component throws, only its own slot collapses to the host's default rendering
-and the crash is reported as a diagnostic.
+transcript entry, the dialog as an app-level modal.
+
+The badge carries both classes of action, and each one reports what really came
+back rather than a tick:
+
+- **Notify the host** (`ui.toast`) asks the host to show a notification and then
+  prints `toast sent`, or the code of the refusal.
+- **Ask the entry** (`plugin.call`, method `demo.echo`) sends
+  `{ from: "badge" }` to this plugin's own headless entry and prints the answer
+  it returned — the method, the arguments, `entry: "main.js"` and the entry's
+  own call counter. Click it twice: the counter goes 1, 2, because it lives in
+  that process. If the round trip is unavailable, the button shows the code
+  instead (`PLUGIN_ACTION_UNDECLARED` when the manifest does not declare
+  `plugin.call`, `PLUGIN_CALL_NO_ENTRY` for a plugin with no headless entry,
+  `PLUGIN_CALL_NO_HANDLER` for one whose entry implements no renderer methods,
+  `PLUGIN_CALL_TIMEOUT` when the call never answered).
+
+A slot no visible surface renders simply leaves the module unloaded — that is
+the design, not a failure. If a component throws, only its own slot collapses to
+the host's default rendering and the crash is reported as a diagnostic.
 
 ## Reference
 

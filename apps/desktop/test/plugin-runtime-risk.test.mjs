@@ -80,6 +80,9 @@ test("native plugin notifications stay behind the existing notify permission", (
 test("workspace deletion and panel operations stay bounded", () => {
   assert.match(runtimeSrc, /PANEL_SKILL_CHANNELS/);
   assert.match(runtimeSrc, /method: "panel.invoke"/);
+  // A forwarded renderer call takes the same child channel, so it cannot reach
+  // a plugin's entry without the broker either.
+  assert.match(runtimeSrc, /method: "renderer\.call"/);
   assert.match(runtimeSrc, /"fs.remove"/);
   assert.match(runtimeSrc, /recursive: false/);
   assert.match(runtimeSrc, /cannot remove the root itself/);
@@ -90,6 +93,37 @@ test("workspace deletion and panel operations stay bounded", () => {
   // A single-file remove in a loop empties a workspace as well as `rm -rf`;
   // the rolling window is what tells the two apart.
   assert.match(runtimeSrc, /MAX_DELETES_PER_WINDOW/);
+});
+
+test("a forwarded renderer call is re-checked against the manifest the host loaded", () => {
+  const pluginIpcSrc = readMainModuleSync("ipc/plugin-ipc.ts");
+  // The renderer names its own plugin, so the handler routes the call into the
+  // runtime and carries no declaration a caller could choose.
+  assert.match(pluginIpcSrc, /IPC\.invoke\.pluginRendererCall/);
+  assert.match(pluginIpcSrc, /plugins\.invokeRendererCall\(/);
+  assert.doesNotMatch(pluginIpcSrc, /input\.rendererActions|input\.rendererData/);
+  // The declaration is read from the manifest this process validated at load,
+  // never from anything the renderer sent (ADR 0290 decision 5), and the call
+  // goes to that plugin's own entry over the child channel the panel bridge
+  // already uses.
+  assert.match(
+    runtimeSrc,
+    /\(loaded\.manifest\.rendererActions \?\? \[\]\)\.includes\(RENDERER_CALL_ACTION\)/,
+  );
+  assert.match(runtimeSrc, /PLUGIN_RENDERER_CALL_TIMEOUT_MS/);
+  for (const code of [
+    "PLUGIN_CALL_INVALID",
+    "PLUGIN_CALL_UNKNOWN_PLUGIN",
+    "PLUGIN_CALL_UNDECLARED",
+    "PLUGIN_CALL_NO_ENTRY",
+    "PLUGIN_CALL_NO_PROCESS",
+    "PLUGIN_CALL_TIMEOUT",
+  ]) {
+    assert.match(runtimeSrc, new RegExp(code));
+  }
+  // A UI-only plugin gets a coded refusal, not another entry's answer.
+  assert.match(runtimeSrc, /declares no headless entry to forward to/);
+  assert.match(protocolSrc, /pluginRendererCall: "pi-desktop\/plugin\/renderer\/call"/);
 });
 
 test("the plugins page shows the file scope behind a file permission", () => {

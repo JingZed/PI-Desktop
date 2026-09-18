@@ -172,6 +172,15 @@ export const IPC = {
    * (ADR 0287).
    */
   pluginRendererEntry: "pi-desktop/plugin/renderer/entry",
+    /**
+     * One forwarded renderer action (ADR 0290 decision 4): run a method inside
+     * the calling plugin's own headless entry and answer with its result. The
+     * renderer never reads a manifest, so the main process looks the plugin id
+     * up in the registry it loaded and forwards only when that plugin's
+     * manifest declares `plugin.call`; every refusal is a coded error rather
+     * than a silent no-op.
+     */
+    pluginRendererCall: "pi-desktop/plugin/renderer/call",
     /** Plugin-contributed agent extensions (D387/D388, ADR 0214). */
     pluginImportExtension: "pi-desktop/plugin/importExtension",
     extensionsCommandRun: "pi-desktop/extensions/commands/run",

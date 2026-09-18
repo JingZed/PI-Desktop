@@ -108,7 +108,8 @@ grants nothing in another, and a plugin may declare any combination.
 - The module's `onLoad(pi)` hook is required and is where registration happens;
   `onUnload()` is optional. The `pi` object carries `plugin.id` /
   `plugin.version`, `pi.slots.register`, and `pi.ui.injectStyle`, and nothing
-  else.
+  else — a slot component's host data and its `dispatch` method arrive as props
+  on the component, not through that object (§2A.7).
 - React is a singleton: the host injects its own React and maps the bare
   specifiers `react`, `react-dom`, and `react-dom/client` onto it, and a plugin
   that ships its own React copy is refused at load with a diagnostic, because
@@ -125,7 +126,7 @@ global object, module graph, and React tree. The mitigation that ships:
 The realm is not a boundary and the global bridge handle stays reachable:
 `contextBridge` defines `window.piDesktop` as a non-configurable own property, so
 the app cannot delete it, and the module reaches the host's whole preload surface
-— 242 whitelisted channels (219 invoke + 23 event) — with no per-caller check.
+— 243 whitelisted channels (220 invoke + 23 event) — with no per-caller check.
 Plugins are trusted and broadly permissioned on purpose: the boundary is
 marketplace review plus install-time consent, not isolation.
 
@@ -196,9 +197,30 @@ instead: a locally imported package has no pre-install review at all, and the
 marketplace catalog does not carry these lists. The lists are declarations and
 grant nothing: they are not permissions, they do not appear in the permission
 list, they do not change grants, and a manifest that declares them without
-`renderer` still validates. The wire contract that consumes these names at
-dispatch time belongs to the component-slot relay and is recorded in ADR 0290;
-it is not built yet, so this section fixes only what a manifest may declare.
+`renderer` still validates.
+
+The relay that consumes these names at dispatch time ships with the trusted
+renderer host (ADR 0290). A mounted slot component is handed its host data and
+one method, `dispatch(action, payload)`, as props; nothing is ambient. The host
+refuses an action the plugin did not declare, and a declared action it has no
+handler for is refused as a coded error rather than resolving `undefined` — and
+every refusal is also recorded as a diagnostic on the plugin's row. Three of the
+nine names are implemented; a call to one of the other six rejects with a coded
+`PLUGIN_ACTION_UNROUTED` refusal.
+
+- `plugin.call { method: string, args?: unknown }` is forwarded to the calling
+  plugin's own headless entry, which answers through the SDK hook
+  `onRendererCall(method, args)`, and that answer is returned to the caller:
+  JSON-serializable values only, and an absent answer arrives as `null`. Electron
+  main re-checks the call against the manifest it loaded, and the renderer
+  supplies only ids and args. That is a correctness measure for the normal case,
+  not a security boundary (ADR 0287).
+- `ui.toast { message: string, variant?: "info" | "success" | "error" }` raises
+  the shell's existing toast.
+- `composer.replaceDraft { text: string }` writes the whole draft of the active
+  session and resolves only once a mounted composer consumed the write; if
+  nothing consumes it within 500 ms the write is cleared and the call refuses
+  with `PLUGIN_ACTION_DRAFT_UNCONSUMED`.
 
 `rendererData` — host data the module declares it reads:
 
@@ -509,6 +531,7 @@ No host-core RPC method, protocol version, or SQLite schema changes in v1.
 | `extensions/event/status` | event | `ui.setStatus` / `ui.setWorkingMessage` text changed |
 | `plugin/list` | request | Plugin rows carry `agentExtension` state, tool, command, custom-agent names, and diagnostics |
 | `event/pluginChanged` | event | Also fires when a session publishes commands, diagnostics, or model binding changes |
+| `plugin/renderer/call` | request | One forwarded renderer action (`plugin.call`): payload `{ pluginId, method, args }`; result is the calling plugin's own entry's answer |
 
 All channels are sender-validated like other plugin channels. The MCP
 control plane exposes `extensions/commands/run` (write) and

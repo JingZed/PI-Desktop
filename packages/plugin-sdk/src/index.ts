@@ -1205,6 +1205,21 @@ export type PluginModule = {
   onUnload?: () => Promise<void> | void;
   /** Optional fixed-channel operations for an isolated plugin panel. */
   onPanelInvoke?: (channel: string, payload: unknown) => Promise<unknown> | unknown;
+  /**
+   * Optional method host for a renderer slot component's forwarded calls
+   * (`plugin.call`, ADR 0290 decision 4). A component that dispatches
+   * `plugin.call { method, args }` runs this hook inside its own headless entry
+   * — this process — and the renderer receives the return value unchanged.
+   *
+   * Values are JSON-serializable data: `args` and the answer cross
+   * `postMessage`, Electron IPC and a `Result` envelope. `args` is `null` when
+   * the caller passed none, and a value the transport cannot carry is refused
+   * with `PLUGIN_CALL_UNSERIALIZABLE` rather than arriving truncated. An absent
+   * answer arrives at the renderer as `null`; a module that does not implement
+   * this hook answers every renderer call with `PLUGIN_CALL_NO_HANDLER`, never
+   * `undefined`.
+   */
+  onRendererCall?: (method: string, args: unknown) => Promise<unknown> | unknown;
 };
 
 /** Upper bound on ExtensionAPI modules one plugin may contribute. */
@@ -2146,6 +2161,7 @@ export {
   type PiRendererApi,
   type PiRendererCodeBlockProps,
   type PiRendererComponent,
+  type PiRendererDispatch,
   type PiRendererEntryExtraProps,
   type PiRendererModule,
   type PiRendererRegistration,

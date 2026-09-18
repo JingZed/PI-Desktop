@@ -157,7 +157,7 @@ sandbox (ADR 0287). The mitigations that do ship with it:
 The global bridge handle is the boundary that does not exist: `contextBridge`
 defines `window.piDesktop` as a non-configurable own property of the window, so
 the app cannot delete it and a later-loaded module reaches the host's whole
-preload surface — 242 whitelisted channels (219 invoke + 23 event) — with no
+preload surface — 243 whitelisted channels (220 invoke + 23 event) — with no
 per-caller check. Plugins are trusted and broadly permissioned on purpose: the
 boundary is marketplace review plus install-time consent, not isolation.
 

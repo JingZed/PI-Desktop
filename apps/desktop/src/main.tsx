@@ -9,6 +9,7 @@ import App from "./App";
 import { PluginLauncher } from "./components/PluginLauncher";
 import { initLanguageSync, resolveOsLocale } from "./lib/app-language";
 import { installScrollbarReveal } from "./lib/scrollbar-reveal";
+import { installRendererHostActions } from "./plugins/renderer-host/host-actions";
 import "./styles/globals.css";
 
 const rendererSurface = new URLSearchParams(window.location.search).get("surface");
@@ -31,6 +32,9 @@ if (document.documentElement.dataset.platform === "darwin") {
 // Scrollbars are transparent at rest (base.css); this marks the scrolling
 // element so the thumb shows while it moves, not only under the pointer.
 installScrollbarReveal(document);
+// The renderer host's action handlers are wired once, before the first slot can
+// render: a plugin component always dispatches against a relay that routes.
+installRendererHostActions();
 
 const locale = resolveLocale(resolveOsLocale());
 const resources = Object.fromEntries(
