@@ -1385,7 +1385,21 @@ export class PluginRuntime {
 
   /** The declared renderer entry path, for the renderer's lazy load. */
   rendererEntry(pluginId: string): string | null {
-    return this.rendererPlugin(pluginId)?.manifest.renderer ?? null;
+    const loaded = this.rendererPlugin(pluginId);
+    if (!loaded) return null;
+    // Two React copies in one tree break hooks and context, and the failure
+    // shows up as a plugin bug rather than a packaging mistake. Refusing here
+    // puts the real reason in the diagnostics list instead.
+    if (
+      existsSync(join(loaded.path, "node_modules", "react", "package.json")) ||
+      existsSync(join(loaded.path, "node_modules", "react-dom", "package.json"))
+    ) {
+      throw apiError(
+        "PLUGIN_INVALID",
+        "renderer entry bundles its own react; the host provides one React for every plugin",
+      );
+    }
+    return loaded.manifest.renderer ?? null;
   }
 
   /**
