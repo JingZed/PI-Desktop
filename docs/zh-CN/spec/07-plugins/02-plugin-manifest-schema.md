@@ -37,7 +37,19 @@ type PluginManifestV1 = {
  homepage?: string;
  repository?: string;
  icon?: string; // relative path
- main?: string; // plugin runtime entry
+ /**
+  * 无界面入口：宿主在自己进程里运行的插件相对模块。可省略 —— 只有 UI 的插件
+  * 可以只声明 `renderer`，或只声明一个插件页面。`main`、`renderer`、
+  * `ui.panel`、`views[].entry`、`settingsDestinations[].entry` 之间至少要有
+  * 一个入口（规则 19）。
+  */
+ main?: string;
+ /**
+  * 受信任渲染器入口：一个插件相对的 ES 模块，在宿主渲染器（应用自己的窗口）内
+  * 运行，并把 React 组件注册进宿主持有的槽位。需要 `renderer.extension`
+  * （规则 20），并且惰性获取：它的某个槽位第一次真正渲染时才加载（规格 16 §2A）。
+  */
+ renderer?: string;
  ui?: PluginUiConfig;
  contributes?: PluginContributes;
  permissions?: PluginPermission[];
@@ -266,6 +278,7 @@ type PluginPermission =
  | "fs.delete"
  | "agent.tool.register"
  | "agent.prompt.inject"
+ | "renderer.extension" // 受信任 UI 层级：一个权限覆盖全部组件槽位（规格 16 §2A）
  | "provider.register"
  | "net.fetch"
  | "shell.openExternal"
@@ -407,7 +420,9 @@ MVP 只能实现：
 3. 声明 `ui.panel` 的清单是否需要隐式（自动填充）或通过显式声明获得 `ui.panel` 权限是一个 **悬而未决的问题**（在 [08-meta/open-questions.md](/zh-CN/spec/08-meta/open-questions) 中跟踪）
 4. 如果存在 `agentTools`，则必须声明 `agent.tool.register`
 5. 路径字段不得使用绝对路径或 `..`
-6. `main` / `ui.panel` / 技能 / `views[].entry` 路径必须存在
+6. `main` / `renderer` / `ui.panel` / 技能 / `views[].entry` 路径在声明时必须
+   存在。缺少 `main` 报 `PLUGIN_LOAD_FAILED: main entry missing`；缺少
+   `renderer` 报 `PLUGIN_LOAD_FAILED: renderer entry missing`
 7.工具`name`仅允许`[a-zA-Z][a-zA-Z0-9_]*`
 8. 贡献 ID（`themes`、`mcpServers`、`services`、`views`）必须匹配
    `[a-zA-Z][a-zA-Z0-9_-]{0,63}` 并在自己的列表中保持唯一；
@@ -421,13 +436,12 @@ MVP 只能实现：
 11. `bus.publish` 条目必须是具体主题，`bus.subscribe` 条目必须是具体主题
    有效模式（§5.1）
 12. 需要权限的贡献在权限验证时失败
-   缺少：`themes` → `ui.theme`，`views` → `ui.view`，`providers` →
-   `provider.register`，stdio 服务器 → `mcp.server.local`，远程
-   服务器 → `mcp.server.remote`、`services` → `background.service`、
-   `bus.publish` → `bus.publish`，`bus.subscribe` → `bus.subscribe`。
-`skills` 是一个例外 - 它早于权限门，因此清单
-   没有 `agent.prompt.inject` 仍然有效并且运行时只是跳过
-   技能
+   缺少：`renderer` → `renderer.extension`，`themes` → `ui.theme`，
+   `views` → `ui.view`，`providers` → `provider.register`，stdio 服务器 →
+   `mcp.server.local`，远程服务器 → `mcp.server.remote`、`services` →
+   `background.service`、`bus.publish` → `bus.publish`，`bus.subscribe` →
+   `bus.subscribe`。`skills` 是一个例外 - 它早于权限门，因此清单没有
+   `agent.prompt.inject` 仍然有效并且运行时只是跳过技能
 13. 设置的 key 必须唯一。`shortcut` 设置必须带 `command`，只能用 `plugin`
     作用域，并按「修饰键 + 按键」或 F 键校验。在安全的插件密钥存储出现之前，
     secret 一律拒绝
@@ -447,6 +461,18 @@ MVP 只能实现：
    `[a-zA-Z][a-zA-Z0-9._-]{0,63}` 且唯一；`command` 必须声明在
    `contributes.commands` 里；`default` 若存在，使用与 `shortcut` 设置相同的
    修饰键加按键 / F 键语法
+19. `main` 可省略，但清单必须在 `main`、`renderer`、`ui.panel`、
+   `views[].entry`、`settingsDestinations[].entry` 之间至少声明一个入口。
+   不是入口的贡献 —— `agentExtensions`、`services`、`providers`、`themes`、
+   `mcpServers`、`skills`、`commands` —— 不满足这条规则。TypeScript 的消息是
+   `manifest needs one of main, renderer, or a plugin page`；host-core 的消息是
+   `PLUGIN_INVALID: one of main/renderer/panel/view/destination required`
+20. `renderer` 声明受信任 UI 层级：一个在宿主渲染器内、与宿主 UI 同一 realm 运行的
+   ESM 模块，把 React 组件注册进宿主持有的槽位（规格 16 §2A）。它需要
+   `renderer.extension`；声明了 `renderer` 却没有该权限的清单会以
+   `manifest.renderer requires the renderer.extension permission` 失败
+   （host-core：`PLUGIN_INVALID: renderer requires the renderer.extension permission`）。
+   一个权限覆盖全部组件槽位：槽位按层级授权，绝不逐个授权（ADR 0287）
 
 ## 8. 示例：最小插件
 
@@ -548,6 +574,22 @@ MVP 只能实现：
 
 `{ "setting": "<key>" }`读取插件自身的设置；宿主环境是
 从未通过（D018）。
+
+## 9. 2 示例：只有渲染器入口的插件
+
+唯一入口是受信任组件槽位的插件不带无界面模块，也不带页面，这正是 `main` 可以省略、
+规则 19 存在的原因：
+
+```json
+{
+ "schemaVersion": 1,
+ "id": "demo.word-count",
+ "name": "Word Count",
+ "version": "0.1.0",
+ "renderer": "renderer/index.mjs",
+ "permissions": ["renderer.extension"]
+}
+```
 
 ## 10. 兼容性策略
 

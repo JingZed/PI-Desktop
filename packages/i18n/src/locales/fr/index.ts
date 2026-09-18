@@ -1623,6 +1623,7 @@ sklm: {
       "commands": "Commandes",
       "tools": "Outils d'agent",
       "agentExtension": "Extension de l'agent",
+      "renderer": "Dessine l'interface du plugin dans la fenêtre de l'application",
       "skills": "Compétences",
       "themes": "Thème",
       "mcp": "Serveur MCP",
@@ -1662,6 +1663,10 @@ sklm: {
       "agent.prompt.inject": "Ajuster les instructions de l'agent",
       "agent.complete": "Exécuter une complétion unique avec vos modèles",
       "agent.extension": "Exécuter du code dans l'agent",
+      "renderer.extension": "Exécuter l'interface du plugin dans la fenêtre de l'application",
+      "runtime.send.before": "Inspecter un message avant son envoi",
+      "runtime.turn.abort": "Arrêter le tour en cours",
+      "runtime.turn.closing": "Agir juste avant la fin d'un tour",
       "provider.register": "Ajouter des fournisseurs à la liste de modèles",
       "desktop.control": "Contrôler le bureau",
       "models.list": "Liste des modèles authentifiés",
@@ -1698,6 +1703,14 @@ sklm: {
       "agent.prompt.inject": "Peut modifier les instructions envoyées à l'agent IA.",
       "agent.complete": "Peut dépenser votre quota de modèle pour une réalisation unique. Le plugin ne reçoit jamais vos clés API.",
       "agent.extension": "Exécute des modules ExtensionAPI dans le processus de l'agent avec le même accès que ses propres outils. N'activez que du code auquel vous faites confiance.",
+      "renderer.extension":
+        "Ce plugin fournit du code qui s'exécute dans la fenêtre de l'application elle-même. Il partage le processus de l'application, peut dessiner n'importe où dans l'interface, et un plantage peut emporter l'interface avec lui. Installez-le uniquement si vous faites confiance à l'auteur du plugin.",
+      "runtime.send.before":
+        "Le plugin est consulté après votre appui sur envoyer et avant que le message atteigne le modèle. Il peut arrêter le message : une erreur peut donc bloquer ce que vous envoyez.",
+      "runtime.turn.abort":
+        "Le plugin peut terminer un tour en cours sans vous demander d'abord. Le travail déjà en route est abandonné.",
+      "runtime.turn.closing":
+        "Le plugin est consulté pendant qu'un tour est encore en cours et peut demander à l'agent de continuer. Cela consomme plus de tokens sans nouveau message de votre part.",
       "provider.register": "Ajoute les fournisseurs définis par ce plugin à la liste des fournisseurs des Paramètres. Le plugin fournit le point de terminaison et les modèles ; votre clé API reste dans PI-Desktop.",
       "desktop.control": "Permet d'appeler le catalogue PI-Desktop contrôlé ; les opérations destructrices exigent toujours confirm=true et le bearer token MCP n'est pas exposé.",
       "models.list": "Peut voir pour quels modèles vous vous êtes connecté. Il ne reçoit pas de clés.",

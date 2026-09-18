@@ -1624,6 +1624,7 @@ sklm: {
       commands: "命令",
       tools: "智慧體工具",
       agentExtension: "Agent 擴充",
+      renderer: "在應用視窗內繪製外掛介面",
       skills: "技能",
       themes: "主題",
       mcp: "MCP 服務",
@@ -1662,6 +1663,10 @@ sklm: {
       "agent.prompt.inject": "調整智慧體指令",
       "agent.complete": "用你的模型發起一次補全",
       "agent.extension": "在 agent 內執行程式碼",
+      "renderer.extension": "在應用視窗內執行外掛介面",
+      "runtime.send.before": "在訊息傳送前檢查",
+      "runtime.turn.abort": "停止正在執行的輪次",
+      "runtime.turn.closing": "在輪次結束前介入",
       "provider.register": "將服務新增到模型列表",
       "desktop.control": "控制桌面操作",
       "models.list": "列出已登入的模型",
@@ -1699,6 +1704,13 @@ sklm: {
       "agent.prompt.inject": "可能修改傳送給智慧體的指令。",
       "agent.complete": "會消耗你的模型額度發起一次補全。外掛拿不到 API 金鑰。",
       "agent.extension": "在 agent 程序內執行 ExtensionAPI 模組，擁有與 agent 自身工具相同的權限。只啟用你信任的程式碼。",
+      "renderer.extension":
+        "此外掛提供的程式碼會在應用自身視窗內執行：它與應用共用同一個程序，可在介面任意位置繪製，崩潰可能連帶介面一起結束。只在你信任外掛作者時才安裝。",
+      "runtime.send.before":
+        "在你按下傳送之後、訊息送達模型之前，外掛會被徵詢。它可以攔下這則訊息，因此外掛出錯可能讓你送不出內容。",
+      "runtime.turn.abort": "外掛不必先問你就能結束正在執行的輪次，已進行中的工作會被捨棄。",
+      "runtime.turn.closing":
+        "輪次仍在執行時外掛會被徵詢，並可以要求智慧體繼續進行。這會在你沒有新訊息的情況下消耗更多額度。",
       "provider.register": "把此外掛定義的服務新增到設定的服務列表。介面地址和模型由外掛提供，API 金鑰則留在 PI-Desktop 中。",
       "desktop.control": "允許外掛呼叫經過審查的 PI-Desktop 操作目錄；破壞性操作仍需 confirm=true，外掛永遠拿不到 MCP bearer token。",
       "models.list": "可以看到你已登入的模型，但拿不到金鑰。",

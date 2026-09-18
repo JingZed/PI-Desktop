@@ -1,12 +1,12 @@
 # 16. Trusted Extensions
 
-> Status: Implemented v1.1 (D387 / D388, ADR 0214 / ADR 0215 / ADR 0244); implementation notes are marked "v1 note"
-> Scope: v1.1. v2 and v3 items are listed in §12 and are not committed.
+> Status: Implemented v1.1 (D387 / D388, ADR 0214 / ADR 0215 / ADR 0244); implementation notes are marked "v1 note". §2A documents the trusted renderer host (issue #528, ADR 0287).
+> Scope: v1.1 plus the trusted renderer host. v2 and v3 items are listed in §12 and are not committed.
 
 ## 1. Purpose and terminology
 
 Plugins ([01-plugin-system.md](01-plugin-system.md)) are the one extension
-surface of PI-Desktop. This document specifies one plugin contribution,
+surface of PI-Desktop. The agent host is a plugin contribution,
 `contributes.agentExtensions`: TypeScript or JavaScript modules that run
 inside the Agent sidecar, receive an `ExtensionAPI` object, and register
 tools, commands, and event handlers directly on the agent loop. The
@@ -15,6 +15,12 @@ which PI-Desktop adopts alongside the `pi-ai` and `pi-agent-core` kernel
 (ADR 0002), so an extension written for the pi CLI is the module a plugin
 contributes. D388 folded the earlier standalone "trusted extensions"
 registry into this contribution; the engine below is unchanged.
+
+The document covers both trusted execution hosts: the agent sidecar
+agent sidecar (`contributes.agentExtensions`, §2 to §14 below) and the host
+renderer (`manifest.renderer`, §2A). The `main`, `ui.panel`, `views`, and
+`settingsDestinations` entries stay in their sandboxed hosts and are specified in
+[04-plugin-security.md](04-plugin-security.md).
 
 Provider declarations are a separate manifest surface rather than part of this
 contract: `contributes.providers` materializes Host-owned provider rows
@@ -28,8 +34,9 @@ so it is neither an `ExtensionAPI` member nor a row in the §5 support matrix.
 | Plugin | A PI-Desktop plugin with a manifest, running in its own process under the permission gateway (ADR 0008); the owner, installer, and enablement record of its agent extensions |
 | Adapter | The layer in `packages/agent-runtime` that implements `ExtensionAPI` on top of the desktop runtime |
 | Runner | One desktop-owned `TrustedExtensionRunner` instance bound to one desktop session (v1 note: the pi-coding-agent `ExtensionRunner` is not reused because it binds the terminal theme; its `ExtensionAPI` types are a types-only dependency) |
+| Renderer extension | One module a plugin names in `manifest.renderer`, running in the host renderer and registering components into host-owned slots (§2A) |
 
-## 2. Positioning and trust model
+## 2. Trusted agent host: positioning and trust model
 
 1. Agent extensions are installed, enabled, scoped, updated, and removed as
    part of their plugin. There is no second list, store, or settings page.
@@ -51,6 +58,125 @@ so it is neither an `ExtensionAPI` member nor a row in the §5 support matrix.
 5. Marketplace distribution of plugins holding `agent.extension` is not
    enabled in v1.1: the permission is accepted from local imports and
    development plugins. Marketplace listing waits for signing (spec 08).
+
+## 2A. Trusted renderer host (issue #528)
+
+A second trusted execution host sits beside the agent sidecar:
+`manifest.renderer`, a plugin-relative ES module the host renderer fetches and
+evaluates inside the app's own window, where it registers React components into
+host-owned slots. ADR 0287 records the decision; this section is the contract.
+
+### 2A.1 Trust tier and permission
+
+| Entry | Where the code runs | Permission | Component slots |
+|---|---|---|---|
+| `main` / `ui.panel` / `views[].entry` / `settingsDestinations[].entry` | plugin `utilityProcess` / plugin `webContents` | the manifest's own permissions | none |
+| `renderer` | the host renderer, same JavaScript realm as the host UI | `renderer.extension` (high) | yes, by tier |
+| `contributes.agentExtensions` | the agent sidecar | `agent.extension` (high) | none |
+
+Trust is per entry and the tiers are orthogonal, not a ladder: declaring one
+grants nothing in another, and a plugin may declare any combination.
+
+- `renderer.extension` is one permission for the whole tier. Slots are never
+  authorized one by one (#545 D1); the declaration is the request and the
+  install review is the authorization ceiling.
+- Declaring `renderer` without the permission fails manifest validation
+  (`manifest.renderer requires the renderer.extension permission`; host-core:
+  `PLUGIN_INVALID: renderer requires the renderer.extension permission`). A
+  manifest that asks for the permission but whose recorded grants omit it loads
+  with the entry skipped and audited, exactly like `agentExtensions`.
+- Distribution is not gated: a plugin with a `renderer` entry installs through
+  the ordinary local, development, and marketplace paths. Its plugin row shows a
+  `renderer` capability chip beside the other capabilities.
+- A plugin that registers a slot without declaring `renderer` is not served
+  silently: the registration is skipped and reported as a diagnostic.
+
+### 2A.2 Loading
+
+- The entry is fetched and evaluated lazily, the first time one of its slots is
+  really rendered. Nothing is reserved or shown while it loads, so a plugin
+  whose slots the current surface never renders costs nothing at startup.
+- Bytes come over the `plugin-renderer` scheme. It answers only for plugins that
+  are loaded **and** declare `renderer`, only for paths inside the plugin
+  package, and only for `js` / `mjs` / `css` / `json` / `map`. The existing
+  `plugin-asset` scheme is not widened: its MIME allowlist is images and fonts
+  on purpose.
+- The production renderer is a `file://` origin, so the production CSP must
+  allow `plugin-renderer` for scripts and connections, and the build-time CSP
+  tightening must include it in the same change — otherwise the entry works in
+  development and breaks only in a packaged build.
+- The module's `onLoad(pi)` hook is required and is where registration happens;
+  `onUnload()` is optional. The `pi` object carries `plugin.id` /
+  `plugin.version`, `pi.slots.register`, and `pi.ui.injectStyle`, and nothing
+  else.
+- React is a singleton: the host injects its own React and maps the bare
+  specifiers `react`, `react-dom`, and `react-dom/client` onto it, and a plugin
+  that ships its own React copy is refused at load with a diagnostic, because
+  two copies break hooks and context.
+
+### 2A.3 Same realm and style isolation
+
+No `iframe`, no worker, no second sandbox: the module shares the host renderer's
+global object, module graph, and React tree. The two mitigations that ship:
+
+- The app deletes `window.piDesktop` after capturing the bridge it needs at
+  startup, so the global bridge handle is not reachable from a later-loaded
+  module.
+- The import map resolves only the host modules named in §2A.2, so the module
+  cannot import arbitrary host modules.
+
+Style isolation is a namespace scheme, not Shadow DOM:
+
+- every slot is wrapped in a `data-pi-plugin="<plugin-id>"` container;
+- plugin styles must go through `pi.ui.injectStyle(css)`, and the host removes
+  the sheets on unload;
+- a stylesheet containing a top-level `html`, `body`, `:root`, or `*` selector
+  is refused rather than narrowed.
+
+Shadow DOM was rejected because portaled plugin UI would escape a shadow root
+(17 files and 39 `createPortal` call sites, zero `attachShadow` uses).
+
+### 2A.4 Crash containment and refusals
+
+- Each slot sits behind a React error boundary: a slot that throws collapses to
+  nothing, its neighbours are unaffected, and the host reports the crash. Where
+  the host has its own default rendering for that position, it falls back to it.
+- The crash radius of the renderer host is accepted: an infinite loop, a memory
+  leak, or global pollution is not contained by the boundary, and unloading is
+  not guaranteed to roll back global mutations (ADR 0287).
+- Refusals: a plugin that ships its own React is refused at load with a
+  diagnostic; a declared `renderer` file that is missing reports
+  `PLUGIN_LOAD_FAILED: renderer entry missing`; a module that does not export
+  `onLoad` reports `PLUGIN_INVALID: renderer entry must export onLoad`; a missing
+  permission is a manifest validation failure, or a skipped and audited entry
+  when the permission was never granted; and a module that throws while loading
+  leaves its slots empty with a diagnostic.
+
+### 2A.5 Component slots
+
+| Slot | Renders |
+|---|---|
+| `entry` | A whole transcript message that is an object rather than a paragraph |
+| `toolCard` | The turn / tool card body for the plugin's own tools |
+| `codeBlock` | A fenced code block, per language |
+| `entryExtra` | An extra block below one transcript entry |
+| `composerControl` | Controls in the composer's left and right positions |
+| `completionSource` | Candidates for the composer's completion popover |
+| `inlineConfirm` | An inline confirmation card |
+| `modal` | A blocking, app-level dialog |
+| `overlay` | An in-window overlay layer |
+| `composerReference` | Composer reference chips |
+
+The non-component capabilities from the same issue — a Markdown transformer,
+attachment sources, draft rewriting, and plugin copy localization — are separate
+APIs, not slots.
+
+### 2A.6 Deliberately not built
+
+The issue #545 §5 items that this cycle deliberately does not build: sidebar
+entries, a full-page workspace route, declarative slot shapes, sandboxed pages
+as a slot implementation, Shadow DOM, any host-provided UI for draft rewriting,
+and any host-side validation of a plugin's dangerous-action copy.
 
 ## 3. Contribution and import
 

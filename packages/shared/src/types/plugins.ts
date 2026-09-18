@@ -115,6 +115,23 @@ export type PluginPermissionReview = {
    * scopes rendered as `fs.<mode>…` entries. Empty for a first load.
    */
   addedPermissions: string[];
+  entries: PluginManifestEntries;
+};
+
+/**
+ * Which entries a manifest declares. The install review turns this into the
+ * trust-tier notice (spec 07-plugins/16): `renderer` means plugin code runs
+ * inside the app's own window, `agent` means inside the agent process.
+ */
+export type PluginManifestEntries = {
+  /** `manifest.main`: a headless module in the plugin's own process. */
+  main: boolean;
+  /** `manifest.renderer`: trusted component slots inside the app window. */
+  renderer: boolean;
+  /** A plugin-owned page: `ui.panel`, a view, or a settings destination. */
+  page: boolean;
+  /** `contributes.agentExtensions`: modules in the agent process. */
+  agent: boolean;
 };
 /**
  * One plugin-contributed work panel view, resolved for the current window.
@@ -187,7 +204,9 @@ export type PluginCapability =
   | "services"
   | "bus"
   /** `contributes.agentExtensions`: ExtensionAPI modules in the agent process. */
-  | "agentExtension";
+  | "agentExtension"
+  /** `manifest.renderer`: trusted component slots drawn in the app window. */
+  | "renderer";
 
 export type PluginSettingType =
   | "string"

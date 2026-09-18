@@ -46,17 +46,31 @@ export const PERMISSION_RISK: Record<string, RiskTier> = {
   "agent.tool.register": "high",
   "agent.complete": "high",
   "agent.extension": "high",
+  // The renderer host draws inside the app's own window, and the runtime hooks
+  // run inside the user's own turn, so a fault there is the user's too.
+  "renderer.extension": "high",
+  "runtime.send.before": "high",
+  "runtime.turn.abort": "high",
+  "runtime.turn.closing": "high",
   "desktop.control": "high",
   "session.read": "high",
+  "session.delete.own": "high",
   "browser.cdp": "high",
   // Reading is a tier below writing because what makes a read dangerous is
   // where the data can go, and outbound requests are declared separately.
   "fs.read": "medium",
   "fs.read.workspace": "medium",
   "models.list": "medium",
+  "provider.register": "medium",
   "clipboard.read": "medium",
   "clipboard.write": "medium",
   "shell.openExternal": "medium",
+  "project.create": "medium",
+  // Sessions the plugin imported itself sit a tier below `session.read`, which
+  // sees the live conversation.
+  "session.import": "medium",
+  "session.read.own": "medium",
+  "session.update.own": "medium",
   "mcp.server.local": "high",
   "mcp.server.remote": "high",
   "background.service": "high",
@@ -70,7 +84,10 @@ export const PERMISSION_RISK: Record<string, RiskTier> = {
   "bus.publish": "medium",
   "bus.subscribe": "medium",
   "ui.panel": "low",
+  "ui.view": "low",
+  "ui.settings": "low",
   "ui.microphone": "medium",
+  "ui.window.appearance": "medium",
   "ui.theme": "low",
   notify: "low",
 };

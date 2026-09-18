@@ -48,6 +48,10 @@ Provide a permission–capability–risk–default-policy reference table for re
 | `session.delete.own` | high | `pi.session.delete` | Confirm at install | Trash/purge only the calling plugin's imported sessions; rate-limited |
 | `agent.complete` | high | `pi.agent.complete` | Confirm at install | Host-owned one-shot; spends user quota; `includeSessionContext` also needs `session.read` |
 | `speech.adapter.register` | high | `pi.speech.registerAdapter` / `unregisterAdapter` | Confirm at install | Registers a speech protocol. Handles stay in the guest; HTTP plans are executed by the host with the bound provider key and must stay on that origin. Built-in protocol ids are reserved |
+| `renderer.extension` | high | Run `manifest.renderer` as an ES module inside the host renderer and register components into host-owned slots | Explicit confirmation; by tier, never per slot | The module runs inside the app window, in the host's own realm, with no process isolation. One permission covers every component slot (spec 16 §2A, ADR 0287) |
+| `runtime.send.before` | high | Runtime slot consult: Before Send | Confirm at install | The plugin is consulted while a turn is running, after the user presses send and before the message reaches the model, and can stop the message |
+| `runtime.turn.abort` | high | Runtime slot consult: Abort Turn | Confirm at install | The plugin can end a running turn without asking first; work already in flight is discarded |
+| `runtime.turn.closing` | high | Runtime slot consult: Turn Closing | Confirm at install | The plugin is consulted while a turn is running and can ask the agent to keep going, which spends more tokens with no new message from the user |
 
 ## 2A. A permission is the switch; the manifest carries the range
 
@@ -86,6 +90,28 @@ plugin, so it carries three bounds the other modes do not:
 3. **A rate brake.** 50 deletes per rolling 60s per plugin. Past it the user is
    asked once with the reason given as rate rather than path, because
    `recursive: false` bounds one call and not a `glob` plus a loop.
+
+## 2C. Trust tiers
+
+Trust tier comes before slot here: this section maps entries to tiers, and the
+rows in §2 are the permissions those entries may draw on. Trust is per entry,
+and the tiers are orthogonal, not a ladder: declaring one tier grants nothing in
+another, and a plugin may declare any combination.
+
+| Entry | Where the code runs | Permission | Component slots |
+|---|---|---|---|
+| `main` / `ui.panel` / `views[].entry` / `settingsDestinations[].entry` | plugin `utilityProcess` / plugin `webContents` | the manifest's own permissions | none |
+| `renderer` | the host renderer, same realm as the host UI | `renderer.extension` (high) | allowed, by tier |
+| `contributes.agentExtensions` | the agent sidecar | `agent.extension` (high) | none |
+
+Component slots are never authorized individually. `renderer.extension` is the
+single grant for all of them (spec 16 §2A, ADR 0287); a plugin that does not
+declare `renderer` cannot register one, and a registration attempt is skipped
+and reported as a diagnostic rather than dropped silently. The runtime
+permissions in §2 differ in shape — one name per slot, because each one changes
+a different point of a running turn — and only the batch-A slots
+(`runtime.send.before`, `runtime.turn.abort`, `runtime.turn.closing`) are
+implemented; the remaining runtime slots are not shipped.
 
 ## 3. Permission dependencies
 
@@ -154,6 +180,10 @@ so "Modify the files it lists" is followed by the list.
 | `audio.playback.background` | Play audio in the background | 后台播放声音 |
 | `keyboard.globalShortcut` | Register system-wide shortcuts | 注册系统级快捷键 |
 | `net.websocket` | Open real-time connections | 建立实时双向连接 |
+| `renderer.extension` | Run plugin UI inside the app window | 在应用窗口内运行插件界面 |
+| `runtime.send.before` | Inspect a message before it is sent | 在消息发送前检查 |
+| `runtime.turn.abort` | Stop the running turn | 停止正在运行的轮次 |
+| `runtime.turn.closing` | Act just before a turn ends | 在轮次结束前介入 |
 
 ## 5. Adding permissions on upgrade
 

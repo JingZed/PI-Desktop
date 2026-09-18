@@ -77,6 +77,29 @@ Local plugins usable → developer-friendly → marketplace distribution → sig
   prompt routing
 - Spec: [16-trusted-extensions.md](16-trusted-extensions.md); ADR 0214, ADR 0215
 
+### R8 — Trusted renderer host (issue #528, batch 0 ✅)
+- `manifest.renderer`: a plugin-relative ES module that runs inside the host
+  renderer and registers React components into host-owned slots ✅
+- `manifest.main` became optional, with one new rule: at least one entry across
+  `main`, `renderer`, `ui.panel`, `views[].entry`, and
+  `settingsDestinations[].entry` ✅
+- `renderer.extension` (high) is the single permission for the trusted UI tier;
+  component slots are authorized by tier, never one by one ✅
+- Component-slot ids: `entry`, `toolCard`, `codeBlock`, `entryExtra`,
+  `composerControl`, `completionSource`, `inlineConfirm`, `modal`, `overlay`,
+  `composerReference` ✅
+- Lazy fetch and evaluation over the `plugin-renderer` scheme, namespace style
+  isolation, the React singleton rule, per-slot error boundaries, and a
+  `renderer` capability chip on the plugin row ✅
+- Spec: [16-trusted-extensions.md](16-trusted-extensions.md) §2A; ADR 0287
+
+### R9 — Runtime slots (issue #561)
+- Batch A ✅ — each slot has its own high-risk permission and is consulted while
+  a turn is running: Before Send (1) → `runtime.send.before`; Abort Turn (3) →
+  `runtime.turn.abort`; Turn Closing (7) → `runtime.turn.closing`
+- The remaining runtime slots are gated on the still-open RD decisions and are
+  **not shipped yet**; Before Request (6) stays out of this cycle explicitly
+
 ## 3. Mapping to product milestones
 
 | Product milestone | Plugin goal |

@@ -1641,6 +1641,7 @@ importConfirm: "가져온 확장은 에이전트 프로세스 안에서 에이�
       commands: "명령",
       tools: "에이전트 도구",
       agentExtension: "에이전트 확장",
+      renderer: "앱 창에 플러그인 UI 그리기",
       skills: "스킬",
       themes: "테마",
       mcp: "MCP 서버",
@@ -1680,6 +1681,10 @@ importConfirm: "가져온 확장은 에이전트 프로세스 안에서 에이�
       "agent.prompt.inject": "에이전트 지침 조정",
       "agent.complete": "모델로 일회성 완성 실행",
       "agent.extension": "에이전트 안에서 코드 실행",
+      "renderer.extension": "앱 창 안에서 플러그인 UI 실행",
+      "runtime.send.before": "메시지를 보내기 전에 검사",
+      "runtime.turn.abort": "실행 중인 턴 중지",
+      "runtime.turn.closing": "턴이 끝나기 직전에 개입",
       "provider.register": "모델 목록에 프로바이더 추가",
       "desktop.control": "데스크톱 제어",
       "models.list": "인증된 모델 목록 표시",
@@ -1723,6 +1728,14 @@ importConfirm: "가져온 확장은 에이전트 프로세스 안에서 에이�
       "agent.complete":
         "모델 할당량을 사용해 일회성 완성을 실행할 수 있습니다. 플러그인은 API 키를 받지 않습니다.",
       "agent.extension": "ExtensionAPI 모듈을 에이전트 프로세스 안에서 에이전트 자체 도구와 같은 권한으로 실행합니다. 신뢰하는 코드만 켜세요.",
+      "renderer.extension":
+        "이 플러그인은 앱 자체 창 안에서 실행되는 코드를 포함합니다. 앱 프로세스를 공유하고 인터페이스 어디든 그릴 수 있으며, 충돌하면 인터페이스까지 함께 종료될 수 있습니다. 플러그인 작성자를 신뢰할 때만 설치하세요.",
+      "runtime.send.before":
+        "전송을 누른 뒤 메시지가 모델에 도달하기 전에 플러그인에 확인합니다. 메시지를 멈출 수 있으므로 실수하면 보내려던 내용이 막힐 수 있습니다.",
+      "runtime.turn.abort":
+        "플러그인은 먼저 묻지 않고 실행 중인 턴을 끝낼 수 있습니다. 이미 진행 중이던 작업은 버려집니다.",
+      "runtime.turn.closing":
+        "턴이 아직 실행 중일 때 플러그인에 확인하며, 에이전트에게 계속 진행하도록 요청할 수 있습니다. 새 메시지 없이 토큰을 더 소비합니다.",
       "provider.register":
         "이 플러그인이 정의한 프로바이더를 설정의 프로바이더 목록에 추가합니다. 플러그인은 엔드포인트와 모델을 제공하며, API 키는 PI-Desktop에 남습니다.",
       "desktop.control":

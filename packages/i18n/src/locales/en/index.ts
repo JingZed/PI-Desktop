@@ -1640,6 +1640,7 @@ importConfirm: "Imported extensions run inside the agent process with the same a
       commands: "Commands",
       tools: "Agent tools",
       agentExtension: "Agent extension",
+      renderer: "Draws plugin UI in the app window",
       skills: "Skills",
       themes: "Theme",
       mcp: "MCP server",
@@ -1679,6 +1680,10 @@ importConfirm: "Imported extensions run inside the agent process with the same a
       "agent.prompt.inject": "Adjust agent instructions",
       "agent.complete": "Run a one-shot completion with your models",
       "agent.extension": "Run code inside the agent",
+      "renderer.extension": "Run plugin UI inside the app window",
+      "runtime.send.before": "Inspect a message before it is sent",
+      "runtime.turn.abort": "Stop the running turn",
+      "runtime.turn.closing": "Act just before a turn ends",
       "provider.register": "Add providers to the model list",
       "desktop.control": "Control the desktop",
       "models.list": "List authenticated models",
@@ -1723,6 +1728,14 @@ importConfirm: "Imported extensions run inside the agent process with the same a
       "agent.complete":
         "Can spend your model quota on a one-shot completion. The plugin never receives your API keys.",
       "agent.extension": "Runs ExtensionAPI modules inside the agent process with the same access as the agent's own tools. Enable only code you trust.",
+      "renderer.extension":
+        "This plugin ships code that runs inside the app's own window. It shares the app's process, can draw anywhere in the interface, and a crash can take the interface down with it. Only install it if you trust the plugin author.",
+      "runtime.send.before":
+        "The plugin is consulted after you press send and before the message reaches the model. It can stop the message, so a mistake can block what you send.",
+      "runtime.turn.abort":
+        "The plugin can end a running turn without asking you first. Work already in flight is discarded.",
+      "runtime.turn.closing":
+        "The plugin is consulted while a turn is still running and can ask the agent to keep going. That spends more tokens without a new message from you.",
       "provider.register":
         "Adds the providers this plugin defines to Settings' provider list. The plugin supplies the endpoint and models; your API key stays in PI-Desktop.",
       "desktop.control":

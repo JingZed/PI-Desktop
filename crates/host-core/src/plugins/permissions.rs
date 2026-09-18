@@ -60,6 +60,13 @@ pub(crate) fn derive_capabilities(manifest: &PluginManifest) -> Vec<String> {
     {
         out.push("panel".into());
     }
+    if manifest
+        .renderer
+        .as_deref()
+        .is_some_and(|value| !value.trim().is_empty())
+    {
+        out.push("renderer".into());
+    }
     let map = manifest.contributes.as_ref().and_then(Value::as_object);
     let has = |key: &str| -> bool {
         map.and_then(|m| m.get(key))

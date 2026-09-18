@@ -1641,6 +1641,7 @@ importConfirm: "İçe aktarılan uzantılar ajan sürecinde, ajanın kendi araç
       commands: "Komutlar",
       tools: "Ajan araçları",
       agentExtension: "Ajan uzantısı",
+      renderer: "Eklenti arayüzünü uygulama penceresine çizer",
       skills: "Beceriler",
       themes: "Tema",
       mcp: "MCP sunucusu",
@@ -1680,6 +1681,10 @@ importConfirm: "İçe aktarılan uzantılar ajan sürecinde, ajanın kendi araç
       "agent.prompt.inject": "Ajan yönergelerini ayarla",
       "agent.complete": "Modellerinizle tek seferlik tamamlatma çalıştır",
       "agent.extension": "Ajanın içinde kod çalıştır",
+      "renderer.extension": "Eklenti arayüzünü uygulama penceresinde çalıştır",
+      "runtime.send.before": "İletiyi gönderilmeden önce incele",
+      "runtime.turn.abort": "Çalışan turu durdur",
+      "runtime.turn.closing": "Tur bitmeden hemen önce devreye gir",
       "provider.register": "Model listesine servis ekle",
       "desktop.control": "Masaüstünü kontrol et",
       "models.list": "Kimliği doğrulanmış modelleri listele",
@@ -1723,6 +1728,14 @@ importConfirm: "İçe aktarılan uzantılar ajan sürecinde, ajanın kendi araç
       "agent.complete":
         "Model kotanızı tek seferlik bir tamamlatma için harcayabilir. Eklenti API anahtarlarınızı almaz.",
       "agent.extension": "ExtensionAPI modüllerini ajan sürecinde, ajanın kendi araçlarıyla aynı erişimle çalıştırır. Yalnızca güvendiğiniz kodu etkinleştirin.",
+      "renderer.extension":
+        "Bu eklenti, uygulamanın kendi penceresinde çalışan kod içerir. Uygulamanın sürecini paylaşır, arayüzün her yerine çizebilir ve bir çökme arayüzü de beraberinde götürebilir. Yalnızca eklenti yazarına güveniyorsanız yükleyin.",
+      "runtime.send.before":
+        "Siz göndere bastıktan sonra ve ileti modele ulaşmadan önce eklentiye danışılır. İletiyi durdurabilir, bu yüzden bir hata gönderdiklerinizi engelleyebilir.",
+      "runtime.turn.abort":
+        "Eklenti, size sormadan çalışan bir turu bitirebilir. Yürümekte olan iş yok sayılır.",
+      "runtime.turn.closing":
+        "Tur hâlâ çalışırken eklentiye danışılır ve eklenti ajanın devam etmesini isteyebilir. Bu, sizden yeni bir ileti olmadan daha fazla token harcar.",
       "provider.register":
         "Bu eklentinin tanımladığı servisleri Ayarlar’daki servis listesine ekler. Uç noktayı ve modelleri eklenti sağlar; API anahtarınız PI-Desktop’ta kalır.",
       "desktop.control":

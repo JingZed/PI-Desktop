@@ -2150,3 +2150,267 @@ fn plugin_ui_meta_parses_the_floating_widget_placement() {
     assert!(panel.always_on_top.is_none());
     assert!(panel.resizable.is_none());
 }
+
+// Entry rule cases. A plugin runs through one of three entries: the headless
+// module (`main`), the trusted renderer module (`renderer`), or a plugin-owned
+// page (`ui.panel`, a view, a settings destination). The SDK mirrors this in
+// `pluginHasEntry`; `manifest_entry_verdicts_match_the_sdk` pins the two
+// implementations to the same table.
+
+#[test]
+fn a_main_only_manifest_still_loads() {
+    let dir = tempdir().unwrap();
+    let root = dir.path().join("main-only");
+    write_plugin(&root, capability_manifest(json!({}), json!([])), &[]);
+    let manifest = PluginManager::read_manifest(&root).unwrap();
+    assert_eq!(manifest.main, "main.js");
+    assert!(manifest.renderer.is_none());
+}
+
+#[test]
+fn a_renderer_only_manifest_loads_with_the_trusted_grant() {
+    // A renderer-only plugin ships no headless module at all, so `main` is
+    // absent from the manifest and there is no main.js to find.
+    let dir = tempdir().unwrap();
+    let root = dir.path().join("renderer-only");
+    write_plugin(
+        &root,
+        json!({
+            "schemaVersion": 1,
+            "id": "demo.renderer",
+            "name": "Renderer",
+            "version": "0.1.0",
+            "renderer": "renderer/index.js",
+            "permissions": ["renderer.extension"],
+        }),
+        &[("renderer/index.js", "export function onLoad() {}")],
+    );
+    fs::remove_file(root.join("main.js")).unwrap();
+
+    let manifest = PluginManager::read_manifest(&root).unwrap();
+    // The serde default is what an absent `main` deserializes to.
+    assert!(manifest.main.is_empty());
+    assert_eq!(manifest.renderer.as_deref(), Some("renderer/index.js"));
+}
+
+#[test]
+fn a_manifest_without_any_entry_is_rejected() {
+    let dir = tempdir().unwrap();
+    let root = dir.path().join("no-entry");
+    write_plugin(
+        &root,
+        json!({
+            "schemaVersion": 1,
+            "id": "demo.noentry",
+            "name": "No entry",
+            "version": "0.1.0",
+        }),
+        &[],
+    );
+    let error = read_manifest_err(&root);
+    assert!(
+        error.contains("one of main/renderer/panel/view/destination required"),
+        "{error}"
+    );
+    // An absent `main` means "no headless module", not "a module that is gone".
+    assert!(!error.contains("main entry missing"), "{error}");
+}
+
+#[test]
+fn a_blank_entry_path_is_not_an_entry() {
+    // The SDK validator refuses a blank `main` outright; here a blank path is
+    // simply not an entry, which leaves the manifest with none.
+    let dir = tempdir().unwrap();
+    let root = dir.path().join("blank");
+    write_plugin(
+        &root,
+        json!({
+            "schemaVersion": 1,
+            "id": "demo.blank",
+            "name": "Blank",
+            "version": "0.1.0",
+            "main": "",
+            "renderer": "   ",
+            "permissions": ["renderer.extension"],
+        }),
+        &[],
+    );
+    assert!(
+        read_manifest_err(&root).contains("one of main/renderer/panel/view/destination required")
+    );
+}
+
+#[test]
+fn renderer_entries_need_the_grant_before_the_file_is_checked() {
+    let dir = tempdir().unwrap();
+
+    // No renderer file is written at all: the permission gate is what has to
+    // fire, and it fires before the file check.
+    let no_grant = dir.path().join("no-grant");
+    write_plugin(
+        &no_grant,
+        json!({
+            "schemaVersion": 1,
+            "id": "demo.renderer",
+            "name": "Renderer",
+            "version": "0.1.0",
+            "renderer": "renderer/index.js",
+        }),
+        &[],
+    );
+    let error = read_manifest_err(&no_grant);
+    assert!(
+        error.contains("renderer requires the renderer.extension permission"),
+        "{error}"
+    );
+    assert!(!error.contains("renderer entry missing"), "{error}");
+
+    let missing = dir.path().join("missing-entry");
+    write_plugin(
+        &missing,
+        json!({
+            "schemaVersion": 1,
+            "id": "demo.renderer",
+            "name": "Renderer",
+            "version": "0.1.0",
+            "renderer": "renderer/index.js",
+            "permissions": ["renderer.extension"],
+        }),
+        &[],
+    );
+    assert!(read_manifest_err(&missing).contains("renderer entry missing"));
+}
+
+#[test]
+fn derive_capabilities_flags_the_trusted_renderer_entry() {
+    let dir = tempdir().unwrap();
+    let with_renderer = dir.path().join("with-renderer");
+    write_plugin(
+        &with_renderer,
+        json!({
+            "schemaVersion": 1,
+            "id": "demo.renderer",
+            "name": "Renderer",
+            "version": "0.1.0",
+            "renderer": "renderer/index.js",
+            "permissions": ["renderer.extension"],
+        }),
+        &[("renderer/index.js", "export function onLoad() {}")],
+    );
+    assert_eq!(
+        derive_capabilities(&PluginManager::read_manifest(&with_renderer).unwrap()),
+        vec!["renderer"]
+    );
+
+    // A headless plugin declares no renderer and keeps the badge off.
+    let main_only = dir.path().join("main-only");
+    write_plugin(&main_only, capability_manifest(json!({}), json!([])), &[]);
+    assert!(
+        !derive_capabilities(&PluginManager::read_manifest(&main_only).unwrap())
+            .contains(&"renderer".to_string())
+    );
+}
+
+/// The entry rule has two implementations — `PluginManifest::has_entry` here and
+/// `pluginHasEntry` in the plugin SDK (`packages/plugin-sdk/src/index.ts`) — and
+/// they have to agree, or a plugin installs in the app and is refused by the
+/// packager. This table is the same set of manifests the SDK test
+/// `describe("manifestEntries / pluginHasEntry")` walks.
+///
+/// Only the rule itself is compared. A renderer whose file is missing is
+/// rejected here and accepted by the SDK validator, which checks paths for shape
+/// and never touches the filesystem; `read_manifest`'s own test above covers
+/// that half.
+#[test]
+fn manifest_entry_verdicts_match_the_sdk() {
+    let dir = tempdir().unwrap();
+    let plugin_root = |name: &str| dir.path().join(name);
+    /// One row of the parity table: a complete manifest apart from the entry
+    /// under test, plus the files the host has to find.
+    struct EntryCase {
+        name: &'static str,
+        overrides: Value,
+        files: Vec<(&'static str, &'static str)>,
+        loads: bool,
+    }
+    let cases = vec![
+        EntryCase {
+            name: "main-only",
+            overrides: json!({ "main": "main.js" }),
+            files: vec![],
+            loads: true,
+        },
+        EntryCase {
+            name: "renderer-only",
+            overrides: json!({
+                "renderer": "renderer/index.js",
+                "permissions": ["renderer.extension"]
+            }),
+            files: vec![("renderer/index.js", "export function onLoad() {}")],
+            loads: true,
+        },
+        EntryCase {
+            name: "panel-only",
+            overrides: json!({ "ui": { "panel": "renderer/index.html" } }),
+            files: vec![("renderer/index.html", "<html></html>")],
+            loads: true,
+        },
+        EntryCase {
+            name: "view-only",
+            overrides: json!({
+                "contributes": {
+                    "views": [{ "id": "changes", "title": "Changes", "entry": "views/changes.html" }]
+                },
+                "permissions": ["ui.view"]
+            }),
+            files: vec![("views/changes.html", "<html></html>")],
+            loads: true,
+        },
+        EntryCase {
+            name: "no-entry",
+            overrides: json!({}),
+            files: vec![],
+            loads: false,
+        },
+        EntryCase {
+            name: "agent-extension-only",
+            overrides: json!({
+                "contributes": { "agentExtensions": ["agent/hooks.ts"] },
+                "permissions": ["agent.extension"]
+            }),
+            files: vec![("agent/hooks.ts", "export const hooks = [];")],
+            loads: false,
+        },
+        EntryCase {
+            name: "renderer-without-grant",
+            overrides: json!({ "renderer": "renderer/index.js" }),
+            files: vec![("renderer/index.js", "export function onLoad() {}")],
+            loads: false,
+        },
+    ];
+
+    for case in cases {
+        let mut manifest = json!({
+            "schemaVersion": 1,
+            "id": "demo.parity",
+            "name": "Parity",
+            "version": "0.1.0",
+        });
+        let fields = manifest.as_object_mut().unwrap();
+        for (key, value) in case.overrides.as_object().unwrap().clone() {
+            fields.insert(key, value);
+        }
+
+        let root = plugin_root(case.name);
+        write_plugin(&root, manifest, &case.files);
+        let outcome = PluginManager::read_manifest(&root);
+        let error = outcome.as_ref().err().map(|e| e.to_string());
+        assert_eq!(
+            outcome.is_ok(),
+            case.loads,
+            "{} should {}: {error:?}",
+            case.name,
+            if case.loads { "load" } else { "be rejected" }
+        );
+    }
+}

@@ -314,3 +314,4 @@ Each ADR includes:
 | 0285 | [`RACP-WS` transport in `packages/racp`](0285-racp-ws-transport.md) | Accepted for implementation (D448; ADR 0205 R2) |
 | 0286 | [Remote-host desktop kernel](0286-remote-host-desktop-kernel.md) | Accepted for implementation (D449; ADR 0205 R2) |
 | turn-process-and-thinking-display | [Turn process and thinking presentation](turn-process-and-thinking-display.md) | Accepted |
+| 0287 | [Trusted renderer execution host](0287-trusted-renderer-execution-host.md) | Accepted for implementation (issue #528) |

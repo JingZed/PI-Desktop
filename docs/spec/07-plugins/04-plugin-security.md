@@ -28,7 +28,10 @@ Main risks:
 ## 3. Isolation strategy
 
 ### Must
-1. Plugin UI is isolated from the host UI DOM
+1. Untrusted plugin UI is isolated from the host UI DOM. Panels, views, and
+   settings destinations keep their own `webContents` and never draw into the
+   host document. The trusted UI tier (`manifest.renderer`, §3.3) is the one
+   deliberate exception: it runs inside the host renderer realm by design
 2. Plugins cannot directly require host modules
 3. The secret store is not open to plugins. Host-owned completions
    (`agent.complete`) resolve credentials in Electron main and never pass keys,
@@ -80,9 +83,10 @@ transcript replacement and regeneration.
 
 ## 3.1 Contributed theme CSS
 
-A theme contribution (`ui.theme`) is the one case where plugin-authored content
-runs inside the host renderer, so it crosses a sanitizer in the main process
-before it is ever sent to the UI:
+A theme contribution (`ui.theme`) is untrusted plugin-authored content that
+runs inside the host renderer (the trusted UI tier of §3.3 is the other way
+into that realm, and it is not sanitized because it is trusted code), so the
+CSS crosses a sanitizer in the main process before it is ever sent to the UI:
 
 - Only CSS the browser applies is inspected: comment bodies and string literals
   are blanked first, with one space per masked character so any offset still
@@ -113,6 +117,53 @@ before it is ever sent to the UI:
 
 CSS cannot script, but it can mislead: a theme is still third-party code shaping
 what the user sees, which is why it is a declared, revocable permission.
+
+## 3.3 Trust tiers
+
+Trust follows the entries a plugin declares, and the tiers are orthogonal, not a
+ladder: declaring one tier grants nothing in another, and a plugin may declare
+any combination.
+
+| Entry | Where the code runs | Permission | Component slots |
+|---|---|---|---|
+| `main` / `ui.panel` / `views[].entry` / `settingsDestinations[].entry` | plugin `utilityProcess` / plugin `webContents` | the manifest's own permissions | none |
+| `renderer` | the host renderer, same realm as the host UI | `renderer.extension` (high) | allowed, by tier |
+| `contributes.agentExtensions` | the agent sidecar | `agent.extension` (high) | none |
+
+The base tier (`main` and/or a page) is the sandboxed model above: process
+isolation, its own DOM, and no slot registration. The trusted agent tier runs in
+the agent sidecar and is specified in
+[16-trusted-extensions.md](16-trusted-extensions.md) §2.
+
+The trusted UI tier puts plugin code **inside the app's own window**: the entry
+module shares the host renderer's JavaScript realm, its DOM, its module graph,
+and its React tree. There is no process isolation, no `iframe`, and no second
+sandbox (ADR 0287). The mitigations that do ship with it:
+
+- **React singleton.** The host injects its own React through the module's
+  import map; a plugin that ships its own React is refused at load with a
+  diagnostic, because two React copies break hooks and context.
+- **No global bridge handle.** The app deletes `window.piDesktop` after
+  capturing the bridge it needs at startup, so the bridge is not reachable from
+  a later-loaded module; the renderer entry receives only the host object the
+  renderer API hands it.
+- **Namespaced styling.** Every slot is wrapped in a
+  `data-pi-plugin="<plugin-id>"` container, plugin styles must go through
+  `pi.ui.injectStyle(css)`, the host removes them on unload, and a stylesheet
+  with a top-level `html`, `body`, `:root`, or `*` selector is refused rather
+  than narrowed.
+- **Per-slot error boundary.** A slot that throws collapses to nothing, its
+  neighbours are unaffected, and the host reports the crash.
+- **Distribution is left ungated.** A plugin declaring `renderer` installs
+  through the ordinary local, development, and marketplace paths; the
+  `renderer.extension` grant is where the user sees the risk.
+
+What this tier gives up is recorded rather than implied: an infinite loop, a
+memory leak, or global pollution from the entry is not contained by the error
+boundary, and unloading is not guaranteed to roll back global mutations. The
+crash radius of the renderer host is an accepted cost of the same-realm design
+(ADR 0287). The entry contract itself is specified in
+[16-trusted-extensions.md](16-trusted-extensions.md) §2A.
 
 ## 4. Permission-grant UX
 

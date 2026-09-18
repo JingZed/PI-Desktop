@@ -30,7 +30,9 @@
 ## 3. 隔离策略
 
 ### 必须
-1.插件UI与宿主UI DOM隔离
+1. 不受信任的插件 UI 与宿主 UI DOM 隔离。面板、视图和设置目的地各自持有自己的
+   `webContents`，绝不画进宿主文档。受信任 UI 层级（`manifest.renderer`，§3.3）
+   是唯一刻意保留的例外：它按设计就运行在宿主渲染器 realm 之内
 2. 插件不能直接请求主机模块
 3.秘密商店不对插件开放。宿主代发的补全（`agent.complete`）在 Electron main
    解析凭据，从不把密钥、刷新令牌或 `ModelAuth` 交给插件进程
@@ -49,9 +51,9 @@
 
 ## 3. 1 贡献主题CSS
 
-主题贡献 (`ui.theme`) 是插件创作内容的一种情况
-在主机渲染器内部运行，因此它会在主进程中穿过消毒剂
-在发送到 UI 之前：
+主题贡献（`ui.theme`）是运行在宿主渲染器内的不受信任插件内容（§3.3 的受信任 UI
+层级是进入同一 realm 的另一条路径，它因为是受信任代码而不做消毒），因此这段
+CSS 在发送到 UI 之前会在主进程中穿过消毒器：
 
 - 只检查浏览器实际生效的 CSS：先按等长空白遮蔽注释体与字符串字面量
   （每个被遮蔽字符对应一个空格，偏移仍指向原文），`url(...)` 参数按原样保留
@@ -77,6 +79,41 @@
 
 CSS 无法脚本化，但它可能会产生误导：主题仍然是第三方代码塑造
 用户看到的内容，这就是为什么它是声明的、可撤销的权限。
+
+## 3.3 信任层级
+
+信任跟随插件声明的入口，且各层级正交而非阶梯：声明一个层级不会在另一个层级
+获得任何东西，一个插件也可以任意组合多个层级。
+
+| 入口 | 代码运行位置 | 权限 | 组件槽位 |
+|---|---|---|---|
+| `main` / `ui.panel` / `views[].entry` / `settingsDestinations[].entry` | 插件 `utilityProcess` / 插件 `webContents` | 清单自身声明的权限 | 无 |
+| `renderer` | 宿主渲染器，与宿主 UI 同一 realm | `renderer.extension`（高） | 允许，按层级 |
+| `contributes.agentExtensions` | agent sidecar | `agent.extension`（高） | 无 |
+
+基础层级（`main` 和/或一个页面）就是上文那套沙箱模型：进程隔离、自己的 DOM、
+不能注册槽位。受信任 agent 层级运行在 agent sidecar 内，规格见
+[16-trusted-extensions.md](/zh-CN/spec/07-plugins/16-trusted-extensions) §2。
+
+受信任 UI 层级把插件代码放进**应用自己的窗口**：入口模块与宿主渲染器共享
+JavaScript realm、DOM、模块图和 React 树。没有进程隔离，没有 `iframe`，也没有
+第二层沙箱（ADR 0287）。随之交付的缓解措施：
+
+- **React 单例。** 宿主通过模块的 import map 注入自己的 React；自带 React 的插件
+  在加载时被拒绝并记录诊断，因为两份 React 会破坏 hooks 与 context。
+- **没有全局桥句柄。** 应用在启动时取到所需的桥之后会删除 `window.piDesktop`，
+  之后加载的模块拿不到这个全局句柄；渲染器入口只拿到渲染器 API 交给它的宿主对象。
+- **命名空间样式。** 每个槽位都包在 `data-pi-plugin="<plugin-id>"` 容器里，插件
+  样式必须走 `pi.ui.injectStyle(css)`，宿主在卸载时移除它们；含顶层 `html`、
+  `body`、`:root` 或 `*` 选择器的样式表会被整个拒绝，而不是被收窄。
+- **逐槽位错误边界。** 抛错的槽位塌缩为空白，邻居不受影响，宿主会上报这次崩溃。
+- **分发不做门控。** 声明 `renderer` 的插件走普通的本地、开发与市场路径安装；
+  `renderer.extension` 授权就是用户看到风险的地方。
+
+这一层级放弃了什么会被记录而不是被隐含：入口的无限循环、内存泄漏或全局污染不会被
+错误边界兜住，卸载也不保证回滚插件造成的全局改动。渲染器宿主的崩溃半径是同一
+realm 设计的已知代价（ADR 0287）。入口契约本身见
+[16-trusted-extensions.md](/zh-CN/spec/07-plugins/16-trusted-extensions) §2A。
 
 ## 4. 权限授予用户体验
 

@@ -49,7 +49,20 @@ type PluginManifestV1 = {
  };
  repository?: string;
  icon?: string; // relative path
- main?: string; // plugin runtime entry
+ /**
+  * Headless entry: a plugin-relative module the host runs in its own process.
+  * Optional: a UI-only plugin may declare just `renderer`, or only a plugin
+  * page. At least one entry must exist across this field, `renderer`,
+  * `ui.panel`, `views[].entry`, and `settingsDestinations[].entry` (rule 19).
+  */
+ main?: string;
+ /**
+  * Trusted renderer entry: a plugin-relative ES module that runs inside the
+  * host renderer (the app's own window) and registers React components into
+  * host-owned slots. Requires `renderer.extension` (rule 20) and is fetched
+  * lazily, the first time one of its slots really renders (spec 16 §2A).
+  */
+ renderer?: string;
  ui?: PluginUiConfig;
  contributes?: PluginContributes;
  permissions?: PluginPermission[];
@@ -294,6 +307,7 @@ type PluginPermission =
  | "fs.delete"
  | "agent.tool.register"
  | "agent.prompt.inject"
+ | "renderer.extension" // trusted UI tier: one name for every component slot (spec 16 §2A)
  | "provider.register"
  | "net.fetch"
  | "shell.openExternal"
@@ -441,7 +455,10 @@ MVP may implement only:
 3. Whether a manifest that declares `ui.panel` needs the `ui.panel` permission implicitly (auto-filled) or by explicit declaration is an **open question** (tracked in [08-meta/open-questions.md](../08-meta/open-questions.md))
 4. If `agentTools` are present, `agent.tool.register` must be declared
 5. Path fields must not use absolute paths or `..`
-6. `main` / `ui.panel` / skills / `views[].entry` paths must exist
+6. `main` / `renderer` / `ui.panel` / skills / `views[].entry` paths must
+   exist when declared. A missing `main` reports
+   `PLUGIN_LOAD_FAILED: main entry missing`; a missing `renderer` reports
+   `PLUGIN_LOAD_FAILED: renderer entry missing`
 7. tool `name` allows only `[a-zA-Z][a-zA-Z0-9_]*`
 8. Contribution ids (`themes`, `mcpServers`, `services`, `views`) must match
    `[a-zA-Z][a-zA-Z0-9_-]{0,63}` and be unique within their own list;
@@ -456,13 +473,13 @@ MVP may implement only:
 11. `bus.publish` entries must be concrete topics and `bus.subscribe` entries
    valid patterns (§5.1)
 12. A contribution that needs a permission fails validation when the permission
-   is missing: `themes` → `ui.theme`, `views` → `ui.view`, `providers` →
-   `provider.register`, stdio servers → `mcp.server.local`, remote
-   servers → `mcp.server.remote`, `services` → `background.service`,
-   `bus.publish` → `bus.publish`, `bus.subscribe` → `bus.subscribe`.
-   `skills` is the exception — it predates the permission gate, so a manifest
-   without `agent.prompt.inject` still validates and the runtime simply skips
-   the skills
+   is missing: `renderer` → `renderer.extension`, `themes` → `ui.theme`,
+   `views` → `ui.view`, `providers` → `provider.register`, stdio servers →
+   `mcp.server.local`, remote servers → `mcp.server.remote`, `services` →
+   `background.service`, `bus.publish` → `bus.publish`, `bus.subscribe` →
+   `bus.subscribe`. `skills` is the exception — it predates the permission
+   gate, so a manifest without `agent.prompt.inject` still validates and the
+   runtime simply skips the skills
 13. Settings keys are unique. `shortcut` settings require `command`, may only
     use the `plugin` scope, and are validated as modifier-plus-key or F-key
     bindings. Secrets are rejected until secure plugin-secret storage exists.
@@ -485,6 +502,22 @@ MVP may implement only:
    `[a-zA-Z][a-zA-Z0-9._-]{0,63}` and is unique; `command` must be declared in
    `contributes.commands`; `default`, when present, uses the same
    modifier-plus-key / F-key grammar as `shortcut` settings
+19. `main` is optional, but a manifest must declare at least one entry across
+   `main`, `renderer`, `ui.panel`, `views[].entry`, and
+   `settingsDestinations[].entry`. Contributions that are not entries —
+   `agentExtensions`, `services`, `providers`, `themes`, `mcpServers`,
+   `skills`, `commands` — do not satisfy the rule. The TypeScript message is
+   `manifest needs one of main, renderer, or a plugin page`; the host-core
+   message is `PLUGIN_INVALID: one of main/renderer/panel/view/destination
+   required`
+20. `renderer` declares the trusted UI tier: an ESM module that runs inside the
+   host renderer, in the same realm as the host UI, and registers React
+   components into host-owned slots (spec 16 §2A). It requires
+   `renderer.extension`, and a manifest that declares `renderer` without it
+   fails with `manifest.renderer requires the renderer.extension permission`
+   (host-core: `PLUGIN_INVALID: renderer requires the renderer.extension
+   permission`). One permission covers every component slot: slots are
+   authorized by tier, never one at a time (ADR 0287)
 
 ## 8. Example: minimal plugin
 
@@ -586,6 +619,22 @@ MVP may implement only:
 
 `{ "setting": "<key>" }` reads the plugin's own settings; the host environment is
 never passed through (D018).
+
+## 9.2 Example: renderer-only plugin
+
+A plugin whose only entry is a trusted component slot ships no headless module
+and no page, which is why `main` is optional and rule 19 exists:
+
+```json
+{
+ "schemaVersion": 1,
+ "id": "demo.word-count",
+ "name": "Word Count",
+ "version": "0.1.0",
+ "renderer": "renderer/index.mjs",
+ "permissions": ["renderer.extension"]
+}
+```
 
 ## 10. Compatibility strategy
 

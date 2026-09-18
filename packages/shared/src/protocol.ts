@@ -166,6 +166,12 @@ export const IPC = {
     providersOauthCancel: "pi-desktop/providers/oauth/cancel",
     providersOauthDelete: "pi-desktop/providers/oauth/delete",
     pluginList: "pi-desktop/plugin/list",
+  /**
+   * The renderer entry a loaded plugin may run, or null. The renderer never
+   * reads a manifest: it asks the main process for the one path it needs
+   * (ADR 0287).
+   */
+  pluginRendererEntry: "pi-desktop/plugin/renderer/entry",
     /** Plugin-contributed agent extensions (D387/D388, ADR 0214). */
     pluginImportExtension: "pi-desktop/plugin/importExtension",
     extensionsCommandRun: "pi-desktop/extensions/commands/run",

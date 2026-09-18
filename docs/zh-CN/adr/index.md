@@ -295,6 +295,7 @@ ADR 记录那些不应被静默改变的架构选择。中文入口与英文索�
 | 0284 | [`packages/host-runtime` 的无头运行时边界](/adr/0284-headless-runtime-boundary) | 已接受（实施中）（D447；ADR 0205 R2 前置） |
 | 0285 | [`packages/racp` 的 `RACP-WS` 传输](/adr/0285-racp-ws-transport) | 已接受（实施中）（D448；ADR 0205 R2） |
 | turn-process-and-thinking-display | [回合过程与思考展示](/adr/turn-process-and-thinking-display) | 已接受 |
+| 0287 | [可信渲染器执行宿主](/adr/0287-trusted-renderer-execution-host) | 已接受待实现（issue #528） |
 
 ## 什么时候看 ADR
 

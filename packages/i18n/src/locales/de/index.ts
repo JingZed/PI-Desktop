@@ -1623,6 +1623,7 @@ sklm: {
       "commands": "Befehle",
       "tools": "Agententools",
       "agentExtension": "Agent-Erweiterung",
+      "renderer": "Zeichnet die Plugin-Oberfläche im App-Fenster",
       "skills": "Fähigkeiten",
       "themes": "Thema",
       "mcp": "MCP-Server",
@@ -1662,6 +1663,10 @@ sklm: {
       "agent.prompt.inject": "Agentenanweisungen anpassen",
       "agent.complete": "One-Shot-Vervollständigung mit Ihren Modellen durchführen",
       "agent.extension": "Code im Agenten ausführen",
+      "renderer.extension": "Plugin-Oberfläche im App-Fenster ausführen",
+      "runtime.send.before": "Eine Nachricht vor dem Senden prüfen",
+      "runtime.turn.abort": "Die laufende Runde stoppen",
+      "runtime.turn.closing": "Kurz vor Ende einer Runde eingreifen",
       "provider.register": "Anbieter zur Modellliste hinzufügen",
       "desktop.control": "Desktop steuern",
       "models.list": "Authentifizierte Modelle auflisten",
@@ -1698,6 +1703,14 @@ sklm: {
       "agent.prompt.inject": "Kann Anweisungen ändern, die an den KI-Agenten gesendet werden.",
       "agent.complete": "Kann Ihr Modellkontingent für eine einmalige Fertigstellung ausgeben. Das Plugin erhält niemals Ihre API-Schlüssel.",
       "agent.extension": "Führt ExtensionAPI-Module im Agentenprozess mit denselben Rechten wie die Tools des Agenten aus. Aktiviere nur Code, dem du vertraust.",
+      "renderer.extension":
+        "Dieses Plugin liefert Code, der im Fenster der App selbst läuft. Er teilt sich den Prozess der App, kann überall in der Oberfläche zeichnen, und ein Absturz kann die Oberfläche mitreißen. Installieren Sie es nur, wenn Sie dem Plugin-Autor vertrauen.",
+      "runtime.send.before":
+        "Das Plugin wird befragt, nachdem Sie auf Senden gedrückt haben und bevor die Nachricht das Modell erreicht. Es kann die Nachricht stoppen, ein Fehler kann also blockieren, was Sie senden.",
+      "runtime.turn.abort":
+        "Das Plugin kann eine laufende Runde beenden, ohne Sie vorher zu fragen. Bereits laufende Arbeit wird verworfen.",
+      "runtime.turn.closing":
+        "Das Plugin wird befragt, während eine Runde noch läuft, und kann den Agenten bitten, weiterzumachen. Das verbraucht mehr Token, ohne dass Sie eine neue Nachricht senden.",
       "provider.register": "Fügt die Anbieter, die dieses Plugin definiert, zur Anbieterliste in den Einstellungen hinzu. Das Plugin liefert den Endpunkt und die Modelle; Ihr API-Schlüssel bleibt in PI-Desktop.",
       "desktop.control": "Erlaubt den Aufruf des geprüften PI-Desktop-Katalogs; destruktive Vorgänge benötigen weiterhin confirm=true, und das MCP-Bearer-Token wird nicht offengelegt.",
       "models.list": "Kann sehen, für welche Modelle Sie sich angemeldet haben. Es erhält keine Schlüssel.",

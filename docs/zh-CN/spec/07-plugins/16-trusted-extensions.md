@@ -2,18 +2,23 @@
 
 > **翻译说明：** 本页是与 [英文源规格](/spec/07-plugins/16-trusted-extensions) 一一对应的机器辅助翻译。代码、协议字段和标识符保持原文；如翻译与英文源事实有歧义，以英文版本为准。
 
-> 状态：v1.1 已实现（D387 / D388、ADR 0214 / ADR 0215）；实现说明标注为“v1 说明”
-> 范围：v1.1。v2 与 v3 事项列于 §12，不构成承诺。
+> 状态：v1.1 已实现（D387 / D388、ADR 0214 / ADR 0215 / ADR 0244）；实现说明标注为“v1 说明”。§2A 记录受信任渲染器宿主（issue #528、ADR 0287）。
+> 范围：v1.1 加上受信任渲染器宿主。v2 与 v3 事项列于 §12，不构成承诺。
 
 ## 1. 目的与术语
 
 插件（[01-plugin-system.md](/zh-CN/spec/07-plugins/01-plugin-system)）是 PI-Desktop
-唯一的扩展面。本文规定其中一种插件贡献点 `contributes.agentExtensions`：在 Agent
+唯一的扩展面。agent 宿主是一种插件贡献点 `contributes.agentExtensions`：在 Agent
 sidecar 内运行的 TypeScript 或 JavaScript 模块，接收一个 `ExtensionAPI` 对象，直接在
 agent 循环上注册工具、命令和事件处理器。`ExtensionAPI` 契约即
 `@earendil-works/pi-coding-agent` 定义的契约，PI-Desktop 与 `pi-ai`、`pi-agent-core`
 内核（ADR 0002）一起采纳，因此为 pi CLI 写的扩展就是插件贡献的模块。D388 把此前
 独立的“受信任扩展”注册表并入了这个贡献点；下文的引擎部分不变。
+
+本文覆盖两个受信任执行宿主：agent sidecar
+（`contributes.agentExtensions`，下文 §2 至 §14）与宿主渲染器（`manifest.renderer`，
+§2A）。`main`、`ui.panel`、`views` 和 `settingsDestinations` 入口仍留在各自的沙箱
+宿主里，规格见 [04-plugin-security.md](/zh-CN/spec/07-plugins/04-plugin-security)。
 
 | 术语 | 含义 |
 |---|---|
@@ -21,8 +26,9 @@ agent 循环上注册工具、命令和事件处理器。`ExtensionAPI` 契约�
 | 插件 | 带 manifest 的 PI-Desktop 插件，在独立进程中、权限网关之下运行（ADR 0008）；是其 agent 扩展的拥有者、安装者和启用记录 |
 | 适配层 | `packages/agent-runtime` 中在桌面运行时之上实现 `ExtensionAPI` 的层 |
 | Runner | 绑定到一个桌面会话的一个桌面自有 `TrustedExtensionRunner` 实例（v1 说明：不复用 pi-coding-agent 的 `ExtensionRunner`，因为它绑定终端主题；其 `ExtensionAPI` 类型仅作类型依赖） |
+| 渲染器扩展 | 插件在 `manifest.renderer` 中指定的一个模块，在宿主渲染器内运行并把组件注册进宿主持有的槽位（§2A） |
 
-## 2. 定位与信任模型
+## 2. 受信任 agent 宿主：定位与信任模型
 
 1. Agent 扩展随其插件一起安装、启用、限定范围、更新和移除。没有第二个列表、存储或
    设置页。
@@ -38,6 +44,106 @@ agent 循环上注册工具、命令和事件处理器。`ExtensionAPI` 契约�
    说明：没有独立的项目信任状态，插件范围即信任决定，`project_trust` 不触发。
 5. v1.1 不开放持有 `agent.extension` 的插件在市场分发：该权限只接受本地导入和开发
    插件。市场上架等签名机制（规格 08）到位后再定。
+
+## 2A. 受信任渲染器宿主（issue #528）
+
+在 agent sidecar 旁边，还有第二个受信任执行宿主：`manifest.renderer`，一个插件相对的
+ES 模块，由宿主渲染器在应用自己的窗口内获取并求值，在那里把 React 组件注册进宿主
+持有的槽位。决定记录在 ADR 0287；本节就是契约。
+
+### 2A.1 信任层级与权限
+
+| 入口 | 代码运行位置 | 权限 | 组件槽位 |
+|---|---|---|---|
+| `main` / `ui.panel` / `views[].entry` / `settingsDestinations[].entry` | 插件 `utilityProcess` / 插件 `webContents` | 清单自身声明的权限 | 无 |
+| `renderer` | 宿主渲染器，与宿主 UI 同一 JavaScript realm | `renderer.extension`（高） | 有，按层级 |
+| `contributes.agentExtensions` | agent sidecar | `agent.extension`（高） | 无 |
+
+信任跟随入口，且各层级正交而非阶梯：声明一个层级不会在另一个层级获得任何东西，
+一个插件也可以任意组合多个层级。
+
+- `renderer.extension` 是覆盖整个层级的唯一权限。槽位绝不逐个授权（#545 D1）；
+  声明是请求，安装审查是授权上限。
+- 声明了 `renderer` 却没有该权限会令 manifest 校验失败
+  （`manifest.renderer requires the renderer.extension permission`；host-core：
+  `PLUGIN_INVALID: renderer requires the renderer.extension permission`）。
+  在清单里申请了该权限、但记录的授权中没有它的插件照常加载，只是跳过该入口并记
+  审计，与 `agentExtensions` 完全一致。
+- 分发不做门控：带 `renderer` 入口的插件走普通的本地、开发与市场路径安装。它的
+  插件行会与其他能力并列显示一个 `renderer` 能力标记。
+- 没有声明 `renderer` 却试图注册槽位的插件不会被静默服务：注册被跳过并作为诊断
+  上报。
+
+### 2A.2 加载
+
+- 入口是惰性获取与求值的：它的某个槽位第一次真正渲染时才加载。加载期间不预留、
+  也不显示任何东西，因此当前界面永远不渲染其槽位的插件在启动时不产生任何成本。
+- 字节经 `plugin-renderer` scheme 提供。它只为已加载**且**声明了 `renderer` 的插件
+  作答，只服务插件包内的路径，且只服务 `js` / `mjs` / `css` / `json` / `map`。
+  既有的 `plugin-asset` scheme 不放宽：它的 MIME 白名单刻意只有图片与字体。
+- 生产渲染器是 `file://` origin，因此生产 CSP 必须为脚本与连接放行
+  `plugin-renderer`，构建期的 CSP 收紧也必须在同一次改动里包含它 —— 否则该入口只在
+  开发环境可用，打包后才坏。
+- 模块的 `onLoad(pi)` 钩子是必需的，注册就发生在那里；`onUnload()` 可选。`pi` 对象
+  只携带 `plugin.id` / `plugin.version`、`pi.slots.register` 与
+  `pi.ui.injectStyle`，别无其他。
+- React 是单例：宿主注入自己的 React，并把裸标识符 `react`、`react-dom`、
+  `react-dom/client` 映射到它；自带 React 副本的插件在加载时被拒绝并记录诊断，
+  因为两份副本会破坏 hooks 与 context。
+
+### 2A.3 同一 realm 与样式隔离
+
+没有 `iframe`，没有 worker，也没有第二层沙箱：模块与宿主渲染器共享全局对象、模块图
+和 React 树。随之交付的两项缓解措施：
+
+- 应用在启动时取到所需的桥之后会删除 `window.piDesktop`，之后加载的模块拿不到这个
+  全局桥句柄。
+- import map 只解析 §2A.2 列出的宿主模块，因此模块无法导入任意宿主模块。
+
+样式隔离是命名空间方案，不是 Shadow DOM：
+
+- 每个槽位都包在 `data-pi-plugin="<plugin-id>"` 容器里；
+- 插件样式必须走 `pi.ui.injectStyle(css)`，宿主在卸载时移除这些样式表；
+- 含顶层 `html`、`body`、`:root` 或 `*` 选择器的样式表会被整个拒绝，而不是被收窄。
+
+选择拒绝 Shadow DOM 的原因：被 portal 的插件 UI 会逃出 shadow root
+（17 个文件、39 处 `createPortal` 调用，零处 `attachShadow`）。
+
+### 2A.4 崩溃兜底与拒绝
+
+- 每个槽位都位于一个 React 错误边界之后：抛错的槽位塌缩为空白，邻居不受影响，
+  宿主会上报这次崩溃。若宿主在该位置有自己的默认渲染，则回退到默认值。
+- 渲染器宿主的崩溃半径是被接受的：无限循环、内存泄漏或全局污染不会被错误边界兜住，
+  卸载也不保证回滚全局改动（ADR 0287）。
+- 拒绝：自带 React 的插件在加载时被拒绝并记录诊断；声明的 `renderer` 文件缺失会报
+  `PLUGIN_LOAD_FAILED: renderer entry missing`；不导出 `onLoad` 的模块报
+  `PLUGIN_INVALID: renderer entry must export onLoad`；缺少权限则是 manifest 校验
+  失败，或者在该权限从未被授予时跳过入口并记审计；加载时抛错的模块其槽位保持空白
+  并记录诊断。
+
+### 2A.5 组件槽位
+
+| 槽位 | 渲染内容 |
+|---|---|
+| `entry` | 一条整体转录消息：消息是对象而不是段落时 |
+| `toolCard` | 插件自有工具的回合 / 工具卡片主体 |
+| `codeBlock` | 按语言的围栏代码块渲染器 |
+| `entryExtra` | 某条转录条目下方的附加块 |
+| `composerControl` | composer 左右位置的控制项 |
+| `completionSource` | composer 补全弹层的候选项来源 |
+| `inlineConfirm` | 内联确认卡 |
+| `modal` | 阻塞式、应用级对话框 |
+| `overlay` | 窗口内浮层 |
+| `composerReference` | composer 引用芯片 |
+
+同一 issue 中的非组件能力 —— Markdown 转换器、附件来源、草稿改写和插件文案本地化
+—— 是独立的 API，不是槽位。
+
+### 2A.6 明确不构建
+
+本轮刻意不构建的 issue #545 §5 事项：侧边栏入口、整页工作区路由、声明式槽位形状、
+以沙箱页面作为槽位实现、Shadow DOM、任何宿主提供的草稿改写 UI，以及任何对插件危险
+操作文案的宿主侧校验。
 
 ## 3. 贡献与导入
 

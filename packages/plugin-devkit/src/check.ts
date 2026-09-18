@@ -27,11 +27,25 @@ export const HIGH_RISK_PERMISSIONS = [
   "net.websocket",
   "fs.write",
   "fs.delete",
+  "fs.write.workspace",
+  "fs.delete.workspace",
   "agent.prompt.inject",
   "agent.tool.register",
+  "agent.complete",
+  "agent.extension",
+  "renderer.extension",
+  "runtime.send.before",
+  "runtime.turn.abort",
+  "runtime.turn.closing",
+  "desktop.control",
+  "session.read",
+  "session.delete.own",
   "browser.cdp",
   "audio.capture.background",
   "speech.adapter.register",
+  "mcp.server.local",
+  "mcp.server.remote",
+  "background.service",
 ] as const;
 
 /** Host API surface each permission unlocks, used for the unused-permission hint. */
@@ -185,10 +199,22 @@ export async function check(dirInput: string): Promise<CheckResult> {
     });
   }
 
-  if (!(await fileExists(join(dir, manifest.main)))) {
+  // `main` is optional since the renderer host landed: a UI-only plugin may
+  // declare just `renderer`, or only a page. Whatever is declared still has to
+  // exist, and `renderer` is checked the same way one line below.
+  const declaredMain = typeof manifest.main === "string" ? manifest.main : "";
+  if (declaredMain && !(await fileExists(join(dir, declaredMain)))) {
     errors.push({
       code: "main.missing",
-      message: `manifest.main "${manifest.main}" does not exist`,
+      message: `manifest.main "${declaredMain}" does not exist`,
+    });
+  }
+
+  const declaredRenderer = typeof manifest.renderer === "string" ? manifest.renderer : "";
+  if (declaredRenderer && !(await fileExists(join(dir, declaredRenderer)))) {
+    errors.push({
+      code: "renderer.missing",
+      message: `manifest.renderer "${declaredRenderer}" does not exist`,
     });
   }
 
@@ -384,7 +410,11 @@ export async function check(dirInput: string): Promise<CheckResult> {
 
   // Entry-source hints: a declared permission that the code never exercises is
   // a needless prompt for the user, and the reverse is a runtime denial.
-  const mainSource = await readFile(join(dir, manifest.main), "utf8").catch(() => "");
+  // Only a declared headless module has source to inspect; a UI-only plugin has
+  // no headless code for a permission to be exercised in.
+  const mainSource = declaredMain
+    ? await readFile(join(dir, declaredMain), "utf8").catch(() => "")
+    : "";
   if (mainSource) {
     for (const permission of permissions) {
       const apis = PERMISSION_API_HINTS[permission];
@@ -392,7 +422,7 @@ export async function check(dirInput: string): Promise<CheckResult> {
       if (!apis.some((api) => mainSource.includes(api))) {
         warnings.push({
           code: "permission.unused",
-          message: `permission "${permission}" is declared but ${manifest.main} never calls ${apis.join(" / ")}`,
+          message: `permission "${permission}" is declared but ${declaredMain} never calls ${apis.join(" / ")}`,
         });
       }
     }

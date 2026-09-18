@@ -61,7 +61,20 @@ export type PluginManifest = {
   author?: PluginManifestAuthor;
   homepage?: string;
   repository?: string;
-  main: string;
+  /**
+   * Headless entry: a plugin-relative module the host runs in its own process.
+   * Optional since the renderer host landed — a UI-only plugin may declare just
+   * `renderer`, or only a plugin page. `pluginHasEntry` holds the rule that at
+   * least one entry exists.
+   */
+  main?: string;
+  /**
+   * Trusted renderer entry: a plugin-relative ES module that runs inside the
+   * host renderer process and registers React component slots (spec
+   * 07-plugins/16). Requires the `renderer.extension` permission. Fetched and
+   * evaluated lazily, the first time one of its slots actually renders.
+   */
+  renderer?: string;
   icon?: string;
   /**
    * First-registration default for bundled plugins. Omitted means enabled.
@@ -1195,6 +1208,9 @@ export const PLUGIN_PERMISSIONS = [
   "agent.prompt.inject",
   "agent.complete",
   "agent.extension",
+  // Trusted renderer host (spec 07-plugins/16). One name covers every component
+  // slot: slots are authorized by trust tier, never one by one.
+  "renderer.extension",
   "provider.register",
   "desktop.control",
   "models.list",
@@ -1219,6 +1235,12 @@ export const PLUGIN_PERMISSIONS = [
   "speech.adapter.register",
   "keyboard.globalShortcut",
   "net.websocket",
+  // Runtime slots (#561). Each one is consulted while a turn is running and can
+  // change what the agent does, so they are separate, individually reviewed
+  // grants rather than one bundled switch.
+  "runtime.send.before",
+  "runtime.turn.abort",
+  "runtime.turn.closing",
 ] as const;
 
 export type PluginPermission = (typeof PLUGIN_PERMISSIONS)[number];
@@ -1241,11 +1263,20 @@ export function validateManifest(raw: unknown): {
   if (typeof m.version !== "string" || !m.version) {
     return { ok: false, error: "manifest.version is required" };
   }
-  if (typeof m.main !== "string" || !m.main) {
-    return { ok: false, error: "manifest.main is required" };
+  if (m.main !== undefined) {
+    if (typeof m.main !== "string" || !m.main) {
+      return { ok: false, error: "manifest.main must be a non-empty string" };
+    }
+    const mainError = relativePathError(m.main, "manifest.main");
+    if (mainError) return { ok: false, error: mainError };
   }
-  const mainError = relativePathError(m.main, "manifest.main");
-  if (mainError) return { ok: false, error: mainError };
+  if (m.renderer !== undefined) {
+    if (typeof m.renderer !== "string" || !m.renderer) {
+      return { ok: false, error: "manifest.renderer must be a non-empty string" };
+    }
+    const rendererError = relativePathError(m.renderer, "manifest.renderer");
+    if (rendererError) return { ok: false, error: rendererError };
+  }
   if (typeof m.schemaVersion !== "number") {
     return { ok: false, error: "manifest.schemaVersion is required" };
   }
@@ -1333,6 +1364,23 @@ export function validateManifest(raw: unknown): {
   if (contributesError) {
     return { ok: false, error: contributesError };
   }
+
+  // Relaxing `main` must not produce a plugin that cannot run at all: one of
+  // the three entries still has to exist (spec 07-plugins/02).
+  if (!pluginHasEntry(m)) {
+    return {
+      ok: false,
+      error: "manifest needs one of main, renderer, or a plugin page",
+    };
+  }
+  // The renderer entry is the trusted tier: it runs in the host renderer, so
+  // declaring it is not enough — the grant has to be requested too.
+  if (m.renderer !== undefined && !(m.permissions ?? []).includes("renderer.extension")) {
+    return {
+      ok: false,
+      error: "manifest.renderer requires the renderer.extension permission",
+    };
+  }
   const net = m.net as { domains?: unknown } | null | undefined;
   if (net !== undefined) {
     if (!net || typeof net !== "object" || Array.isArray(net)) {
@@ -1359,6 +1407,52 @@ export function validateManifest(raw: unknown): {
     }
   }
   return { ok: true, manifest: m as PluginManifest };
+}
+
+/** Names of the four places a manifest can hang behaviour off. */
+export type PluginManifestEntryFlags = {
+  /** `manifest.main`: a headless module in the plugin's own process. */
+  main: boolean;
+  /** `manifest.renderer`: trusted component slots inside the app window. */
+  renderer: boolean;
+  /** A plugin-owned page: `ui.panel`, a view, or a settings destination. */
+  page: boolean;
+  /** `contributes.agentExtensions`: modules in the agent process. */
+  agent: boolean;
+};
+
+/**
+ * Which entries a manifest declares. The three tiers in spec 07-plugins/16
+ * follow from this: `renderer` is what puts plugin code in the app window and
+ * `agent` is what puts it in the agent process.
+ */
+export function manifestEntries(
+  manifest: Pick<PluginManifest, "main" | "renderer" | "ui" | "contributes">,
+): PluginManifestEntryFlags {
+  const hasText = (value: unknown): boolean =>
+    typeof value === "string" && value.trim().length > 0;
+  return {
+    main: hasText(manifest.main),
+    renderer: hasText(manifest.renderer),
+    page:
+      hasText(manifest.ui?.panel) ||
+      (manifest.contributes?.views?.length ?? 0) > 0 ||
+      (manifest.contributes?.settingsDestinations?.length ?? 0) > 0,
+    agent: (manifest.contributes?.agentExtensions?.length ?? 0) > 0,
+  };
+}
+
+/**
+ * A plugin is reachable through one of three entries: the headless module
+ * (`main`), the trusted renderer module (`renderer`), or a plugin-owned page.
+ * Contributions that are not entries — agent extensions, services, providers,
+ * themes — do not make a plugin runnable on their own.
+ */
+export function pluginHasEntry(
+  manifest: Pick<PluginManifest, "main" | "renderer" | "ui" | "contributes">,
+): boolean {
+  const entries = manifestEntries(manifest);
+  return entries.main || entries.renderer || entries.page;
 }
 
 /**
@@ -1975,3 +2069,15 @@ export {
   type PluginFsRule,
   type ResolvedFsAccess,
 } from "./fs-policy.js";
+
+export {
+  PLUGIN_RENDERER_SCHEME,
+  PLUGIN_RENDERER_SLOTS,
+  PLUGIN_STYLE_FORBIDDEN_ROOT_SELECTORS,
+  type PiRendererApi,
+  type PiRendererComponent,
+  type PiRendererModule,
+  type PiRendererRegistration,
+  type PiRendererStyleHandle,
+  type PluginRendererSlot,
+} from "./renderer.js";

@@ -72,6 +72,26 @@ Local plugins usable → developer-friendly → marketplace distribution → sig
 - v3：pi CLI `settings.json` 提示、统一 skill/提示发现、远程控制提示路由
 - 规格：[16-trusted-extensions.md](/zh-CN/spec/07-plugins/16-trusted-extensions)；ADR 0214、ADR 0215
 
+### R8 — 受信任渲染器宿主（issue #528，批次 0 ✅）
+- `manifest.renderer`：一个在宿主渲染器内运行、把 React 组件注册进宿主持有槽位的
+  插件相对 ES 模块 ✅
+- `manifest.main` 变为可选，并新增一条规则：必须在 `main`、`renderer`、`ui.panel`、
+  `views[].entry`、`settingsDestinations[].entry` 之间至少有一个入口 ✅
+- `renderer.extension`（高）是受信任 UI 层级的唯一权限；组件槽位按层级授权，
+  绝不逐个授权 ✅
+- 组件槽位 id：`entry`、`toolCard`、`codeBlock`、`entryExtra`、`composerControl`、
+  `completionSource`、`inlineConfirm`、`modal`、`overlay`、`composerReference` ✅
+- 通过 `plugin-renderer` scheme 惰性获取与求值、命名空间样式隔离、React 单例规则、
+  逐槽位错误边界，以及插件行上的 `renderer` 能力标记 ✅
+- 规格：[16-trusted-extensions.md](/zh-CN/spec/07-plugins/16-trusted-extensions) §2A；ADR 0287
+
+### R9 — 运行时槽位（issue #561）
+- 批次 A ✅ —— 每个槽位都有自己的高风险权限，并在轮次运行期间被咨询：
+  Before Send (1) → `runtime.send.before`；Abort Turn (3) → `runtime.turn.abort`；
+  Turn Closing (7) → `runtime.turn.closing`
+- 其余运行时槽位受仍未关闭的 RD 决策约束，**尚未交付**；Before Request (6)
+  被明确排除在本轮之外
+
 ## 3. 映射到产品里程碑
 
 | 产品里程碑 | 插件目标 |

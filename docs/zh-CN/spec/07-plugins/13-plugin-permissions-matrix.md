@@ -51,6 +51,10 @@
 | `session.delete.own` | 高 | `pi.session.delete` | 安装时确认 | 只能回收或清除本插件导入的会话；有频率限制 |
 | `agent.complete` | 高 | `pi.agent.complete` | 安装时确认 | 宿主代发一次性补全；消耗用户额度；`includeSessionContext` 还需要 `session.read` |
 | `speech.adapter.register` | 高 | `pi.speech.registerAdapter` / `unregisterAdapter` | 安装时确认 | 注册语音协议。handle 留在插件进程；HTTP 计划由宿主用绑定密钥代发且必须同 origin |
+| `renderer.extension` | 高 | 在宿主渲染器内以 ES 模块运行 `manifest.renderer`，把组件注册进宿主持有的槽位 | 显式确认；按层级，绝不逐槽位 | 模块在应用窗口内、宿主自己的 realm 中运行，没有进程隔离。一个权限覆盖全部组件槽位（规格 16 §2A、ADR 0287） |
+| `runtime.send.before` | 高 | 运行时槽位咨询：Before Send | 安装时确认 | 插件在轮次运行中被咨询：用户按下发送之后、消息到达模型之前，它可以拦下这条消息 |
+| `runtime.turn.abort` | 高 | 运行时槽位咨询：Abort Turn | 安装时确认 | 插件不必先问就能结束正在运行的轮次；已经进行中的工作会被丢弃 |
+| `runtime.turn.closing` | 高 | 运行时槽位咨询：Turn Closing | 安装时确认 | 插件在轮次运行中被咨询，可以要求 agent 继续，从而在没有新用户消息的情况下消耗更多 token |
 
 ## 2A. 权限是开关，manifest 承载范围
 
@@ -84,6 +88,25 @@ manifest 里的字段负责回答「能做到多远」。两个字段都由主�
 3. **速率刹车。** 每个插件每滚动 60 秒 50 次删除。超过之后问用户一次，
    理由写的是速率而不是路径 —— 因为 `recursive: false` 只能约束单次调用，
    约束不了 `glob` 加一个循环。
+
+## 2C. 信任层级
+
+这里信任层级先于槽位：本节把入口映射到层级，§2 的行就是各入口可以动用的权限。
+信任跟随入口，且各层级正交而非阶梯：声明一个层级不会在另一个层级获得任何东西，
+一个插件也可以任意组合多个层级。
+
+| 入口 | 代码运行位置 | 权限 | 组件槽位 |
+|---|---|---|---|
+| `main` / `ui.panel` / `views[].entry` / `settingsDestinations[].entry` | 插件 `utilityProcess` / 插件 `webContents` | 清单自身声明的权限 | 无 |
+| `renderer` | 宿主渲染器，与宿主 UI 同一 realm | `renderer.extension`（高） | 允许，按层级 |
+| `contributes.agentExtensions` | agent sidecar | `agent.extension`（高） | 无 |
+
+组件槽位绝不逐个授权。`renderer.extension` 是覆盖它们的唯一授权（规格 16 §2A、
+ADR 0287）；没有声明 `renderer` 的插件不能注册槽位，注册尝试会被跳过并作为诊断
+上报，而不是被静默丢弃。§2 中的运行时权限形状不同 —— 每个槽位一个权限名，因为
+各自改变运行中轮次的不同位置 —— 且只实现了批次 A 的槽位
+（`runtime.send.before`、`runtime.turn.abort`、`runtime.turn.closing`），
+其余运行时槽位尚未交付。
 
 ## 3. 权限依赖
 
@@ -151,6 +174,10 @@ Agent，在 Plan 中不可见。主机返回 `PLUGIN_DISABLED_IN_PLAN`
 | `audio.playback.background` | Play audio in the background | 后台播放声音 |
 | `keyboard.globalShortcut` | Register system-wide shortcuts | 注册系统级快捷键 |
 | `net.websocket` | Open real-time connections | 建立实时双向连接 |
+| `renderer.extension` | Run plugin UI inside the app window | 在应用窗口内运行插件界面 |
+| `runtime.send.before` | Inspect a message before it is sent | 在消息发送前检查 |
+| `runtime.turn.abort` | Stop the running turn | 停止正在运行的轮次 |
+| `runtime.turn.closing` | Act just before a turn ends | 在轮次结束前介入 |
 
 ## 5. 添加升级权限
 

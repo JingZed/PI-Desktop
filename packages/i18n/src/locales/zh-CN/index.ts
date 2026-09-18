@@ -1624,6 +1624,7 @@ sklm: {
       commands: "命令",
       tools: "智能体工具",
       agentExtension: "Agent 扩展",
+      renderer: "在应用窗口内绘制插件界面",
       skills: "技能",
       themes: "主题",
       mcp: "MCP 服务",
@@ -1662,6 +1663,10 @@ sklm: {
       "agent.prompt.inject": "调整智能体指令",
       "agent.complete": "用你的模型发起一次补全",
       "agent.extension": "在 agent 内运行代码",
+      "renderer.extension": "在应用窗口内运行插件界面",
+      "runtime.send.before": "在消息发送前检查",
+      "runtime.turn.abort": "停止正在运行的轮次",
+      "runtime.turn.closing": "在轮次结束前介入",
       "provider.register": "将服务添加到模型列表",
       "desktop.control": "控制桌面操作",
       "models.list": "列出已登录的模型",
@@ -1699,6 +1704,13 @@ sklm: {
       "agent.prompt.inject": "可能修改发送给智能体的指令。",
       "agent.complete": "会消耗你的模型额度发起一次补全。插件拿不到 API 密钥。",
       "agent.extension": "在 agent 进程内运行 ExtensionAPI 模块，拥有与 agent 自身工具相同的权限。只启用你信任的代码。",
+      "renderer.extension":
+        "此插件提供的代码会在应用自身窗口内运行：它与应用共用同一进程，可在界面任意位置绘制，崩溃可能连带界面一起退出。只在你信任插件作者时才安装。",
+      "runtime.send.before":
+        "在你按下发送之后、消息到达模型之前，插件会被征询。它可以拦下这条消息，因此插件出错可能导致你发不出内容。",
+      "runtime.turn.abort": "插件不必先问你就能结束正在运行的轮次，已在进行的工作会被丢弃。",
+      "runtime.turn.closing":
+        "轮次仍在运行时插件会被征询，并可以要求智能体继续做下去。这会在你没有新消息的情况下消耗更多额度。",
       "provider.register": "把此插件定义的服务添加到设置的服务列表。接口地址和模型由插件提供，API 密钥则留在 PI-Desktop 中。",
       "desktop.control":
         "允许插件调用经过审查的 PI-Desktop 操作目录；破坏性操作仍需 confirm=true，插件永远拿不到 MCP bearer token。",

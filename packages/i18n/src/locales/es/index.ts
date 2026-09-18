@@ -1623,6 +1623,7 @@ sklm: {
       "commands": "Comandos",
       "tools": "Herramientas del agente",
       "agentExtension": "Extensión del agente",
+      "renderer": "Dibuja la interfaz del complemento en la ventana de la aplicación",
       "skills": "Habilidades",
       "themes": "Tema",
       "mcp": "Servidor MCP",
@@ -1662,6 +1663,10 @@ sklm: {
       "agent.prompt.inject": "Ajustar instrucciones del agente",
       "agent.complete": "Ejecutar una finalización de una sola vez con sus modelos",
       "agent.extension": "Ejecutar código dentro del agente",
+      "renderer.extension": "Ejecutar la interfaz del complemento en la ventana de la aplicación",
+      "runtime.send.before": "Revisar un mensaje antes de enviarlo",
+      "runtime.turn.abort": "Detener el turno en curso",
+      "runtime.turn.closing": "Actuar justo antes de que termine un turno",
       "provider.register": "Agregar proveedores a la lista de modelos",
       "desktop.control": "Controlar el escritorio",
       "models.list": "Listar modelos autenticados",
@@ -1698,6 +1703,14 @@ sklm: {
       "agent.prompt.inject": "Puede cambiar las instrucciones enviadas al agente de IA.",
       "agent.complete": "Puede gastar su cuota de modelo en una finalización única. El complemento nunca recibe sus claves API.",
       "agent.extension": "Ejecuta módulos ExtensionAPI dentro del proceso del agente con el mismo acceso que sus propias herramientas. Activa solo código en el que confíes.",
+      "renderer.extension":
+        "Este complemento incluye código que se ejecuta en la propia ventana de la aplicación. Comparte el proceso de la aplicación, puede dibujar en cualquier parte de la interfaz y un fallo puede llevarse la interfaz consigo. Instálelo solo si confía en el autor del complemento.",
+      "runtime.send.before":
+        "Se consulta al complemento después de que pulse enviar y antes de que el mensaje llegue al modelo. Puede detener el mensaje, así que un error puede bloquear lo que envía.",
+      "runtime.turn.abort":
+        "El complemento puede terminar un turno en curso sin preguntarle antes. El trabajo ya en marcha se descarta.",
+      "runtime.turn.closing":
+        "Se consulta al complemento mientras un turno sigue en curso y puede pedirle al agente que continúe. Eso gasta más tokens sin un mensaje nuevo de su parte.",
       "provider.register": "Agregue los proveedores que define este complemento a la lista de proveedores de Configuración. El complemento aporta el punto final y los modelos; su clave API permanece en PI-Desktop.",
       "desktop.control": "Permite invocar el catálogo de control de PI-Desktop revisado; las operaciones destructivas siguen requiriendo confirm=true y el token bearer de MCP no se expone.",
       "models.list": "Puede ver en qué modelos se ha registrado. No recibe llaves.",
