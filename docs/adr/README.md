@@ -315,3 +315,5 @@ Each ADR includes:
 | 0286 | [Remote-host desktop kernel](0286-remote-host-desktop-kernel.md) | Accepted for implementation (D449; ADR 0205 R2) |
 | turn-process-and-thinking-display | [Turn process and thinking presentation](turn-process-and-thinking-display.md) | Accepted |
 | 0287 | [Trusted renderer execution host](0287-trusted-renderer-execution-host.md) | Accepted for implementation (issue #528) |
+| 0288 | [Runtime hooks for plugin-host processes](0288-runtime-hooks-for-plugin-host-processes.md) | Accepted for implementation (issue #561; G14) |
+| 0289 | [Plugin-authored transcript rows](0289-plugin-authored-transcript-rows.md) | Accepted for implementation (issue #561 item 7) |
