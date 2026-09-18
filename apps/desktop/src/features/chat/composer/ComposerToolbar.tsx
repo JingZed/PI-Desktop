@@ -1,3 +1,4 @@
+import { bridgePlatform } from "../../../lib/bridge";
 import type { Dispatch, SetStateAction } from "react";
 import type { TFunction } from "i18next";
 import {
@@ -107,7 +108,7 @@ export function ComposerToolbar({
   nativeWebSearchSupported,
   onToggleNativeWebSearch,
 }: ComposerToolbarProps) {
-  const platform = (window.piDesktop?.platform ?? "darwin") as ShortcutPlatform;
+  const platform = (bridgePlatform()) as ShortcutPlatform;
   const steeringShortcut = keybindingDisplayParts("Alt+Enter", platform).join("+");
   return (
     <div className="composer-toolbar">

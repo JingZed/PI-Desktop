@@ -14,6 +14,10 @@ import {
   installPluginAssetProtocol,
   registerPluginAssetScheme,
 } from "../plugin-asset-protocol";
+import {
+  installPluginRendererProtocol,
+  registerPluginRendererScheme,
+} from "../plugin-renderer-protocol";
 import { applyNetworkProxyFromAppSettings } from "../network-proxy";
 import { readCloseBehavior } from "../window-preferences";
 import { createAgentHostBridge, type AgentHostBridge } from "../agent-host-bridge";
@@ -99,6 +103,9 @@ export function registerApplicationStartup(deps: StartupDependencies): void {
   // Electron only accepts scheme privileges before the app is ready, and this
   // runs from the composition root, before the `whenReady` promise can settle.
   registerPluginAssetScheme();
+  // The trusted renderer host needs the same pre-ready reservation, for the
+  // same reason (ADR 0287).
+  registerPluginRendererScheme();
   void app.whenReady().then(async () => {
     const {
       hasSingleInstanceLock,
@@ -138,6 +145,13 @@ export function registerApplicationStartup(deps: StartupDependencies): void {
     // scheme itself was reserved in `registerApplicationStartup`.
     installPluginAssetProtocol((pluginId, assetPath) =>
       plugins.resolveThemeAsset(pluginId, assetPath),
+    );
+
+    // The trusted renderer host serves plugin module source over its own scheme
+    // (ADR 0287). Same rule as theme assets: installed once, before the first
+    // window can ask for anything.
+    installPluginRendererProtocol((pluginId, requestPath) =>
+      plugins.resolveRendererSource(pluginId, requestPath),
     );
     // Load the close-behavior preference before the first window exists: the
     // close handler reads `closeBehavior` synchronously, and a window created

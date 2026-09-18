@@ -7603,6 +7603,9 @@ identify the platform validation still needed.
 | E — Tools & permissions (capability level move) | E2E-CAPABILITY-move-across-levels |
 | F — Persistence (capability level move) | E2E-CAPABILITY-move-across-levels |
 | Quality (capability level move) | E2E-CAPABILITY-move-across-levels |
+| G — Plugins (trusted renderer host) | E2E-PLUGIN-renderer-slots-survive-a-packaged-build |
+| Security (trusted renderer host) | E2E-PLUGIN-renderer-slots-survive-a-packaged-build |
+| Quality (trusted renderer host) | E2E-PLUGIN-renderer-slots-survive-a-packaged-build |
 
 | Milestone | Scenarios |
 |---|---|
@@ -7626,6 +7629,7 @@ identify the platform validation still needed.
 | Post-baseline local automation | E2E-220 |
 | Post-MVP remote control | E2E-221, E2E-222, E2E-223, E2E-224, E2E-225, E2E-226, E2E-227, E2E-228, E2E-229, E2E-230, E2E-231, E2E-232 |
 | Trusted extensions (R7 v1) | E2E-241, E2E-242, E2E-TRUSTED-EXTENSION-custom-agent-stream-and-binding, E2E-243, E2E-244, E2E-245, E2E-PLUGIN-imported-pi-package-skills, E2E-PLUGIN-import-extension-installs-dependencies, E2E-PLUGIN-import-extension-reports-missing-dependency, E2E-PLUGIN-declared-provider-appears-in-the-native-provider-list |
+| Post-MVP (R7 v1, trusted renderer host) | E2E-PLUGIN-renderer-slots-survive-a-packaged-build |
 | M6+ (Project delete) | E2E-PROJECT-delete-removes-project-and-owned-sessions |
 | M6+ (Two-click delete) | E2E-SESSION-two-click-delete-arms-first |
 | C — Conversation & stream (model fallback) | E2E-SUBAGENT-ordered-model-fallback-preserves-work |
@@ -12012,6 +12016,43 @@ plugin-form fixtures in an isolated temporary directory at runtime.
 - **Status**: Automated by `pnpm test:e2e:plugin-import-deps` for the deterministic
   registry-source rejection boundary; renderer warning-toast and `load_error`
   behavior remains a separate validation surface.
+
+#### E2E-PLUGIN-renderer-slots-survive-a-packaged-build: The trusted renderer host's build contract holds after packaging
+
+- **Preconditions**: A built workspace (`pnpm build:js`), the
+  `examples/plugins/slots-demo` example, and a checkout of the desktop app. No
+  running app, installed plugin profile, or network access is required.
+- **Steps**: 1) Read the CSP in `apps/desktop/index.html`. 2) Run the real
+  `tightenCsp()` renderer plugin from `electron.vite.config.ts` over that
+  document. 3) Bundle `plugin-renderer-protocol.ts` with a stubbed Electron and
+  drive its real handler: GET, POST and HEAD requests for `js`, `mjs`, `css`,
+  `json`, `map` and `html` paths, a percent-encoded path, a missing file, an
+  empty path, and a plugin the resolver refuses. 4) Check the boot order and the
+  `plugins.resolveRendererSource` wiring in `bootstrap/startup.ts`, and the
+  `rendererEntry` / `resolveRendererSource` gate in `plugin-runtime.ts`.
+  5) Check the renderer entry channel against the derived IPC whitelist and the
+  preload. 6) Validate `examples/plugins/slots-demo/manifest.json` with the SDK's
+  `validateManifest` and confirm both declared entries exist.
+- **Expected**: `script-src` and `connect-src` both name `plugin-renderer:`
+  before and after the build rewrite, while `'unsafe-eval'` and the loopback dev
+  hosts stay out. The scheme is registered exactly once with `standard`,
+  `secure`, `supportFetchAPI`, `corsEnabled` and `stream`, answers GET only,
+  serves the five module MIME types with `no-store` and `nosniff`, and returns
+  404 for `html`, non-GET methods, an empty path, a missing file, and a plugin
+  whose grant is gone. The scheme is reserved before `app.whenReady()` and
+  installed through the runtime gate; both entry points require a declared
+  `manifest.renderer` *and* the live `renderer.extension` grant; the channel is
+  in the derived whitelist that the preload enforces. The example manifest
+  validates, requests `renderer.extension`, and its `main` and `renderer` files
+  exist.
+- **Specs linked**: `07-plugins/16-trusted-extensions.md` §2A.1, §2A.2, §2A.4,
+  §2A.5; ADR 0287
+- **Acceptance**: Security, Quality
+- **Milestone**: Post-MVP (R7 v1)
+- **Status**: Automated by `pnpm test:e2e:plugin-slots` against the real modules
+  (a stubbed Electron only replaces the `electron` import); the boot-time journey
+  in a packaged app — Electron start, install into a real profile, rendered slots
+  — remains a separate validation surface.
 
 
 ---

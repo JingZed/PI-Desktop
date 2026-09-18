@@ -1,6 +1,7 @@
 import { dialog } from "electron";
 import { IPC, type ActivationScope } from "@pi-desktop/shared";
 import { isTemplateName, scaffold } from "@pi-desktop/plugin-devkit";
+import { manifestEntries } from "@pi-desktop/plugin-sdk";
 import type { AgentExtensionBridge } from "../agent-extensions";
 import type { BrowserHost } from "../browser-host";
 import type { HostProcess } from "../host-process";
@@ -92,6 +93,7 @@ export function registerPluginIpc({
       version: declared.manifest.version,
       permissions: declared.permissions,
       addedPermissions,
+      entries: manifestEntries(declared.manifest),
     };
   };
 
@@ -139,6 +141,15 @@ export function registerPluginIpc({
     return { ...result, plugins: pluginsWithSettings };
   });
 
+
+  /**
+   * The renderer entry a loaded plugin may run, or null. The renderer process
+   * never reads a manifest, so this is how it learns the one path it may fetch
+   * (ADR 0287); the same gate decides whether the scheme answers at all.
+   */
+  handle(IPC.invoke.pluginRendererEntry, async (id: string) => ({
+    entry: plugins.rendererEntry(String(id ?? "")),
+  }));
   handle(IPC.invoke.pluginSettingsGet, async (id: string) => {
     const settings = await plugins.getPluginSettings(String(id ?? ""));
     return { settings };

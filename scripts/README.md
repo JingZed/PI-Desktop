@@ -52,6 +52,7 @@ they cover are specified in
 | `e2e-supervision.mjs` | `pnpm test:e2e:supervision` | Process supervision and restart behavior |
 | `e2e-subagents.mjs` | `pnpm test:e2e:subagents` | Subagent registry over RPC, then through the real loader (D202) |
 | `e2e-agent-live.mjs` | `node scripts/e2e-agent-live.mjs` | Live streaming chat through agent-runtime + host-core. Requires `PI_DESKTOP_TEST_API_KEY`, `PI_DESKTOP_TEST_BASE_URL`, and `PI_DESKTOP_TEST_MODEL` (no defaults), so it has no `pnpm` alias |
+| `e2e-plugin-slots.mjs` | `pnpm test:e2e:plugin-slots` | Trusted renderer host build contract: the `plugin-renderer:` CSP survives the packaged rewrite, the scheme's privileges and MIME allowlist, the entry gate, the IPC whitelist, and the `slots-demo` example's manifest |
 
 ## Continuous integration
 

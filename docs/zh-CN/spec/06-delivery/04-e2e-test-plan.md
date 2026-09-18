@@ -5094,6 +5094,9 @@ IPC 请求无法关闭。
 | E — 工具与权限（能力跨级别迁移） | E2E-CAPABILITY-move-across-levels |
 | F — 持久化（能力跨级别迁移） | E2E-CAPABILITY-move-across-levels |
 | 品质（能力跨级别迁移） | E2E-CAPABILITY-move-across-levels |
+| G——插件（受信任渲染器宿主） | E2E-PLUGIN-renderer-slots-survive-a-packaged-build |
+| 安全性（受信任渲染器宿主） | E2E-PLUGIN-renderer-slots-survive-a-packaged-build |
+| 品质（受信任渲染器宿主） | E2E-PLUGIN-renderer-slots-survive-a-packaged-build |
 
 | 里程碑 | 应用场景 |
 |---|---|
@@ -5117,6 +5120,7 @@ IPC 请求无法关闭。
 | 基线后本地自动化 | E2E-220 |
 | MVP 后远程控制 | E2E-221、E2E-222、E2E-223、E2E-224、E2E-225、E2E-226、E2E-227、E2E-228、E2E-229、E2E-230、E2E-231、E2E-232 |
 | 受信任扩展（R7 v1） | E2E-241、E2E-242、E2E-243、E2E-244、E2E-245、E2E-PLUGIN-imported-pi-package-skills、E2E-PLUGIN-import-extension-installs-dependencies、E2E-PLUGIN-import-extension-reports-missing-dependency、E2E-PLUGIN-declared-provider-appears-in-the-native-provider-list |
+| MVP 后（R7 v1，受信任渲染器宿主） | E2E-PLUGIN-renderer-slots-survive-a-packaged-build |
 | M6+（删除项目） | E2E-PROJECT-delete-removes-project-and-owned-sessions |
 | M6+（两步删除） | E2E-SESSION-two-click-delete-arms-first |
 | C — 对话和直播（模型回退） | E2E-SUBAGENT-ordered-model-fallback-preserves-work |
@@ -7108,6 +7112,36 @@ runner 会在运行时的隔离临时目录中生成六个插件形态 fixture�
 - **里程碑**：MVP 后（R7 v1）
 - **状态**：由 `pnpm test:e2e:plugin-import-deps` 自动化覆盖确定性的 registry 源拒绝边界；renderer 警告 toast
   和 `load_error` 行为保留为独立验证面。
+
+#### E2E-PLUGIN-renderer-slots-survive-a-packaged-build：受信任渲染器宿主的构建契约在打包后依然成立
+
+- **前提条件**：已构建的工作区（`pnpm build:js`）、`examples/plugins/slots-demo` 示例插件，
+  以及桌面应用源码树。不需要运行中的应用、已安装插件的 profile 或网络访问。
+- **步骤**：1）读取 `apps/desktop/index.html` 中的 CSP。2）用
+  `electron.vite.config.ts` 里真实的 `tightenCsp()` renderer 插件处理该文档。
+  3）以打桩的 Electron 打包 `plugin-renderer-protocol.ts`，并用真实 handler 驱动
+  GET、POST、HEAD 请求（`js`、`mjs`、`css`、`json`、`map`、`html` 路径）、
+  百分号编码路径、缺失文件、空路径，以及解析器拒绝的插件。4）检查
+  `bootstrap/startup.ts` 的启动顺序与 `plugins.resolveRendererSource` 接线，以及
+  `plugin-runtime.ts` 中 `rendererEntry` / `resolveRendererSource` 的门控。
+  5）用派生的 IPC 白名单与 preload 检查 renderer 入口通道。6）用 SDK 的
+  `validateManifest` 校验 `examples/plugins/slots-demo/manifest.json`，并确认两个
+  入口文件都存在。
+- **预期**：`script-src` 与 `connect-src` 在构建改写前后都包含 `plugin-renderer:`，
+  同时不出现 `'unsafe-eval'` 与 loopback 开发主机。scheme 只注册一次并带
+  `standard`、`secure`、`supportFetchAPI`、`corsEnabled`、`stream`，只响应 GET，
+  以 `no-store` 与 `nosniff` 提供五种模块 MIME 类型，并对 `html`、非 GET 方法、
+  空路径、缺失文件以及授权已撤销的插件返回 404。scheme 在 `app.whenReady()` 之前
+  预留，并经运行时门控安装；两个入口都必须同时满足已声明的 `manifest.renderer`
+  与仍然有效的 `renderer.extension` 授权；该通道位于 preload 强制执行的派生白名单中。
+  示例 manifest 校验通过、请求 `renderer.extension`，且 `main` 与 `renderer`
+  文件都存在。
+- **链接规格**：`07-plugins/16-trusted-extensions.md` §2A.1、§2A.2、§2A.4、§2A.5；ADR 0287
+- **验收**：安全、质量
+- **里程碑**：MVP 后（R7 v1）
+- **状态**：由 `pnpm test:e2e:plugin-slots` 针对真实模块自动化（打桩的 Electron 只替换
+  `electron` 导入）；打包应用中的启动旅程 —— Electron 启动、向真实 profile 安装、
+  渲染槽位 —— 保留为独立验证面。
 
 
 #### E2E-234：工作区安全拒绝名单与忽略层

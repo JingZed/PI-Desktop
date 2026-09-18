@@ -1369,6 +1369,34 @@ export class PluginRuntime {
     if (!normalized) return null;
     return this.themeAssets.get(pluginId)?.get(normalized) ?? null;
   }
+  /**
+   * A loaded plugin that may run a renderer entry right now: it declared
+   * `manifest.renderer`, it still holds the `renderer.extension` grant, and it
+   * is not on its way out. Everything the renderer host is allowed to fetch or
+   * evaluate goes through this one gate (ADR 0287).
+   */
+  private rendererPlugin(pluginId: string): LoadedPlugin | null {
+    const loaded = this.loaded.get(pluginId);
+    if (!loaded || loaded.disposing) return null;
+    const declared = typeof loaded.manifest.renderer === "string" ? loaded.manifest.renderer : "";
+    if (!declared) return null;
+    return loaded.permissions.has("renderer.extension") ? loaded : null;
+  }
+
+  /** The declared renderer entry path, for the renderer's lazy load. */
+  rendererEntry(pluginId: string): string | null {
+    return this.rendererPlugin(pluginId)?.manifest.renderer ?? null;
+  }
+
+  /**
+   * Resolve one file a plugin's renderer module asked for. The path has to stay
+   * inside that plugin's package, so one plugin has no URL that reaches
+   * another's files, and a plugin whose grant was revoked has no URL at all.
+   */
+  resolveRendererSource(pluginId: string, requestPath: string): string | null {
+    const loaded = this.rendererPlugin(pluginId);
+    return loaded ? resolveInsidePlugin(loaded.path, requestPath) : null;
+  }
 
   /** Supervision state of every resident service, ordered for a stable list. */
   getServiceStates(): PluginServiceStatus[] {
@@ -1572,12 +1600,17 @@ export class PluginRuntime {
     const manifest = validated.manifest;
     await this.unload(manifest.id);
 
-    const mainPath = resolveInsidePlugin(pluginPath, manifest.main);
-    if (!mainPath) {
-      throw new Error("PLUGIN_INVALID: main entry must stay inside the plugin directory");
-    }
-    if (!existsSync(mainPath)) {
-      throw new Error("PLUGIN_LOAD_FAILED: main entry missing");
+    // The headless module is optional: a UI-only plugin declares `renderer`, a
+    // page, or a destination instead, and then nothing runs in a host process.
+    const headlessMain = typeof manifest.main === "string" ? manifest.main : "";
+    if (headlessMain) {
+      const mainPath = resolveInsidePlugin(pluginPath, headlessMain);
+      if (!mainPath) {
+        throw new Error("PLUGIN_INVALID: main entry must stay inside the plugin directory");
+      }
+      if (!existsSync(mainPath)) {
+        throw new Error("PLUGIN_LOAD_FAILED: main entry missing");
+      }
     }
 
     // Legacy `fs.*.workspace` names resolve to the scoped form, so an install
@@ -1600,7 +1633,9 @@ export class PluginRuntime {
 
     const entry = this.services.hostEntry ?? join(__dirname, "plugin-host-process.js");
     const spawn = this.services.spawnProcess ?? spawnUtilityProcess;
-    const child = await spawn({ pluginId: manifest.id, entry, pluginPath });
+    const child = headlessMain
+      ? await spawn({ pluginId: manifest.id, entry, pluginPath })
+      : undefined;
 
     const loaded: LoadedPlugin = {
       manifest,
@@ -1618,41 +1653,46 @@ export class PluginRuntime {
     };
     this.loaded.set(manifest.id, loaded);
 
-    child.onMessage((message) => this.handleChildMessage(loaded, message));
-    child.onExit((code) => this.handleChildExit(loaded, code));
-    child.onLog?.((level, message) => {
-      if (!message) return;
-      this.services.audit?.({
-        pluginId: manifest.id,
-        api: "plugin.stdio",
-        level,
-        message,
-        ts: Date.now(),
-      });
-    });
-
-    try {
-      await this.sendToChild(
-        loaded,
-        {
-          t: "init",
+    // No headless module means no host process to talk to: everything this
+    // plugin contributes is either declarative or belongs to another entry
+    // (`renderer` / `views`), so the load path stops here.
+    if (child) {
+      child.onMessage((message) => this.handleChildMessage(loaded, message));
+      child.onExit((code) => this.handleChildExit(loaded, code));
+      child.onLog?.((level, message) => {
+        if (!message) return;
+        this.services.audit?.({
           pluginId: manifest.id,
-          pluginPath,
-          main: manifest.main,
-          manifest,
-        },
-        PLUGIN_LOAD_TIMEOUT_MS,
-      );
-    } catch (error) {
-      await this.unload(manifest.id);
-      this.services.audit?.({
-        pluginId: manifest.id,
-        api: "plugin.load.error",
-        ok: false,
-        errorCode: (error as PluginApiError).code ?? "PLUGIN_LOAD_FAILED",
-        ts: Date.now(),
+          api: "plugin.stdio",
+          level,
+          message,
+          ts: Date.now(),
+        });
       });
-      throw error;
+
+      try {
+        await this.sendToChild(
+          loaded,
+          {
+            t: "init",
+            pluginId: manifest.id,
+            pluginPath,
+            main: headlessMain,
+            manifest,
+          },
+          PLUGIN_LOAD_TIMEOUT_MS,
+        );
+      } catch (error) {
+        await this.unload(manifest.id);
+        this.services.audit?.({
+          pluginId: manifest.id,
+          api: "plugin.load.error",
+          ok: false,
+          errorCode: (error as PluginApiError).code ?? "PLUGIN_LOAD_FAILED",
+          ts: Date.now(),
+        });
+        throw error;
+      }
     }
 
     this.registerSkills(loaded);
@@ -1803,15 +1843,18 @@ export class PluginRuntime {
   private async disposePlugin(loaded: LoadedPlugin): Promise<void> {
     const pluginId = loaded.manifest.id;
     await this.stopServices(loaded);
-    if (!loaded.child) return;
-    try {
-      await this.sendToChild(
-        loaded,
-        { t: "call", method: "lifecycle.unload", payload: {} },
-        PLUGIN_SHUTDOWN_HOOK_TIMEOUT_MS,
-      );
-    } catch {
-      // A stuck or already-dead child must never block quit.
+    // A plugin with no headless module has no unload hook to run, but its
+    // declarative contributions still have to be released.
+    if (loaded.child) {
+      try {
+        await this.sendToChild(
+          loaded,
+          { t: "call", method: "lifecycle.unload", payload: {} },
+          PLUGIN_SHUTDOWN_HOOK_TIMEOUT_MS,
+        );
+      } catch {
+        // A stuck or already-dead child must never block quit.
+      }
     }
     this.rejectPending(loaded, apiError("PLUGIN_UNLOADED", `plugin unloaded: ${pluginId}`));
     this.clearContributions(pluginId);

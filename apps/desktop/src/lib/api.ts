@@ -1,3 +1,4 @@
+import { getBridge, type PiDesktopBridge } from "./bridge";
 import type {
   ActivationScope,
   AgentCapabilityMove,
@@ -271,26 +272,18 @@ export interface ExternalMcpImportRunResult {
   failed: Array<{ item: ExternalMcpImportItem; error: string }>;
 }
 
-declare global {
-  interface Window {
-    piDesktop?: {
-      invoke: <T = unknown>(channel: string, ...args: unknown[]) => Promise<Result<T>>;
-      on: (channel: string, listener: (...args: unknown[]) => void) => () => void;
-      channels: typeof IPC;
-      platform: NodeJS.Platform;
-      /** Authoritative OS locale passed from the main process at window creation. */
-      locale?: string;
-      /** Resolve a native dropped File to its source path. */
-      getDroppedFilePath?: (file: File) => string | null;
-    };
-  }
-}
+/**
+ * The preload bridge, captured before `bridge.ts` removed the global. A trusted
+ * plugin's renderer code shares this realm, so the bridge must not stay on
+ * `window`; every call below goes through the captured reference instead.
+ */
+const bridge = getBridge() as PiDesktopBridge;
 
 async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
-  if (!window.piDesktop?.invoke) {
+  if (!bridge?.invoke) {
     throw new Error("piDesktop preload bridge unavailable");
   }
-  const result = await window.piDesktop.invoke<T>(channel, ...args);
+  const result = await bridge.invoke<T>(channel, ...args);
   if (!result.ok) {
     const error = new Error(result.error.message) as Error & {
       code?: string;
@@ -340,7 +333,7 @@ export function normalizeSettings(settings: AppSettings): AppSettings {
     )
       ? (settings as { defaultCommandShell: AppSettings["defaultCommandShell"] })
           .defaultCommandShell
-      : defaultCommandShellForPlatform(window.piDesktop?.platform ?? ""),
+      : defaultCommandShellForPlatform(bridge?.platform ?? ""),
     largePasteThreshold: normalizeLargePasteThreshold(
       (settings as { largePasteThreshold?: unknown }).largePasteThreshold,
     ),
@@ -699,7 +692,7 @@ export const api = {
   pickFiles: () =>
     invoke<{ token: string | null; canceled?: boolean }>(IPC.invoke.composerPickFiles),
   getDroppedFilePath: (file: File) =>
-    window.piDesktop?.getDroppedFilePath?.(file) ?? null,
+    bridge?.getDroppedFilePath?.(file) ?? null,
   pickPhotos: () =>
     invoke<{ token: string | null; canceled?: boolean }>(IPC.invoke.composerPickPhotos),
   importFiles: (sessionId: string, token: string) =>
@@ -818,6 +811,13 @@ export const api = {
     invoke<PlanResolutionResult>(IPC.invoke.plansResolve, resolution),
   listPlugins: () =>
     invoke<{ plugins: PluginSummary[] }>(IPC.invoke.pluginList),
+  /**
+   * The path a trusted plugin's renderer module lives at, resolved by the main
+   * process. `null` means there is nothing to load: no `renderer` entry, no
+   * `renderer.extension` grant, or a plugin that is no longer loaded.
+   */
+  pluginRendererEntry: (id: string) =>
+    invoke<{ entry: string | null }>(IPC.invoke.pluginRendererEntry, id),
   /**
    * Picking a folder only reports what it declares; the load happens in
    * `confirmLoadDevPlugin` once the user has seen that.
@@ -1260,14 +1260,14 @@ export const api = {
       { action },
     ),
   onWindowMaximized: (listener: (event: { maximized: boolean }) => void) => {
-    if (!window.piDesktop?.on) return () => undefined;
-    return window.piDesktop.on(IPC.event.windowMaximized, (payload) =>
+    if (!bridge?.on) return () => undefined;
+    return bridge.on(IPC.event.windowMaximized, (payload) =>
       listener(payload as { maximized: boolean }),
     );
   },
   onWindowFullScreen: (listener: (event: { fullScreen: boolean }) => void) => {
-    if (!window.piDesktop?.on) return () => undefined;
-    return window.piDesktop.on(IPC.event.windowFullScreen, (payload) =>
+    if (!bridge?.on) return () => undefined;
+    return bridge.on(IPC.event.windowFullScreen, (payload) =>
       listener(payload as { fullScreen: boolean }),
     );
   },
@@ -1277,8 +1277,8 @@ export const api = {
       panelWidth: number;
     }) => void,
   ) => {
-    if (!window.piDesktop?.on) return () => undefined;
-    return window.piDesktop.on(IPC.event.windowWorkPanelResize, (payload) =>
+    if (!bridge?.on) return () => undefined;
+    return bridge.on(IPC.event.windowWorkPanelResize, (payload) =>
       listener(
         payload as {
           phase: "preview" | "commit";
@@ -1288,84 +1288,84 @@ export const api = {
     );
   },
   onMenuCommand: (listener: (command: AppMenuCommand) => void) => {
-    if (!window.piDesktop?.on) return () => undefined;
-    return window.piDesktop.on(IPC.event.menuCommand, (payload) =>
+    if (!bridge?.on) return () => undefined;
+    return bridge.on(IPC.event.menuCommand, (payload) =>
       listener((payload as { command: AppMenuCommand }).command),
     );
   },
   onBrowserState: (listener: (state: BrowserState) => void) => {
-    if (!window.piDesktop?.on) return () => undefined;
-    return window.piDesktop.on(IPC.event.browserState, (payload) =>
+    if (!bridge?.on) return () => undefined;
+    return bridge.on(IPC.event.browserState, (payload) =>
       listener(payload as BrowserState),
     );
   },
   onBrowserPreview: (
     listener: (event: { sessionId: string; path?: string; url?: string }) => void,
   ) => {
-    if (!window.piDesktop?.on) return () => undefined;
-    return window.piDesktop.on(IPC.event.browserPreview, (payload) =>
+    if (!bridge?.on) return () => undefined;
+    return bridge.on(IPC.event.browserPreview, (payload) =>
       listener(payload as { sessionId: string; path?: string; url?: string }),
     );
   },
   onAgentEvent: (listener: (event: AgentEventEnvelope) => void) => {
-    if (!window.piDesktop?.on) return () => undefined;
-    return window.piDesktop.on(IPC.event.agentMessage, (payload) =>
+    if (!bridge?.on) return () => undefined;
+    return bridge.on(IPC.event.agentMessage, (payload) =>
       listener(payload as AgentEventEnvelope),
     );
   },
   onAgentQueueChanged: (listener: (event: AgentQueueChangedEvent) => void) => {
-    if (!window.piDesktop?.on) return () => undefined;
-    return window.piDesktop.on(IPC.event.agentQueueChanged, (payload) =>
+    if (!bridge?.on) return () => undefined;
+    return bridge.on(IPC.event.agentQueueChanged, (payload) =>
       listener(payload as AgentQueueChangedEvent),
     );
   },
   onPlansChanged: (listener: (event: PlanningStateEvent) => void) => {
-    if (!window.piDesktop?.on) return () => undefined;
-    return window.piDesktop.on(IPC.event.plansChanged, (payload) =>
+    if (!bridge?.on) return () => undefined;
+    return bridge.on(IPC.event.plansChanged, (payload) =>
       listener(normalizePlansChangedEvent(payload)),
     );
   },
   onOauthLogin: (listener: (event: OAuthLoginEvent) => void) => {
-    if (!window.piDesktop?.on) return () => undefined;
-    return window.piDesktop.on(IPC.event.providersOauth, (payload) =>
+    if (!bridge?.on) return () => undefined;
+    return bridge.on(IPC.event.providersOauth, (payload) =>
       listener(payload as OAuthLoginEvent),
     );
   },
   onMcpOAuth: (listener: (event: McpOAuthLoginEvent) => void) => {
-    if (!window.piDesktop?.on) return () => undefined;
-    return window.piDesktop.on(IPC.event.mcpOauth, (payload) =>
+    if (!bridge?.on) return () => undefined;
+    return bridge.on(IPC.event.mcpOauth, (payload) =>
       listener(payload as McpOAuthLoginEvent),
     );
   },
   onExtensionPrompt: (listener: (prompt: TrustedExtensionUiPrompt) => void) => {
-    if (!window.piDesktop?.on) return () => undefined;
-    return window.piDesktop.on(IPC.event.extensionsUiPrompt, (payload) =>
+    if (!bridge?.on) return () => undefined;
+    return bridge.on(IPC.event.extensionsUiPrompt, (payload) =>
       listener(payload as TrustedExtensionUiPrompt),
     );
   },
   onExtensionStatus: (listener: (event: TrustedExtensionStatusEvent) => void) => {
-    if (!window.piDesktop?.on) return () => undefined;
-    return window.piDesktop.on(IPC.event.extensionsStatus, (payload) =>
+    if (!bridge?.on) return () => undefined;
+    return bridge.on(IPC.event.extensionsStatus, (payload) =>
       listener(payload as TrustedExtensionStatusEvent),
     );
   },
   onToast: (listener: (message: string) => void) => {
-    if (!window.piDesktop?.on) return () => undefined;
-    return window.piDesktop.on(IPC.event.toast, (payload) =>
+    if (!bridge?.on) return () => undefined;
+    return bridge.on(IPC.event.toast, (payload) =>
       listener((payload as { message: string }).message),
     );
   },
   onHostStatus: (listener: (status: HostStatusEvent) => void) => {
-    if (!window.piDesktop?.on) return () => undefined;
-    return window.piDesktop.on(IPC.event.hostStatus, (payload) =>
+    if (!bridge?.on) return () => undefined;
+    return bridge.on(IPC.event.hostStatus, (payload) =>
       listener(payload as HostStatusEvent),
     );
   },
   onNotificationChanged: (
     listener: (notification: AppNotification) => void,
   ) => {
-    if (!window.piDesktop?.on) return () => undefined;
-    return window.piDesktop.on(IPC.event.notificationChanged, (payload) =>
+    if (!bridge?.on) return () => undefined;
+    return bridge.on(IPC.event.notificationChanged, (payload) =>
       listener((payload as { notification: AppNotification }).notification),
     );
   },
@@ -1377,8 +1377,8 @@ export const api = {
       selectSessionId?: string;
     }) => void,
   ) => {
-    if (!window.piDesktop?.on) return () => undefined;
-    return window.piDesktop.on(IPC.event.sessionsChanged, (payload) =>
+    if (!bridge?.on) return () => undefined;
+    return bridge.on(IPC.event.sessionsChanged, (payload) =>
       listener(
         (payload ?? {}) as {
           reason?: string;
@@ -1392,20 +1392,20 @@ export const api = {
   onNotificationActivated: (
     listener: (event: { id: string; sessionId: string }) => void,
   ) => {
-    if (!window.piDesktop?.on) return () => undefined;
-    return window.piDesktop.on(IPC.event.notificationActivated, (payload) =>
+    if (!bridge?.on) return () => undefined;
+    return bridge.on(IPC.event.notificationActivated, (payload) =>
       listener(payload as { id: string; sessionId: string }),
     );
   },
   onUpdateState: (listener: (state: UpdateState) => void) => {
-    if (!window.piDesktop?.on) return () => undefined;
-    return window.piDesktop.on(IPC.event.updatesState, (payload) =>
+    if (!bridge?.on) return () => undefined;
+    return bridge.on(IPC.event.updatesState, (payload) =>
       listener(payload as UpdateState),
     );
   },
   onPluginInstallProgress: (listener: (event: PluginInstallProgress) => void) => {
-    if (!window.piDesktop?.on) return () => undefined;
-    return window.piDesktop.on(IPC.event.pluginInstallProgress, (payload) =>
+    if (!bridge?.on) return () => undefined;
+    return bridge.on(IPC.event.pluginInstallProgress, (payload) =>
       listener(payload as PluginInstallProgress),
     );
   },
@@ -1413,19 +1413,19 @@ export const api = {
   onPluginChanged: (
     listener: (event: { reason?: string; pluginId?: string }) => void,
   ) => {
-    if (!window.piDesktop?.on) return () => undefined;
-    return window.piDesktop.on(IPC.event.pluginChanged, (payload) =>
+    if (!bridge?.on) return () => undefined;
+    return bridge.on(IPC.event.pluginChanged, (payload) =>
       listener((payload ?? {}) as { reason?: string; pluginId?: string }),
     );
   },
   onSettingsChanged: (listener: (patch: Record<string, unknown>) => void) => {
-    if (!window.piDesktop?.on) return () => undefined;
-    return window.piDesktop.on(IPC.event.settingsChanged, (payload) =>
+    if (!bridge?.on) return () => undefined;
+    return bridge.on(IPC.event.settingsChanged, (payload) =>
       listener((payload ?? {}) as Record<string, unknown>),
     );
   },
   onPluginLauncherShown: (listener: () => void) => {
-    if (!window.piDesktop?.on) return () => undefined;
-    return window.piDesktop.on(IPC.event.pluginLauncherShown, () => listener());
+    if (!bridge?.on) return () => undefined;
+    return bridge.on(IPC.event.pluginLauncherShown, () => listener());
   },
 };

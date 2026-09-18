@@ -1,3 +1,4 @@
+import { bridgePlatform } from "../../lib/bridge";
 import { Button, cx } from "../../components/ui";
 import { IconCheck, IconShield, IconSparkles, IconTriangleAlert } from "../../components/icons";
 import { PluginInstallDialog } from "../../components/plugins/PluginInstallDialog";
@@ -170,7 +171,7 @@ export function PluginDialogs({
       {settingsPlugin ? (
         <PluginSettingsSheet
           plugin={settingsPlugin}
-          platform={(window.piDesktop?.platform ?? "darwin") as "darwin" | "win32" | "linux"}
+          platform={(bridgePlatform()) as "darwin" | "win32" | "linux"}
           onClose={() => setSettingsPlugin(null)}
           onSaved={async () => {
             await refreshPlugins();

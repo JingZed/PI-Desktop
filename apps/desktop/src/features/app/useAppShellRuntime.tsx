@@ -1,3 +1,4 @@
+import { bridgePlatform } from "../../lib/bridge";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useSidebarTransition } from "./useSidebarTransition";
 import { useTranslation } from "react-i18next";
@@ -41,7 +42,7 @@ const PLUGIN_THEME_STYLE_ID = "pi-plugin-theme";
 
 export function useAppShellRuntime() {
   const { t } = useTranslation();
-  const platform = window.piDesktop?.platform ?? "darwin";
+  const platform = bridgePlatform();
   const bootstrap = useAppStore((s) => s.bootstrap);
   const ready = useAppStore((s) => s.ready);
   const page = useAppStore((s) => s.page);

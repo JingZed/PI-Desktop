@@ -1,3 +1,4 @@
+import { bridgePlatform } from "../../lib/bridge";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -80,7 +81,7 @@ export function SettingsPage() {
   const settings = useAppStore((s) => s.settings);
   const version = useAppStore((s) => s.version);
   const refreshProviders = useAppStore((s) => s.refreshProviders);
-  const platform = (window.piDesktop?.platform ?? "darwin") as ShortcutPlatform;
+  const platform = (bridgePlatform()) as ShortcutPlatform;
 
   const [query, setQuery] = useState("");
   const [recoveringSettings, setRecoveringSettings] = useState(!settings);

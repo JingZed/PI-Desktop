@@ -1,3 +1,4 @@
+import { bridgePlatform } from "./lib/bridge";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import i18n from "i18next";
@@ -16,7 +17,7 @@ document.documentElement.dataset.theme = "dark";
 // Window-chrome layout differs per OS (traffic lights left on macOS,
 // controls overlay right on Windows/Linux); set before first paint.
 document.documentElement.dataset.platform =
-  window.piDesktop?.platform ?? "darwin";
+  bridgePlatform();
 // The macOS traffic lights are native views with a fixed footprint; the space
 // the shell leaves clear for them derives from the same shared constant the
 // main process positions them with (styles/tokens.css). Only macOS has them —
