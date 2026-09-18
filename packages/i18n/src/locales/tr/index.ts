@@ -59,6 +59,15 @@ export const tr = {
     allowSession: "Çıkışa kadar izin ver",
     deny: "Reddet",
   },
+  toolPermissionConsent: {
+    message: "{tool} çalıştırılsın mı?",
+    arguments: "Bağımsız değişkenler: {args}",
+    reason: "Gerekçe: {reason}",
+    detail: "Burada yanıtlamadan hiçbir şey çalışmaz. Reddetmek, Esc tuşuna basmak veya bu pencereyi kapatmak araç çağrısını durdurur.",
+    allowOnce: "Bir kez izin ver",
+    allowSession: "Bu sohbet için izin ver",
+    deny: "Reddet",
+  },
   pluginLauncher: {
     title: "Eklenti aç",
     placeholder: "Ada veya pinyin ile eklenti ara",

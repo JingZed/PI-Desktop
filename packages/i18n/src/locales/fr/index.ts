@@ -50,6 +50,15 @@ export const fr = {
     "allowSession": "Autoriser jusqu'à quitter",
     "deny": "Refuser"
   },
+  "toolPermissionConsent": {
+    "message": "Autoriser l'exécution de {tool} ?",
+    "arguments": "Arguments : {args}",
+    "reason": "Motif : {reason}",
+    "detail": "Rien ne s'exécute tant que vous n'avez pas répondu ici. Refuser, appuyer sur Échap ou fermer cette fenêtre arrête l'appel d'outil.",
+    "allowOnce": "Autoriser une fois",
+    "allowSession": "Autoriser cette discussion",
+    "deny": "Refuser"
+  },
   "pluginLauncher": {
     "title": "Ouvrir un plugin",
     "placeholder": "Rechercher des plugins par nom ou pinyin",

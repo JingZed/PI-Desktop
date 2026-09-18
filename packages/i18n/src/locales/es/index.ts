@@ -50,6 +50,15 @@ export const es = {
     "allowSession": "Permitir hasta salir",
     "deny": "Denegar"
   },
+  "toolPermissionConsent": {
+    "message": "¿Permitir que se ejecute {tool}?",
+    "arguments": "Argumentos: {args}",
+    "reason": "Motivo: {reason}",
+    "detail": "Nada se ejecuta hasta que respondas aquí. Denegar, pulsar Escape o cerrar esta ventana detiene la llamada a la herramienta.",
+    "allowOnce": "Permitir una vez",
+    "allowSession": "Permitir este chat",
+    "deny": "Denegar"
+  },
   "pluginLauncher": {
     "title": "Abrir un complemento",
     "placeholder": "Buscar complementos por nombre o pinyin",

@@ -57,6 +57,20 @@ export const en = {
     allowSession: "Allow until quit",
     deny: "Deny",
   },
+  /**
+   * Native confirmation for a tool the Agent wants to run. The renderer's card
+   * only asks; this dialog is the answer that counts.
+   */
+  toolPermissionConsent: {
+    message: "Allow {tool} to run?",
+    arguments: "Arguments: {args}",
+    reason: "Reason: {reason}",
+    detail:
+      "Nothing runs unless you answer here. Denying, pressing Escape, or closing this window stops the tool call.",
+    allowOnce: "Allow once",
+    allowSession: "Allow for this chat",
+    deny: "Deny",
+  },
   pluginLauncher: {
     title: "Open a plugin",
     placeholder: "Search plugins by name or pinyin",

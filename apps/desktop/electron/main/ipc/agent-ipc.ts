@@ -1,9 +1,9 @@
-import { IPC, ErrorCodes, isGlobalPermissionMode, type AgentEventEnvelope, type AgentPromptRequest, type AgentSteerRequest, type UiMessage, type AgentQueuePushRequest, type AgentStopRequest, type AskToolResolution, type GlobalPermissionMode, type MessageUsage, type PlanExecutionFinishStatus, type PlanResolutionResult, type PlanResolveRequest, type PromptEnhancementRequest, type SessionSummarizeTitleRequest } from "@pi-desktop/shared";
+import { IPC, ErrorCodes, isGlobalPermissionMode, type AgentEventEnvelope, type AgentPromptRequest, type AgentSteerRequest, type UiMessage, type AgentQueuePushRequest, type AgentStopRequest, type AskToolResolution, type GlobalPermissionMode, type MessageUsage, type PermissionDecision, type PlanExecutionFinishStatus, type PlanResolutionResult, type PlanResolveRequest, type PromptEnhancementRequest, type SessionSummarizeTitleRequest } from "@pi-desktop/shared";
 import type { FinishTurn } from "../runtime/plans";
 import { expandSlashInvocation, enhancePromptDraft, summarizeSessionTitle, visionFromModelConfig, type ComposerTemplate, type RuntimeProviderConfig } from "@pi-desktop/agent-runtime";
 import { OAUTH_AUTH_KIND, type VendorOAuth } from "../oauth";
 import { appendPromptFallbackPaths, durableUserMessageId, preparePromptAttachments, type PreparedPromptAttachment } from "../prompt-attachments";
-import { executionFromResponse, resolveSessionMessageInput } from "@pi-desktop/host-runtime";
+import { executionFromResponse, listPendingToolRequests, resolveSessionMessageInput } from "@pi-desktop/host-runtime";
 import type { AgentExtensionBridge } from "../agent-extensions";
 import type { AgentHostBridge } from "../agent-host-bridge";
 import type { AgentSidecar } from "../agent-sidecar";
@@ -12,6 +12,7 @@ import type { Logger } from "../logger";
 import type { PersistenceOutbox } from "../persistence-outbox";
 import type { ComposerCommandService } from "./composer-ipc";
 import type { IpcRegistrar } from "./types";
+import type { ToolPermissionConsentRequest } from "../tool-permission-consent";
 
 export type AgentIpcDependencies = {
   registrar: IpcRegistrar;
@@ -47,6 +48,12 @@ export type AgentIpcDependencies = {
   optionalWorkspaceRoot: () => Promise<string | null>;
   composerCommandService: Pick<ComposerCommandService, "buildComposerCommands">;
   loadComposerTemplatesCached: (root: string | null) => Promise<ComposerTemplate[]>;
+  /**
+   * Main-owned user answer for a tool-permission allow (ADR 0287). Never the
+   * renderer's decision: plugin code shares the renderer realm, so only a
+   * main-process dialog can carry a real user gesture.
+   */
+  confirmToolPermission: (request: ToolPermissionConsentRequest) => Promise<PermissionDecision>;
 };
 
 function rejectNativeAgentOperation(sessionId: string): void {
@@ -84,6 +91,7 @@ export function registerAgentIpc({
   optionalWorkspaceRoot,
   composerCommandService,
   loadComposerTemplatesCached,
+  confirmToolPermission,
 }: AgentIpcDependencies): void {
   let host: HostProcess | null = null;
   let sidecar: AgentSidecar | null = null;
@@ -691,22 +699,99 @@ export function registerAgentIpc({
     },
   );
 
+  /**
+   * Only `allow-once` and `allow-session` grant anything; anything else the
+   * renderer sends reads as a refusal.
+   */
+  const normalizeToolPermissionDecision = (
+    decision: unknown,
+  ): PermissionDecision =>
+    decision === "allow-once" || decision === "allow-session"
+      ? decision
+      : "deny";
+
+  /**
+   * One dialog per request: a renderer that asks again for the same request id
+   * joins the prompt that is already open instead of stacking a second one for
+   * the user to dismiss. The answer is the same real user gesture either way.
+   */
+  const openToolPermissionPrompts = new Map<
+    string,
+    Promise<PermissionDecision>
+  >();
+
+  /**
+   * Turn a renderer-originated resolution into the answer that counts.
+   *
+   * Plugin code shares the renderer realm with the host UI, so a decision
+   * arriving on this channel carries no user gesture no matter which button it
+   * looks like. A denial is honored as-is: it grants nothing, and the approval
+   * card's Deny button and countdown auto-deny must stay instant. Anything
+   * that would allow a tool needs the user's answer from the main-owned
+   * dialog, which names the tool from host state — so a forged request id can
+   * neither approve a request nor pop a dialog for one that is not pending.
+   */
+  const confirmToolPermissionForRenderer = (
+    requestId: string,
+    requested: PermissionDecision,
+  ): Promise<PermissionDecision> => {
+    if (requested === "deny") return Promise.resolve("deny");
+    const open = openToolPermissionPrompts.get(requestId);
+    if (open) return open;
+    // The slot is claimed before the first read, so a duplicate call arriving
+    // while the host is answering joins this prompt instead of opening one more.
+    const prompt = (async (): Promise<PermissionDecision> => {
+      const pending = await listPendingToolRequests(() => host, undefined);
+      const request = pending.find((entry) => entry.requestId === requestId);
+      // Nothing is open under this id: there is nothing to confirm. Forward the
+      // request unchanged so the host answers NOT_FOUND exactly as it did before.
+      if (!request) return requested;
+      if (!confirmToolPermission) {
+        // A composition that forgot the confirmation service must fail closed.
+        logger.app("permission", "warn", "tool permission confirmation unavailable", {
+          data: { requestId },
+        });
+        return "deny";
+      }
+      logger.app("permission", "info", "tool permission confirmation requested", {
+        data: { requestId, toolName: request.toolName, requested },
+      });
+      return confirmToolPermission({
+        toolName: request.toolName,
+        argsPreview: request.argsPreview,
+        risk: request.risk,
+        reason: request.reason,
+      });
+    })();
+    openToolPermissionPrompts.set(requestId, prompt);
+    return prompt.finally(() => {
+      openToolPermissionPrompts.delete(requestId);
+    });
+  };
+
+  // The renderer may ask; it never decides (ADR 0287). The main-owned native
+  // dialog is the only user gesture that can allow a tool.
   handle(IPC.invoke.toolResolvePermission, async (resolution: {
     requestId: string;
     decision: string;
   }) => {
     if (!host) throw new Error("host unavailable");
+    const requestId = String(resolution?.requestId ?? "").trim();
+    if (!requestId) {
+      throw Object.assign(new Error("requestId required"), {
+        errorCode: ErrorCodes.INVALID_ARGUMENT,
+      });
+    }
+    const requested = normalizeToolPermissionDecision(resolution?.decision);
+    const decision = await confirmToolPermissionForRenderer(requestId, requested);
     logger.app("permission", "info", "permission resolved", {
-      data: { requestId: resolution.requestId, decision: resolution.decision },
+      data: { requestId, requested, decision },
     });
-    const resolved = await host.call("permissions.resolve", resolution);
-    agentHostBridge?.settleApproval(resolution.requestId, {
-      ...(resolution.decision === "allow-once" ||
-      resolution.decision === "allow-session" ||
-      resolution.decision === "deny"
-        ? { decision: resolution.decision }
-        : {}),
+    const resolved = await host.call("permissions.resolve", {
+      requestId,
+      decision,
     });
+    agentHostBridge?.settleApproval(requestId, { decision });
     return resolved;
   });
 

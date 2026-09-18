@@ -50,6 +50,15 @@ export const de = {
     "allowSession": "Erlauben bis zum Beenden",
     "deny": "Verweigern"
   },
+  "toolPermissionConsent": {
+    "message": "Ausführung von {tool} zulassen?",
+    "arguments": "Argumente: {args}",
+    "reason": "Grund: {reason}",
+    "detail": "Nichts wird ausgeführt, bevor Sie hier antworten. Ablehnen, Escape oder das Schließen dieses Fensters beendet den Tool-Aufruf.",
+    "allowOnce": "Einmal zulassen",
+    "allowSession": "Für diesen Chat zulassen",
+    "deny": "Ablehnen"
+  },
   "pluginLauncher": {
     "title": "Ein Plugin öffnen",
     "placeholder": "Plugins nach Name oder Pinyin durchsuchen",

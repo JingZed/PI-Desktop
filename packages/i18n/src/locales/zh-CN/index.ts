@@ -52,6 +52,15 @@ export const zhCN = {
     allowSession: "本次运行内允许",
     deny: "拒绝",
   },
+  toolPermissionConsent: {
+    message: "允许运行 {tool} 吗？",
+    arguments: "参数：{args}",
+    reason: "原因：{reason}",
+    detail: "只有在这里作出回答后才会运行。拒绝、按 Esc 或关闭此窗口都会终止该工具调用。",
+    allowOnce: "允许一次",
+    allowSession: "允许本次对话",
+    deny: "拒绝",
+  },
   pluginLauncher: {
     title: "打开插件",
     placeholder: "输入插件名称、拼音或拼音首字母",

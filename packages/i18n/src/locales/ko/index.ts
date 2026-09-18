@@ -59,6 +59,15 @@ export const ko = {
     allowSession: "종료할 때까지 허용",
     deny: "거부",
   },
+  toolPermissionConsent: {
+    message: "{tool} 실행을 허용할까요?",
+    arguments: "인수: {args}",
+    reason: "이유: {reason}",
+    detail: "여기서 답해야만 실행됩니다. 거부하거나 Esc를 누르거나 이 창을 닫으면 도구 호출이 중단됩니다.",
+    allowOnce: "한 번 허용",
+    allowSession: "종료할 때까지 허용",
+    deny: "거부",
+  },
   pluginLauncher: {
     title: "플러그인 열기",
     placeholder: "이름 또는 병음으로 플러그인 검색",

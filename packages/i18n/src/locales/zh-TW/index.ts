@@ -52,6 +52,15 @@ export const zhTW = {
     allowSession: "本次執行內允許",
     deny: "拒絕",
   },
+  toolPermissionConsent: {
+    message: "允許執行 {tool} 嗎？",
+    arguments: "參數：{args}",
+    reason: "原因：{reason}",
+    detail: "只有在此回答後才會執行。拒絕、按 Esc 或關閉此視窗都會終止該工具呼叫。",
+    allowOnce: "允許一次",
+    allowSession: "允許本次對話",
+    deny: "拒絕",
+  },
   pluginLauncher: {
     title: "開啟外掛",
     placeholder: "輸入外掛名稱、拼音或拼音首字母",

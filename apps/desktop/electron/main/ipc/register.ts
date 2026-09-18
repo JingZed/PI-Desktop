@@ -29,6 +29,7 @@ import { createComposerTemplateLoader, registerWorkspaceIpc } from "./workspace-
 import { registerComposerIpc } from "./composer-ipc";
 import { registerSpeechIpc } from "./speech-ipc";
 import type { IpcRegistrar } from "./types";
+import { createToolPermissionConsentService } from "../tool-permission-consent";
 
 export type RegisterIpcDependencies = {
   ipcMain: IpcMain;
@@ -325,6 +326,10 @@ export function registerIpcHandlers(dependencies: RegisterIpcDependencies) {
       return currentSidecar.call<{ handled: boolean }>("extensions.command.run", input);
     },
   });
+  const confirmToolPermission = createToolPermissionConsentService({
+    getWindow: getMainWindow,
+    getLocale: () => getUpdaterLocale(),
+  });
   registerAgentIpc({
     registrar,
     getHost,
@@ -353,6 +358,7 @@ export function registerIpcHandlers(dependencies: RegisterIpcDependencies) {
     optionalWorkspaceRoot,
     composerCommandService,
     loadComposerTemplatesCached,
+    confirmToolPermission,
   });
 
   registerPluginIpc({
