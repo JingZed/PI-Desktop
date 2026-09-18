@@ -136,6 +136,8 @@ impl PluginManager {
                 fs: manifest.fs.clone(),
                 settings: derive_settings(&manifest),
                 i18n: manifest.i18n.clone(),
+                renderer_data: manifest.renderer_data.clone(),
+                renderer_actions: manifest.renderer_actions.clone(),
             };
             let plugin = self.upsert_summary(summary)?;
             Ok(InstallResult {

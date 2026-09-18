@@ -63,6 +63,18 @@ type PluginManifestV1 = {
   * lazily, the first time one of its slots really renders (spec 16 §2A).
   */
  renderer?: string;
+ /**
+  * Host data the plugin renderer declares it reads, each name picked from the
+  * host-owned `PluginRendererDataKey` vocabulary below. Optional: an absent
+  * field declares nothing.
+  */
+ rendererData?: PluginRendererDataKey[];
+ /**
+  * Host actions the plugin renderer declares it dispatches, each name picked
+  * from the host-owned `PluginRendererActionName` vocabulary below. Optional:
+  * an absent field declares nothing.
+  */
+ rendererActions?: PluginRendererActionName[];
  ui?: PluginUiConfig;
  contributes?: PluginContributes;
  permissions?: PluginPermission[];
@@ -87,6 +99,29 @@ type PluginManifestV1 = {
   */
  enabledByDefault?: boolean;
 };
+
+/** Data names a plugin may declare in `rendererData`; the host owns this list. */
+type PluginRendererDataKey =
+ | "entry"
+ | "session"
+ | "code"
+ | "theme"
+ | "selection"
+ | "draft"
+ | "attachments"
+ | "locale";
+
+/** Action names a plugin may declare in `rendererActions`; the host owns this list. */
+type PluginRendererActionName =
+ | "plugin.call"
+ | "composer.replaceDraft"
+ | "composer.insertText"
+ | "composer.attachPath"
+ | "ui.openOverlay"
+ | "ui.closeOverlay"
+ | "ui.openModal"
+ | "ui.closeModal"
+ | "ui.toast";
 ```
 
 ## 3. UI config
@@ -518,6 +553,19 @@ MVP may implement only:
    (host-core: `PLUGIN_INVALID: renderer requires the renderer.extension
    permission`). One permission covers every component slot: slots are
    authorized by tier, never one at a time (ADR 0287)
+21. `rendererData` and `rendererActions` are optional lists drawn from two
+   host-owned vocabularies; a plugin picks from them and never invents a name
+   of its own. `rendererData` accepts `entry`, `session`, `code`, `theme`,
+   `selection`, `draft`, `attachments`, `locale`; `rendererActions` accepts
+   `plugin.call`, `composer.replaceDraft`, `composer.insertText`,
+   `composer.attachPath`, `ui.openOverlay`, `ui.closeOverlay`, `ui.openModal`,
+   `ui.closeModal`, `ui.toast`. Omitting a field declares nothing for it, so
+   existing manifests stay valid. An unknown or duplicated member, a
+   non-array value, or a non-string element fails validation, and the message
+   names the field. Neither list is an entry, so neither satisfies rule 19.
+   Both are declarations that grant nothing, do not appear in the permission
+   list, do not change grants, and are shown in the install review; a manifest
+   that declares them without `renderer` still validates
 
 ## 8. Example: minimal plugin
 

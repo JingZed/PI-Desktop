@@ -1682,6 +1682,37 @@ importConfirm: "가져온 확장은 에이전트 프로세스 안에서 에이�
       agent: "에이전트 프로세스 안에서 실행됩니다",
       agentHelp: "에이전트 자체 권한으로, 모델을 호출하는 동일한 프로세스에서 실행됩니다.",
     },
+    /**
+     * What a manifest declares its own renderer code will read and call
+     * (issue #528). Informational: the author's own list, shown back before the
+     * plugin loads, and silent for a plugin that declares neither.
+     */
+    declaration: {
+      title: "이 플러그인이 선언한 내용",
+      dataLabel: "읽는 데이터",
+      actionsLabel: "호출하는 동작",
+      data: {
+        entry: "대화 기록 항목",
+        session: "세션 정보",
+        code: "코드 블록",
+        theme: "현재 테마",
+        selection: "선택한 텍스트",
+        draft: "작성기 임시 내용",
+        attachments: "첨부 파일",
+        locale: "인터페이스 언어",
+      },
+      actions: {
+        "plugin.call": "자체 백그라운드 코드 호출",
+        "composer.replaceDraft": "작성기 임시 내용 바꾸기",
+        "composer.insertText": "작성기에 텍스트 삽입",
+        "composer.attachPath": "파일 또는 폴더 첨부",
+        "ui.openOverlay": "오버레이 열기",
+        "ui.closeOverlay": "오버레이 닫기",
+        "ui.openModal": "대화 상자 열기",
+        "ui.closeModal": "대화 상자 닫기",
+        "ui.toast": "알림 표시",
+      },
+    },
     permissions: {
       "ui.panel": "플러그인 패널 표시",
       "ui.microphone": "마이크 사용",

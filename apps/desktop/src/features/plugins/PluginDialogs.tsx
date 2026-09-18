@@ -8,8 +8,10 @@ import {
   RISK_LABEL_KEYS,
   RISK_TIERS,
   TEMPLATE_IDS,
+  declarationLabel,
   permissionLabel,
   permissionRisk,
+  rendererDeclaration,
 } from "./model";
 import type { PluginsPageModel } from "./usePluginsPage";
 import type { PluginManifestEntries, PluginPermissionReview } from "@pi-desktop/shared";
@@ -70,6 +72,7 @@ export function PluginDialogs({
 
             <div className="plugins-modal-body">
               <p className="plugins-modal-lede">{t("plugins.devReviewBody")}</p>
+              <RendererDeclaration t={t} plugin={pendingReview} />
               <TrustTierNotice t={t} entries={pendingReview.entries} />
               <PermissionGroups
                 t={t}
@@ -359,6 +362,59 @@ function TrustTierNotice({
           <span>{t(`plugins.trustTier.${row.help}`)}</span>
         </p>
       ))}
+    </div>
+  );
+}
+
+/**
+ * What the manifest being reviewed declares the plugin's own UI code will read
+ * and call (issue #528).
+ *
+ * An informational list, not a decision: the values the host understands are
+ * named, anything else is shown exactly as the author wrote it, and the block
+ * itself stays away when nothing was declared. It sits above the access list so
+ * "what it declared" and "what it may do" stay two separate questions.
+ *
+ * The prop is the review that carried the declarations, never an installed
+ * plugin's row: a review may only state what the manifest it is asking about
+ * declares, and the install and update reviews do not hold that manifest yet.
+ */
+function RendererDeclaration({
+  t,
+  plugin,
+}: {
+  t: PluginsPageModel["t"];
+  plugin?: PluginPermissionReview | null;
+}) {
+  const declaration = rendererDeclaration(plugin);
+  if (!declaration) return null;
+  return (
+    <div className="plugins-declaration" role="note">
+      <p className="plugins-declaration-title">{t("plugins.declaration.title")}</p>
+      {declaration.data.length ? (
+        <div className="plugins-declaration-group" data-kind="data">
+          <p className="plugins-declaration-label">
+            {t("plugins.declaration.dataLabel")}
+          </p>
+          <ul className="plugins-declaration-list">
+            {declaration.data.map((value) => (
+              <li key={value}>{declarationLabel("data", value, t)}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {declaration.actions.length ? (
+        <div className="plugins-declaration-group" data-kind="actions">
+          <p className="plugins-declaration-label">
+            {t("plugins.declaration.actionsLabel")}
+          </p>
+          <ul className="plugins-declaration-list">
+            {declaration.actions.map((value) => (
+              <li key={value}>{declarationLabel("actions", value, t)}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </div>
   );
 }

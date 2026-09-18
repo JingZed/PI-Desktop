@@ -146,6 +146,8 @@ impl PluginManager {
                     fs: manifest.fs.clone(),
                     settings: derive_settings(&manifest),
                     i18n: manifest.i18n.clone(),
+                    renderer_data: manifest.renderer_data.clone(),
+                    renderer_actions: manifest.renderer_actions.clone(),
                 });
             }
         }
@@ -277,6 +279,8 @@ impl PluginManager {
             };
             plugin.settings = derive_settings(&manifest);
             plugin.i18n = manifest.i18n.clone();
+            plugin.renderer_data = manifest.renderer_data.clone();
+            plugin.renderer_actions = manifest.renderer_actions.clone();
         }
         Ok(())
     }
@@ -330,6 +334,8 @@ impl PluginManager {
             fs: manifest.fs.clone(),
             settings: derive_settings(&manifest),
             i18n: manifest.i18n.clone(),
+            renderer_data: manifest.renderer_data.clone(),
+            renderer_actions: manifest.renderer_actions.clone(),
         };
         self.upsert_summary(summary)
     }

@@ -1,3 +1,4 @@
+import { PLUGIN_RENDERER_ACTIONS, PLUGIN_RENDERER_DATA } from "@pi-desktop/plugin-sdk";
 import type {
   MarketPluginSummary,
   PluginCapability,
@@ -148,6 +149,57 @@ export function orderPermissions(permissions: readonly string[] | undefined): st
       RISK_WEIGHT[permissionRisk(a)] - RISK_WEIGHT[permissionRisk(b)] ||
       a.localeCompare(b),
   );
+}
+
+/**
+ * What a manifest declares a plugin's own UI code will read and call.
+ *
+ * Both lists are optional and may arrive empty; both readings mean the same
+ * thing, which is that the plugin declares nothing (issue #528). `null` is how
+ * that travels to the review, so "declared nothing" renders as no block rather
+ * than an empty one.
+ */
+export type RendererDeclaration = {
+  data: string[];
+  actions: string[];
+};
+
+export function rendererDeclaration(
+  plugin?:
+    | { rendererData?: readonly string[]; rendererActions?: readonly string[] }
+    | null,
+): RendererDeclaration | null {
+  const data = [...(plugin?.rendererData ?? [])];
+  const actions = [...(plugin?.rendererActions ?? [])];
+  if (!data.length && !actions.length) return null;
+  return { data, actions };
+}
+
+/** Which of the two declaration lists a value belongs to (issue #528). */
+export type DeclarationKind = "data" | "actions";
+
+/**
+ * The host-owned vocabulary behind each declaration list, straight from the
+ * SDK so the review and the manifest validator cannot drift apart (issue #528).
+ */
+const DECLARED_VALUES: Record<DeclarationKind, readonly string[]> = {
+  data: PLUGIN_RENDERER_DATA,
+  actions: PLUGIN_RENDERER_ACTIONS,
+};
+
+/**
+ * One declared value as the user reads it. A name in the vocabulary gets its
+ * catalog label; a name outside it is not something this host understands, but
+ * it is still what the plugin declared, so it is shown exactly as written —
+ * never dropped, and never left as a raw catalog key.
+ */
+export function declarationLabel(
+  kind: DeclarationKind,
+  value: string,
+  t: (k: string, o?: any) => string,
+): string {
+  if (!DECLARED_VALUES[kind].includes(value)) return value;
+  return t(`plugins.declaration.${kind}.${value}`, { defaultValue: value });
 }
 
 export function formatBytes(size?: number): string {

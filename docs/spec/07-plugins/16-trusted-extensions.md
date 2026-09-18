@@ -182,6 +182,47 @@ entries, a full-page workspace route, declarative slot shapes, sandboxed pages
 as a slot implementation, Shadow DOM, any host-provided UI for draft rewriting,
 and any host-side validation of a plugin's dangerous-action copy.
 
+### 2A.7 Declared data and actions
+
+A renderer module asks for nothing at runtime that its manifest does not
+declare. Two optional root lists, `rendererData` and `rendererActions`, name the
+host data the module reads and the host actions it dispatches, each drawn from a
+host-owned vocabulary
+([02-plugin-manifest-schema.md](02-plugin-manifest-schema.md) §2 and §7 rule 21).
+Where a review already holds the manifest it is asking about — today the
+developer-folder load and reload review — both lists are shown. A surface that
+would have to show a version whose manifest it has not read yet shows nothing
+instead: a locally imported package has no pre-install review at all, and the
+marketplace catalog does not carry these lists. The lists are declarations and
+grant nothing: they are not permissions, they do not appear in the permission
+list, they do not change grants, and a manifest that declares them without
+`renderer` still validates. The wire contract that consumes these names at
+dispatch time belongs to the component-slot relay and is recorded in ADR 0290;
+it is not built yet, so this section fixes only what a manifest may declare.
+
+`rendererData` — host data the module declares it reads:
+
+- `entry`
+- `session`
+- `code`
+- `theme`
+- `selection`
+- `draft`
+- `attachments`
+- `locale`
+
+`rendererActions` — host actions the module declares it dispatches:
+
+- `plugin.call`
+- `composer.replaceDraft`
+- `composer.insertText`
+- `composer.attachPath`
+- `ui.openOverlay`
+- `ui.closeOverlay`
+- `ui.openModal`
+- `ui.closeModal`
+- `ui.toast`
+
 ## 3. Contribution and import
 
 ### 3.1 Manifest

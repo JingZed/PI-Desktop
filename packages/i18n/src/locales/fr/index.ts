@@ -1666,6 +1666,37 @@ sklm: {
       agent: "S'exécute dans le processus de l'agent",
       agentHelp: "Il s'exécute avec les accès de l'agent, dans le processus qui appelle vos modèles.",
     },
+    /**
+     * What a manifest declares its own renderer code will read and call
+     * (issue #528). Informational: the author's own list, shown back before the
+     * plugin loads, and silent for a plugin that declares neither.
+     */
+    declaration: {
+      title: "Ce que déclare ce plug-in",
+      dataLabel: "Données qu'il lit",
+      actionsLabel: "Actions qu'il appelle",
+      data: {
+        entry: "Entrées de la transcription",
+        session: "Informations de session",
+        code: "Blocs de code",
+        theme: "Thème actuel",
+        selection: "Texte sélectionné",
+        draft: "Brouillon du composeur",
+        attachments: "Pièces jointes",
+        locale: "Langue de l'interface",
+      },
+      actions: {
+        "plugin.call": "Appeler son propre code en arrière-plan",
+        "composer.replaceDraft": "Remplacer le brouillon du composeur",
+        "composer.insertText": "Insérer du texte dans le composeur",
+        "composer.attachPath": "Joindre un fichier ou un dossier",
+        "ui.openOverlay": "Ouvrir une surcouche",
+        "ui.closeOverlay": "Fermer la surcouche",
+        "ui.openModal": "Ouvrir une boîte de dialogue",
+        "ui.closeModal": "Fermer la boîte de dialogue",
+        "ui.toast": "Afficher une notification",
+      },
+    },
     "permissions": {
       "ui.panel": "Afficher un panneau de plug-in",
       "ui.microphone": "Utiliser le microphone",

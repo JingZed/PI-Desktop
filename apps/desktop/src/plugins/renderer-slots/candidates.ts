@@ -13,7 +13,17 @@ export function rendererCandidates(plugins: readonly PluginSummary[]): RendererC
   const out: RendererCandidate[] = [];
   for (const plugin of plugins) {
     if (!(plugin.capabilities ?? []).includes("renderer")) continue;
-    out.push({ id: plugin.id, version: plugin.version, declared: true });
+    out.push({
+      id: plugin.id,
+      version: plugin.version,
+      declared: true,
+      // The manifest's declaration rides along unchanged, so a mount point
+      // already knows what this plugin said it would read and call. Empty means
+      // it declared neither, which is also how a plugin that predates the
+      // fields reads.
+      rendererData: plugin.rendererData ?? [],
+      rendererActions: plugin.rendererActions ?? [],
+    });
   }
   return out;
 }

@@ -2414,3 +2414,242 @@ fn manifest_entry_verdicts_match_the_sdk() {
         );
     }
 }
+
+/// `rendererData` / `rendererActions` (ADR 0290) name a vocabulary the host
+/// owns, so a plugin picks from it instead of inventing names.
+///
+/// Both lists are declarations: validated here, granting nothing, and allowed
+/// with no `renderer` entry at all.
+#[test]
+fn renderer_declarations_are_validated_against_the_host_vocabulary() {
+    let dir = tempdir().unwrap();
+    let root = |name: &str| dir.path().join(name);
+    let manifest_with = |overrides: Value| -> Value {
+        let mut manifest = json!({
+            "schemaVersion": 1,
+            "id": "demo.renderer",
+            "name": "Declarations",
+            "version": "0.1.0",
+            "main": "main.js",
+        });
+        let fields = manifest.as_object_mut().unwrap();
+        for (key, value) in overrides.as_object().unwrap().clone() {
+            fields.insert(key, value);
+        }
+        manifest
+    };
+
+    // Absent: both fields are optional and read back empty.
+    let absent = root("absent");
+    write_plugin(&absent, manifest_with(json!({})), &[]);
+    let manifest = PluginManager::read_manifest(&absent).unwrap();
+    assert!(manifest.renderer_data.is_empty());
+    assert!(manifest.renderer_actions.is_empty());
+
+    // The whole vocabulary, in the host's own order, with no `renderer` entry
+    // and no permission to go with it.
+    let full = root("full");
+    write_plugin(
+        &full,
+        manifest_with(json!({
+            "rendererData": [
+                "entry", "session", "code", "theme",
+                "selection", "draft", "attachments", "locale"
+            ],
+            "rendererActions": [
+                "plugin.call", "composer.replaceDraft", "composer.insertText",
+                "composer.attachPath", "ui.openOverlay", "ui.closeOverlay",
+                "ui.openModal", "ui.closeModal", "ui.toast"
+            ],
+        })),
+        &[],
+    );
+    let manifest = PluginManager::read_manifest(&full).unwrap();
+    assert_eq!(
+        manifest.renderer_data,
+        vec![
+            "entry",
+            "session",
+            "code",
+            "theme",
+            "selection",
+            "draft",
+            "attachments",
+            "locale"
+        ]
+    );
+    assert_eq!(
+        manifest.renderer_actions,
+        vec![
+            "plugin.call",
+            "composer.replaceDraft",
+            "composer.insertText",
+            "composer.attachPath",
+            "ui.openOverlay",
+            "ui.closeOverlay",
+            "ui.openModal",
+            "ui.closeModal",
+            "ui.toast"
+        ]
+    );
+    // A declaration is not a capability: it adds no badge and no grant.
+    assert!(derive_capabilities(&manifest).is_empty());
+    // The two keys are the contract's own camelCase names on the way out too.
+    let serialized = serde_json::to_value(&manifest).unwrap();
+    assert_eq!(
+        serialized.get("rendererData").unwrap(),
+        &json!([
+            "entry",
+            "session",
+            "code",
+            "theme",
+            "selection",
+            "draft",
+            "attachments",
+            "locale"
+        ])
+    );
+    assert_eq!(
+        serialized.get("rendererActions").unwrap(),
+        &json!([
+            "plugin.call",
+            "composer.replaceDraft",
+            "composer.insertText",
+            "composer.attachPath",
+            "ui.openOverlay",
+            "ui.closeOverlay",
+            "ui.openModal",
+            "ui.closeModal",
+            "ui.toast"
+        ])
+    );
+
+    // A member outside the vocabulary is refused, in each list.
+    let unknown_data = root("unknown-data");
+    write_plugin(
+        &unknown_data,
+        manifest_with(json!({ "rendererData": ["entry", "clipboard"] })),
+        &[],
+    );
+    assert!(read_manifest_err(&unknown_data).contains("rendererData has unknown member clipboard"));
+
+    let unknown_action = root("unknown-action");
+    write_plugin(
+        &unknown_action,
+        manifest_with(json!({ "rendererActions": ["composer.send"] })),
+        &[],
+    );
+    assert!(read_manifest_err(&unknown_action)
+        .contains("rendererActions has unknown member composer.send"));
+
+    // A repeated member is refused even though it is a known one.
+    let duplicate_data = root("duplicate-data");
+    write_plugin(
+        &duplicate_data,
+        manifest_with(json!({ "rendererData": ["entry", "entry"] })),
+        &[],
+    );
+    assert!(read_manifest_err(&duplicate_data).contains("duplicate rendererData member entry"));
+
+    let duplicate_action = root("duplicate-action");
+    write_plugin(
+        &duplicate_action,
+        manifest_with(json!({ "rendererActions": ["ui.toast", "ui.toast"] })),
+        &[],
+    );
+    assert!(
+        read_manifest_err(&duplicate_action).contains("duplicate rendererActions member ui.toast")
+    );
+
+    // More members than the vocabulary can hold: the length rule reports first.
+    let too_many_data = root("too-many-data");
+    write_plugin(
+        &too_many_data,
+        manifest_with(json!({
+            "rendererData": [
+                "entry", "session", "code", "theme",
+                "selection", "draft", "attachments", "locale", "entry"
+            ]
+        })),
+        &[],
+    );
+    assert!(read_manifest_err(&too_many_data).contains("rendererData allows at most 8 entries"));
+
+    let too_many_actions = root("too-many-actions");
+    write_plugin(
+        &too_many_actions,
+        manifest_with(json!({
+            "rendererActions": [
+                "plugin.call", "composer.replaceDraft", "composer.insertText",
+                "composer.attachPath", "ui.openOverlay", "ui.closeOverlay",
+                "ui.openModal", "ui.closeModal", "ui.toast", "ui.toast"
+            ]
+        })),
+        &[],
+    );
+    assert!(
+        read_manifest_err(&too_many_actions).contains("rendererActions allows at most 9 entries")
+    );
+
+    // A non-array value or a non-string member is refused while the manifest is
+    // read: the typed field owns those shapes, and the error is the same
+    // `PLUGIN_INVALID` every other bad manifest field reports.
+    let not_an_array = root("not-an-array");
+    write_plugin(
+        &not_an_array,
+        manifest_with(json!({ "rendererData": "entry" })),
+        &[],
+    );
+    assert!(read_manifest_err(&not_an_array).starts_with("PLUGIN_INVALID:"));
+
+    let not_strings = root("not-strings");
+    write_plugin(
+        &not_strings,
+        manifest_with(json!({ "rendererActions": ["ui.toast", 7] })),
+        &[],
+    );
+    assert!(read_manifest_err(&not_strings).starts_with("PLUGIN_INVALID:"));
+}
+
+/// The declarations reach the renderer through the plugin summary, and they
+/// survive a registry round-trip: a restart rebuilds the row from the manifest
+/// it points at rather than dropping what the plugin declared.
+#[test]
+fn a_plugin_summary_carries_the_renderer_declarations() {
+    let dir = tempdir().unwrap();
+    let plugin_root = dir.path().join("plugin");
+    write_plugin(
+        &plugin_root,
+        json!({
+            "schemaVersion": 1,
+            "id": "demo.renderer",
+            "name": "Declarations",
+            "version": "0.1.0",
+            "main": "main.js",
+            "rendererData": ["entry", "locale"],
+            "rendererActions": ["plugin.call", "ui.toast"],
+        }),
+        &[],
+    );
+
+    let data = tempdir().unwrap();
+    let mut mgr = PluginManager::new(data.path(), MarketChannel::Official, None);
+    let summary = mgr.load_dev(plugin_root.to_str().unwrap()).unwrap();
+    assert_eq!(summary.renderer_data, vec!["entry", "locale"]);
+    assert_eq!(summary.renderer_actions, vec!["plugin.call", "ui.toast"]);
+    // The row crosses IPC under the contract's camelCase keys.
+    let serialized = serde_json::to_value(&summary).unwrap();
+    assert_eq!(
+        serialized.get("rendererData").unwrap(),
+        &json!(["entry", "locale"])
+    );
+    assert_eq!(
+        serialized.get("rendererActions").unwrap(),
+        &json!(["plugin.call", "ui.toast"])
+    );
+
+    let reloaded = PluginManager::new(data.path(), MarketChannel::Official, None);
+    let row = reloaded.get("demo.renderer").unwrap();
+    assert_eq!(row.renderer_data, summary.renderer_data);
+    assert_eq!(row.renderer_actions, summary.renderer_actions);
+}

@@ -202,13 +202,35 @@ test("a refused sheet throws a coded error instead of injecting part of it", () 
 
 test("only plugins the host marked with the renderer capability are candidates", () => {
   const candidates = rendererCandidates([
-    { id: "acme.trusted", version: "1.0.0", capabilities: ["panel", "renderer"] },
+    {
+      id: "acme.trusted",
+      version: "1.0.0",
+      capabilities: ["panel", "renderer"],
+      rendererData: ["entry", "theme"],
+      rendererActions: ["plugin.call"],
+    },
     { id: "acme.sandboxed", version: "1.0.0", capabilities: ["panel"] },
     { id: "acme.plain", version: "1.0.0" },
   ]);
   assert.deepEqual(candidates, [
-    { id: "acme.trusted", version: "1.0.0", declared: true },
+    {
+      id: "acme.trusted",
+      version: "1.0.0",
+      declared: true,
+      rendererData: ["entry", "theme"],
+      rendererActions: ["plugin.call"],
+    },
   ]);
+});
+
+test("a renderer plugin that declares nothing carries empty lists, not undefined (issue #528)", () => {
+  const [candidate] = rendererCandidates([
+    { id: "acme.legacy", version: "1.0.0", capabilities: ["renderer"] },
+  ]);
+  // A manifest written before the fields existed reads as "declared nothing",
+  // and every consumer sees the same shape either way.
+  assert.deepEqual(candidate.rendererData, []);
+  assert.deepEqual(candidate.rendererActions, []);
 });
 
 test("the loader refuses a plugin that never declared the entry, with a diagnostic", async () => {

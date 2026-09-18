@@ -1682,6 +1682,37 @@ importConfirm: "İçe aktarılan uzantılar ajan sürecinde, ajanın kendi araç
       agent: "Agent süreci içinde çalışır",
       agentHelp: "Ajanın kendi erişimiyle, modellerinizi çağıran sürecin içinde çalışır.",
     },
+    /**
+     * What a manifest declares its own renderer code will read and call
+     * (issue #528). Informational: the author's own list, shown back before the
+     * plugin loads, and silent for a plugin that declares neither.
+     */
+    declaration: {
+      title: "Bu eklentinin bildirdikleri",
+      dataLabel: "Okuduğu veriler",
+      actionsLabel: "Çağırdığı eylemler",
+      data: {
+        entry: "Transkript girişleri",
+        session: "Oturum bilgileri",
+        code: "Kod blokları",
+        theme: "Geçerli tema",
+        selection: "Seçili metin",
+        draft: "Yazma alanı taslağı",
+        attachments: "Ekler",
+        locale: "Arayüz dili",
+      },
+      actions: {
+        "plugin.call": "Kendi arka plan kodunu çağırma",
+        "composer.replaceDraft": "Yazma alanı taslağını değiştirme",
+        "composer.insertText": "Yazma alanına metin ekleme",
+        "composer.attachPath": "Dosya veya klasör ekleme",
+        "ui.openOverlay": "Kaplama açma",
+        "ui.closeOverlay": "Kaplamayı kapatma",
+        "ui.openModal": "İletişim penceresi açma",
+        "ui.closeModal": "İletişim penceresini kapatma",
+        "ui.toast": "Bildirim gösterme",
+      },
+    },
     permissions: {
       "ui.panel": "Eklenti paneli göster",
       "ui.microphone": "Mikrofonu kullan",

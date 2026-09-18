@@ -8,6 +8,12 @@ import {
 import { validateMcpServer } from "./mcp-config.js";
 import { parseNetDomains, type PluginNetDomain } from "./net-policy.js";
 import {
+  PLUGIN_RENDERER_ACTIONS,
+  PLUGIN_RENDERER_DATA,
+  type PluginRendererActionName,
+  type PluginRendererDataKey,
+} from "./renderer.js";
+import {
   isExternalThemeAssetPath,
   isThemeAssetPath,
   normalizeThemeAssetPath,
@@ -75,6 +81,21 @@ export type PluginManifest = {
    * evaluated lazily, the first time one of its slots actually renders.
    */
   renderer?: string;
+  /**
+   * Host-owned data this plugin's renderer components may read. Optional and
+   * independent of `renderer`: an omitted list declares nothing, so a manifest
+   * that never mentions the field keeps working unchanged. Every name must
+   * come from `PLUGIN_RENDERER_DATA` — an unknown, duplicated, or non-string
+   * entry is refused at install.
+   */
+  rendererData?: PluginRendererDataKey[];
+  /**
+   * Host-side actions this plugin's renderer components may ask for. Optional
+   * and independent of `renderer`. Every name must come from
+   * `PLUGIN_RENDERER_ACTIONS`; the declaration records intent for install
+   * review, and the host still decides whether an action is implemented.
+   */
+  rendererActions?: PluginRendererActionName[];
   icon?: string;
   /**
    * First-registration default for bundled plugins. Omitted means enabled.
@@ -1277,6 +1298,20 @@ export function validateManifest(raw: unknown): {
     const rendererError = relativePathError(m.renderer, "manifest.renderer");
     if (rendererError) return { ok: false, error: rendererError };
   }
+  // Both vocabularies are host-owned, so a name outside them is an authoring
+  // mistake worth catching at install rather than at the first refused call.
+  const rendererDataError = rendererVocabularyError(
+    m.rendererData,
+    "rendererData",
+    PLUGIN_RENDERER_DATA,
+  );
+  if (rendererDataError) return { ok: false, error: rendererDataError };
+  const rendererActionsError = rendererVocabularyError(
+    m.rendererActions,
+    "rendererActions",
+    PLUGIN_RENDERER_ACTIONS,
+  );
+  if (rendererActionsError) return { ok: false, error: rendererActionsError };
   if (typeof m.schemaVersion !== "number") {
     return { ok: false, error: "manifest.schemaVersion is required" };
   }
@@ -1958,6 +1993,38 @@ function relativePathError(value: string, field: string): string | undefined {
   return undefined;
 }
 
+/**
+ * Shape check for one of the two renderer vocabularies (`rendererData`,
+ * `rendererActions`). The names are host-owned, so an entry outside the
+ * vocabulary is refused rather than kept as a string nobody will ever read.
+ * Absent is valid: a plugin that declares nothing reads nothing.
+ */
+function rendererVocabularyError(
+  value: unknown,
+  field: string,
+  vocabulary: readonly string[],
+): string | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) return `manifest.${field} must be an array`;
+  // Every allowed name is worth at most one entry, so a longer list cannot be
+  // satisfied however it is written.
+  if (value.length > vocabulary.length) {
+    return `manifest.${field} allows at most ${vocabulary.length} entries, got ${value.length}`;
+  }
+  const seen = new Set<string>();
+  for (const entry of value) {
+    if (typeof entry !== "string" || !entry.trim()) {
+      return `manifest.${field} entry ${JSON.stringify(entry)} is not a non-empty string`;
+    }
+    if (!vocabulary.includes(entry)) {
+      return `manifest.${field} has an unknown entry "${entry}"`;
+    }
+    if (seen.has(entry)) return `manifest.${field} declares "${entry}" twice`;
+    seen.add(entry);
+  }
+  return undefined;
+}
+
 /** Forced tool name prefix for plugin tools exposed to the agent. */
 export function pluginToolName(pluginId: string, toolName: string): string {
   const safePlugin = pluginId.replace(/[^a-zA-Z0-9_]/g, "_");
@@ -2071,6 +2138,8 @@ export {
 } from "./fs-policy.js";
 
 export {
+  PLUGIN_RENDERER_ACTIONS,
+  PLUGIN_RENDERER_DATA,
   PLUGIN_RENDERER_SCHEME,
   PLUGIN_RENDERER_SLOTS,
   PLUGIN_STYLE_FORBIDDEN_ROOT_SELECTORS,
@@ -2082,5 +2151,7 @@ export {
   type PiRendererRegistration,
   type PiRendererSlotOptions,
   type PiRendererStyleHandle,
+  type PluginRendererActionName,
+  type PluginRendererDataKey,
   type PluginRendererSlot,
 } from "./renderer.js";

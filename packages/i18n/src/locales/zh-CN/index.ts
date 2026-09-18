@@ -1664,6 +1664,37 @@ sklm: {
       agent: "在 agent 进程内运行",
       agentHelp: "它以 agent 自身的权限运行，与调用模型的进程相同。",
     },
+    /**
+     * What a manifest declares its own renderer code will read and call
+     * (issue #528). Informational: the author's own list, shown back before the
+     * plugin loads, and silent for a plugin that declares neither.
+     */
+    declaration: {
+      title: "此插件声明的内容",
+      dataLabel: "读取的数据",
+      actionsLabel: "调用的操作",
+      data: {
+        entry: "对话记录条目",
+        session: "会话信息",
+        code: "代码块",
+        theme: "当前主题",
+        selection: "选中的文本",
+        draft: "输入框草稿",
+        attachments: "附件",
+        locale: "界面语言",
+      },
+      actions: {
+        "plugin.call": "调用插件自身的后台代码",
+        "composer.replaceDraft": "替换输入框草稿",
+        "composer.insertText": "在输入框中插入文本",
+        "composer.attachPath": "添加文件或文件夹",
+        "ui.openOverlay": "打开浮层",
+        "ui.closeOverlay": "关闭浮层",
+        "ui.openModal": "打开对话框",
+        "ui.closeModal": "关闭对话框",
+        "ui.toast": "显示提示",
+      },
+    },
     permissions: {
       "ui.panel": "显示插件面板",
       "ui.microphone": "使用麦克风",

@@ -317,3 +317,4 @@ Each ADR includes:
 | 0287 | [Trusted renderer execution host](0287-trusted-renderer-execution-host.md) | Accepted for implementation (issue #528) |
 | 0288 | [Runtime hooks for plugin-host processes](0288-runtime-hooks-for-plugin-host-processes.md) | Accepted for implementation (issue #561; G14) |
 | 0289 | [Plugin-authored transcript rows](0289-plugin-authored-transcript-rows.md) | Accepted for implementation (issue #561 item 7) |
+| 0290 | [The renderer plugin interface and its host relay](0290-renderer-plugin-interface-and-host-relay.md) | Accepted for implementation (issue #528; sub-issue #545) |

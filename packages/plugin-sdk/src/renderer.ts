@@ -53,6 +53,64 @@ export const PLUGIN_RENDERER_SLOTS = [
 export type PluginRendererSlot = (typeof PLUGIN_RENDERER_SLOTS)[number];
 
 /**
+ * Data the host can hand a renderer component when the plugin declares
+ * `manifest.rendererData`. A name is a whole slice whose shape the host owns,
+ * not a free-form string. Omitted means the plugin declares no data at all,
+ * which is what every manifest written before this field means.
+ */
+export const PLUGIN_RENDERER_DATA = [
+  /** The transcript entry the component is mounted for. */
+  "entry",
+  /** Facts about the session that entry belongs to. */
+  "session",
+  /** The fenced source a code-block component was handed. */
+  "code",
+  /** The host's current light/dark theme. */
+  "theme",
+  /** The user's current text selection inside the host UI. */
+  "selection",
+  /** A read-only copy of the composer draft. */
+  "draft",
+  /** The attachment chips currently on the composer. */
+  "attachments",
+  /** The locale the host UI is showing. */
+  "locale",
+] as const;
+
+export type PluginRendererDataKey = (typeof PLUGIN_RENDERER_DATA)[number];
+
+/**
+ * Actions a renderer component may ask the host to run. The vocabulary is
+ * host-owned, so a plugin declares intent instead of inventing verbs, and the
+ * declaration is what an install review reads. Only `plugin.call`,
+ * `composer.replaceDraft`, and `ui.toast` are wired up in this release; the
+ * rest are declarable but refuse with an explicit error at call time rather
+ * than failing silently.
+ */
+export const PLUGIN_RENDERER_ACTIONS = [
+  /** Runs a method on the plugin's own backend process. */
+  "plugin.call",
+  /** Replaces the whole composer draft. */
+  "composer.replaceDraft",
+  /** Inserts text at the composer's current selection. Not implemented yet. */
+  "composer.insertText",
+  /** Attaches a path as a composer attachment chip. Not implemented yet. */
+  "composer.attachPath",
+  /** Opens an in-window overlay layer. Not implemented yet. */
+  "ui.openOverlay",
+  /** Closes the overlay this plugin opened. Not implemented yet. */
+  "ui.closeOverlay",
+  /** Opens an app-level modal. Not implemented yet. */
+  "ui.openModal",
+  /** Closes the modal this plugin opened. Not implemented yet. */
+  "ui.closeModal",
+  /** Shows a host notification. */
+  "ui.toast",
+] as const;
+
+export type PluginRendererActionName = (typeof PLUGIN_RENDERER_ACTIONS)[number];
+
+/**
  * A React component, typed structurally: the host renders it, and the plugin
  * must not assume which React version or module instance it came from.
  */

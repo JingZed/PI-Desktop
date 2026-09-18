@@ -1686,6 +1686,37 @@ importConfirm: "Imported extensions run inside the agent process with the same a
       agent: "Runs inside the agent process",
       agentHelp: "It runs with the agent's own access, in the same process that calls your models.",
     },
+    /**
+     * What a manifest declares its own renderer code will read and call
+     * (issue #528). Informational: the author's own list, shown back before the
+     * plugin loads, and silent for a plugin that declares neither.
+     */
+    declaration: {
+      title: "What this plugin declares",
+      dataLabel: "Data it reads",
+      actionsLabel: "Actions it calls",
+      data: {
+        entry: "Transcript entries",
+        session: "Session information",
+        code: "Code blocks",
+        theme: "Current theme",
+        selection: "Selected text",
+        draft: "Composer draft",
+        attachments: "Attachments",
+        locale: "Interface language",
+      },
+      actions: {
+        "plugin.call": "Call its own background code",
+        "composer.replaceDraft": "Replace the composer draft",
+        "composer.insertText": "Insert text into the composer",
+        "composer.attachPath": "Attach a file or folder",
+        "ui.openOverlay": "Open an overlay",
+        "ui.closeOverlay": "Close an overlay",
+        "ui.openModal": "Open a dialog",
+        "ui.closeModal": "Close a dialog",
+        "ui.toast": "Show a notification",
+      },
+    },
     permissions: {
       "ui.panel": "Show a plugin panel",
       "ui.microphone": "Use the microphone",

@@ -2090,3 +2090,51 @@
   color: var(--ds-text-secondary);
   line-height: var(--leading-body);
 }
+
+/*
+ * Declaration notice in the plugin review (the renderer declaration fields).
+ * it carries no risk tone: it lists the data a manifest says its own UI code
+ * reads and the actions it says it calls. A plugin that declares neither
+ * renders none of it, so there is no empty state to style.
+ */
+.plugins-declaration {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--ds-border-default);
+  border-radius: var(--radius-md);
+  background: var(--plugins-tile);
+}
+
+.plugins-declaration-title {
+  margin: 0;
+  color: var(--ds-text-primary);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.plugins-declaration-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.plugins-declaration-label {
+  margin: 0;
+  color: var(--ds-text-secondary);
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-medium);
+}
+
+.plugins-declaration-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--ds-text-secondary);
+  line-height: var(--leading-body);
+}

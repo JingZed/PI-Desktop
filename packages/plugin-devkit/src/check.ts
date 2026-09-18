@@ -6,6 +6,7 @@ import {
   PLUGIN_FS_MODES,
   PLUGIN_ID_PATTERN,
   PLUGIN_PERMISSIONS,
+  PLUGIN_RENDERER_ACTIONS,
   PLUGIN_VIEW_ICONS,
   validateManifest,
   type PluginManifest,
@@ -150,6 +151,39 @@ async function fileExists(path: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * Sources the renderer-action scan reads. `manifest.renderer` is an entry into
+ * a module graph a bundler, a path alias, or a dynamic import can hide from us,
+ * and one we resolved too narrowly would report a declared action as unused
+ * when it is not. The scan therefore reads every plugin-relative
+ * JavaScript/TypeScript source, skipping `node_modules`, dot-directories, and
+ * build output.
+ */
+const RENDERER_SOURCE_EXTENSIONS = [".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx"] as const;
+const RENDERER_SOURCE_SKIPPED_DIRS = new Set(["dist", "build", "out", "coverage"]);
+
+function isRendererSourcePath(relPath: string): boolean {
+  const segments = relPath.split("/");
+  const name = segments.pop() ?? "";
+  if (segments.some((dir) => dir.startsWith(".") || RENDERER_SOURCE_SKIPPED_DIRS.has(dir))) {
+    return false;
+  }
+  return RENDERER_SOURCE_EXTENSIONS.some((extension) => name.endsWith(extension));
+}
+
+/** Quote characters that make an action name a literal instead of an identifier. */
+const ACTION_QUOTES = "\"'`";
+
+/**
+ * Match a quoted action name only: `"ui.toast"`, `'ui.toast'`, `` `ui.toast` ``.
+ * `dispatch(ui.toast)`, a variable holding the name, or a longer name that
+ * merely starts with an action (`"ui.toastLater"`) is not a dispatch.
+ */
+function quotedActionPattern(action: string): RegExp {
+  const escaped = action.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`([${ACTION_QUOTES}])${escaped}\\1`);
 }
 
 /**
@@ -423,6 +457,47 @@ export async function check(dirInput: string): Promise<CheckResult> {
         warnings.push({
           code: "permission.unused",
           message: `permission "${permission}" is declared but ${declaredMain} never calls ${apis.join(" / ")}`,
+        });
+      }
+    }
+  }
+
+  // The declared renderer actions against the action names the plugin's own
+  // renderer sources quote. A name present on one side only is what a
+  // plugin-center reviewer reads here: the vocabulary is host-owned, so a plugin
+  // cannot invent an action, and a declaration nothing dispatches is a claim
+  // that does not hold. The declaration is not a gate, so both directions are
+  // advice rather than an install blocker.
+  const rendererSources = declaredRenderer
+    ? walk.files.filter((file) => isRendererSourcePath(file.path))
+    : [];
+  if (rendererSources.length) {
+    const sources: Array<{ path: string; text: string }> = [];
+    for (const file of rendererSources) {
+      sources.push({
+        path: file.path,
+        text: await readFile(file.absolutePath, "utf8").catch(() => ""),
+      });
+    }
+    const declaredActions = new Set(manifest.rendererActions ?? []);
+    for (const action of PLUGIN_RENDERER_ACTIONS) {
+      const pattern = quotedActionPattern(action);
+      const files = sources
+        .filter((source) => pattern.test(source.text))
+        .map((source) => source.path);
+      if (!files.length) {
+        if (declaredActions.has(action)) {
+          warnings.push({
+            code: "renderer-action.unused",
+            message: `manifest.rendererActions declares "${action}" but no scanned plugin source quotes it (${sources.length} source(s) scanned; node_modules and build output excluded)`,
+          });
+        }
+        continue;
+      }
+      if (!declaredActions.has(action)) {
+        warnings.push({
+          code: "renderer-action.undeclared",
+          message: `renderer action "${action}" appears in ${files.join(", ")} but manifest.rendererActions does not declare it`,
         });
       }
     }

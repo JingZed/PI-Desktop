@@ -50,6 +50,16 @@ type PluginManifestV1 = {
   * （规则 20），并且惰性获取：它的某个槽位第一次真正渲染时才加载（规格 16 §2A）。
   */
  renderer?: string;
+ /**
+  * 插件渲染器声明读取的宿主数据，每个名字都取自下面宿主持有的
+  * `PluginRendererDataKey` 词表。可选：省略该字段即不声明任何数据。
+  */
+ rendererData?: PluginRendererDataKey[];
+ /**
+  * 插件渲染器声明派发的宿主操作，每个名字都取自下面宿主持有的
+  * `PluginRendererActionName` 词表。可选：省略该字段即不声明任何操作。
+  */
+ rendererActions?: PluginRendererActionName[];
  ui?: PluginUiConfig;
  contributes?: PluginContributes;
  permissions?: PluginPermission[];
@@ -73,6 +83,29 @@ type PluginManifestV1 = {
   */
  enabledByDefault?: boolean;
 };
+
+/** 插件可以在 `rendererData` 里声明的数据名；这份列表由宿主拥有。 */
+type PluginRendererDataKey =
+ | "entry"
+ | "session"
+ | "code"
+ | "theme"
+ | "selection"
+ | "draft"
+ | "attachments"
+ | "locale";
+
+/** 插件可以在 `rendererActions` 里声明的操作名；这份列表由宿主拥有。 */
+type PluginRendererActionName =
+ | "plugin.call"
+ | "composer.replaceDraft"
+ | "composer.insertText"
+ | "composer.attachPath"
+ | "ui.openOverlay"
+ | "ui.closeOverlay"
+ | "ui.openModal"
+ | "ui.closeModal"
+ | "ui.toast";
 ```
 
 ## 3. 用户界面配置
@@ -473,6 +506,16 @@ MVP 只能实现：
    `manifest.renderer requires the renderer.extension permission` 失败
    （host-core：`PLUGIN_INVALID: renderer requires the renderer.extension permission`）。
    一个权限覆盖全部组件槽位：槽位按层级授权，绝不逐个授权（ADR 0287）
+21. `rendererData` 与 `rendererActions` 是可选列表，取值来自两份宿主持有的词表；
+   插件只能从它们里面挑选，绝不自己造名字。`rendererData` 接受 `entry`、`session`、
+   `code`、`theme`、`selection`、`draft`、`attachments`、`locale`；
+   `rendererActions` 接受 `plugin.call`、`composer.replaceDraft`、
+   `composer.insertText`、`composer.attachPath`、`ui.openOverlay`、
+   `ui.closeOverlay`、`ui.openModal`、`ui.closeModal`、`ui.toast`。省略某个字段
+   就表示它不声明任何内容，因此既有清单无需改动。未知成员、重复成员、值不是数组、
+   元素不是字符串都会令校验失败，消息中会写明字段名。两份列表都不是入口，也都不满足
+   规则 19。它们是声明、不授予任何东西：不出现在权限列表中、不改变授权，安装审查
+   会展示它们；只声明它们而不声明 `renderer` 的清单依然通过校验
 
 ## 8. 示例：最小插件
 

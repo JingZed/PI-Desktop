@@ -25,6 +25,12 @@ export type RendererCandidate = {
   id: string;
   version?: string;
   declared: boolean;
+  /**
+   * What the manifest says this plugin reads and calls. Carried unchanged so a
+   * mount point never has to read a manifest; empty means it declared neither.
+   */
+  rendererData: string[];
+  rendererActions: string[];
 };
 
 type BoundaryProps = {

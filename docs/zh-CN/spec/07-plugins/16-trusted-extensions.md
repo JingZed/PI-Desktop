@@ -148,6 +148,42 @@ realm 本身不是边界，全局桥句柄始终可达：`contextBridge` 把 `wi
 以沙箱页面作为槽位实现、Shadow DOM、任何宿主提供的草稿改写 UI，以及任何对插件危险
 操作文案的宿主侧校验。
 
+### 2A.7 声明的数据与操作
+
+渲染器模块在运行时不会索取清单里没有声明的东西。两个可选的根级列表
+`rendererData` 与 `rendererActions` 分别列出模块读取的宿主数据和派发的宿主操作，
+取值都来自宿主持有的词表
+（[02-plugin-manifest-schema.md](/zh-CN/spec/07-plugins/02-plugin-manifest-schema) §2
+与 §7 规则 21）。凡是审查手上已经持有它所询问的那份清单的地方（目前是开发者文件夹的加载
+与重载审查），两份列表都会展示；如果某个界面要展示的版本清单还没读到，它就什么都不显示 ——
+本地包导入根本没有安装前审查，插件中心目录也不携带这两份列表。它们是声明，不授予任何东西：
+不是权限、不出现在权限列表中、不改变授权；只声明它们而不声明 `renderer` 的清单
+依然通过校验。在派发时消费这些名字的线路契约属于组件槽位中继，记录在 ADR 0290；
+它尚未构建，因此本节只固定清单可以声明什么。
+
+`rendererData` —— 模块声明读取的宿主数据：
+
+- `entry`
+- `session`
+- `code`
+- `theme`
+- `selection`
+- `draft`
+- `attachments`
+- `locale`
+
+`rendererActions` —— 模块声明派发的宿主操作：
+
+- `plugin.call`
+- `composer.replaceDraft`
+- `composer.insertText`
+- `composer.attachPath`
+- `ui.openOverlay`
+- `ui.closeOverlay`
+- `ui.openModal`
+- `ui.closeModal`
+- `ui.toast`
+
 ## 3. 贡献与导入
 
 ### 3.1 Manifest

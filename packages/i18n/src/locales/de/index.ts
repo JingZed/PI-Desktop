@@ -1666,6 +1666,37 @@ sklm: {
       agent: "Läuft im Agent-Prozess",
       agentHelp: "Es läuft mit dem Zugriff des Agenten, im selben Prozess, der deine Modelle aufruft.",
     },
+    /**
+     * What a manifest declares its own renderer code will read and call
+     * (issue #528). Informational: the author's own list, shown back before the
+     * plugin loads, and silent for a plugin that declares neither.
+     */
+    declaration: {
+      title: "Das deklariert dieses Plugin",
+      dataLabel: "Daten, die es liest",
+      actionsLabel: "Aktionen, die es aufruft",
+      data: {
+        entry: "Transkript-Einträge",
+        session: "Sitzungsinformationen",
+        code: "Codeblöcke",
+        theme: "Aktuelles Design",
+        selection: "Ausgewählter Text",
+        draft: "Entwurf im Eingabefeld",
+        attachments: "Anhänge",
+        locale: "Sprache der Oberfläche",
+      },
+      actions: {
+        "plugin.call": "Eigenen Hintergrundcode aufrufen",
+        "composer.replaceDraft": "Entwurf im Eingabefeld ersetzen",
+        "composer.insertText": "Text im Eingabefeld einfügen",
+        "composer.attachPath": "Datei oder Ordner anhängen",
+        "ui.openOverlay": "Überlagerung öffnen",
+        "ui.closeOverlay": "Überlagerung schließen",
+        "ui.openModal": "Dialog öffnen",
+        "ui.closeModal": "Dialog schließen",
+        "ui.toast": "Hinweis anzeigen",
+      },
+    },
     "permissions": {
       "ui.panel": "Plugin-Panel anzeigen",
       "ui.microphone": "Mikrofon verwenden",

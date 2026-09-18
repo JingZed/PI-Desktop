@@ -12,10 +12,15 @@ import {
   LEGACY_FS_PERMISSIONS,
   MAX_GLOBAL_SHORTCUTS_PER_PLUGIN,
   PLUGIN_PERMISSIONS,
+  PLUGIN_RENDERER_ACTIONS,
+  PLUGIN_RENDERER_DATA,
   PLUGIN_RENDERER_SCHEME,
   PLUGIN_RENDERER_SLOTS,
   PLUGIN_VIEW_ICONS,
+  type PluginManifest,
   type PluginProviderContrib,
+  type PluginRendererActionName,
+  type PluginRendererDataKey,
 } from "./index.js";
 
 const base = { schemaVersion: 1, id: "demo.x", name: "X", version: "0.1.0", main: "main.js" };
@@ -769,6 +774,115 @@ describe("contributes.agentExtensions", () => {
         .error,
     ).toMatch(/at most/);
     expect(PLUGIN_PERMISSIONS).toContain("agent.extension");
+  });
+});
+
+describe("rendererData and rendererActions declarations", () => {
+  const base = { schemaVersion: 1, id: "demo.relay", name: "Relay", version: "0.1.0", main: "main.js" };
+
+  it("keeps both fields optional", () => {
+    const result = validateManifest(base);
+    expect(result.ok).toBe(true);
+    expect(result.manifest?.rendererData).toBeUndefined();
+    expect(result.manifest?.rendererActions).toBeUndefined();
+  });
+
+  it("freezes both vocabularies in their documented order", () => {
+    expect(PLUGIN_RENDERER_DATA).toEqual([
+      "entry",
+      "session",
+      "code",
+      "theme",
+      "selection",
+      "draft",
+      "attachments",
+      "locale",
+    ]);
+    expect(PLUGIN_RENDERER_ACTIONS).toEqual([
+      "plugin.call",
+      "composer.replaceDraft",
+      "composer.insertText",
+      "composer.attachPath",
+      "ui.openOverlay",
+      "ui.closeOverlay",
+      "ui.openModal",
+      "ui.closeModal",
+      "ui.toast",
+    ]);
+  });
+
+  it("accepts a full declaration and hands it back unchanged", () => {
+    const dataKeys: PluginRendererDataKey[] = [...PLUGIN_RENDERER_DATA];
+    const actions: PluginRendererActionName[] = [...PLUGIN_RENDERER_ACTIONS];
+    const declared: PluginManifest = {
+      ...base,
+      rendererData: dataKeys,
+      rendererActions: actions,
+    };
+    const result = validateManifest(declared);
+    expect(result.ok).toBe(true);
+    expect(result.manifest?.rendererData).toEqual(dataKeys);
+    expect(result.manifest?.rendererActions).toEqual(actions);
+  });
+
+  it("rejects a declaration that is not an array", () => {
+    expect(validateManifest({ ...base, rendererData: "entry" as never }).error).toBe(
+      "manifest.rendererData must be an array",
+    );
+    expect(validateManifest({ ...base, rendererActions: 7 as never }).error).toBe(
+      "manifest.rendererActions must be an array",
+    );
+  });
+
+  it("rejects a non-string or blank member and names the offending value", () => {
+    expect(validateManifest({ ...base, rendererData: [42] as never }).error).toBe(
+      "manifest.rendererData entry 42 is not a non-empty string",
+    );
+    expect(validateManifest({ ...base, rendererActions: [null] as never }).error).toBe(
+      "manifest.rendererActions entry null is not a non-empty string",
+    );
+    expect(validateManifest({ ...base, rendererData: ["  "] }).error).toBe(
+      'manifest.rendererData entry "  " is not a non-empty string',
+    );
+  });
+
+  it("rejects a member outside the vocabulary and names it", () => {
+    expect(validateManifest({ ...base, rendererData: ["messages"] as never }).error).toBe(
+      'manifest.rendererData has an unknown entry "messages"',
+    );
+    expect(
+      validateManifest({ ...base, rendererActions: ["composer.setDraft"] as never }).error,
+    ).toBe('manifest.rendererActions has an unknown entry "composer.setDraft"');
+  });
+
+  it("rejects a duplicate member", () => {
+    expect(validateManifest({ ...base, rendererData: ["entry", "entry"] }).error).toBe(
+      'manifest.rendererData declares "entry" twice',
+    );
+    expect(
+      validateManifest({ ...base, rendererActions: ["ui.toast", "ui.toast"] }).error,
+    ).toBe('manifest.rendererActions declares "ui.toast" twice');
+  });
+
+  it("caps each list at its own vocabulary size", () => {
+    const tooManyData = Array.from({ length: PLUGIN_RENDERER_DATA.length + 1 }, () => "entry");
+    expect(validateManifest({ ...base, rendererData: tooManyData }).error).toBe(
+      "manifest.rendererData allows at most 8 entries, got 9",
+    );
+    expect(
+      validateManifest({ ...base, rendererActions: [...PLUGIN_RENDERER_ACTIONS, "ui.toast"] })
+        .error,
+    ).toBe("manifest.rendererActions allows at most 9 entries, got 10");
+  });
+
+  it("does not turn either declaration into an entry", () => {
+    const entryless = { schemaVersion: 1, id: "demo.relay2", name: "R", version: "0.1.0" };
+    const result = validateManifest({
+      ...entryless,
+      rendererData: ["entry"],
+      rendererActions: ["ui.toast"],
+    });
+    expect(result.error).toBe("manifest needs one of main, renderer, or a plugin page");
   });
 });
 

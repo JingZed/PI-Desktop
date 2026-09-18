@@ -1664,6 +1664,37 @@ sklm: {
       agent: "在 agent 行程內執行",
       agentHelp: "它以 agent 自身的權限執行，與呼叫模型的行程相同。",
     },
+    /**
+     * What a manifest declares its own renderer code will read and call
+     * (issue #528). Informational: the author's own list, shown back before the
+     * plugin loads, and silent for a plugin that declares neither.
+     */
+    declaration: {
+      title: "此外掛宣告的內容",
+      dataLabel: "讀取的資料",
+      actionsLabel: "呼叫的動作",
+      data: {
+        entry: "對話記錄項目",
+        session: "工作階段資訊",
+        code: "程式碼區塊",
+        theme: "目前主題",
+        selection: "選取的文字",
+        draft: "輸入框草稿",
+        attachments: "附件",
+        locale: "介面語言",
+      },
+      actions: {
+        "plugin.call": "呼叫外掛自身的背景程式碼",
+        "composer.replaceDraft": "取代輸入框草稿",
+        "composer.insertText": "在輸入框中插入文字",
+        "composer.attachPath": "附加檔案或資料夾",
+        "ui.openOverlay": "開啟浮層",
+        "ui.closeOverlay": "關閉浮層",
+        "ui.openModal": "開啟對話方塊",
+        "ui.closeModal": "關閉對話方塊",
+        "ui.toast": "顯示提示",
+      },
+    },
     permissions: {
       "ui.panel": "顯示外掛面板",
       "ui.microphone": "使用麥克風",

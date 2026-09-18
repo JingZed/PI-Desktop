@@ -115,6 +115,15 @@ export type PluginPermissionReview = {
    * scopes rendered as `fs.<mode>…` entries. Empty for a first load.
    */
   addedPermissions: string[];
+  /**
+   * Renderer declaration read from the manifest: the data kinds the plugin's own
+   * UI code says it reads, and the host actions it says it calls. Values are the
+   * plain declaration strings — this package sits under the SDK and does not
+   * hold the vocabulary. Both are absent (or empty) for a plugin that declares
+   * nothing, and the review shows no declaration block for it then.
+   */
+  rendererData?: string[];
+  rendererActions?: string[];
   entries: PluginManifestEntries;
 };
 
@@ -292,6 +301,14 @@ export type PluginSummary = {
   path?: string;
   /** Derived from the manifest by the host: which contribution kinds exist. */
   capabilities?: PluginCapability[];
+  /**
+   * Renderer declaration from the manifest: the data kinds the plugin's own UI
+   * code declares it reads, and the host actions it declares it calls. Carried
+   * as written, because the declaration is the author's, not the host's; empty
+   * or absent means it declares nothing at all.
+   */
+  rendererData?: string[];
+  rendererActions?: string[];
   description?: string;
   author?: string;
   installedAt?: string;

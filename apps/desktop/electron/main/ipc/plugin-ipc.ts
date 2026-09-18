@@ -94,6 +94,11 @@ export function registerPluginIpc({
       permissions: declared.permissions,
       addedPermissions,
       entries: manifestEntries(declared.manifest),
+      // Carried as written, not derived: this is what the plugin's own UI code
+      // says it reads and calls, and the review shows it back unchanged. The
+      // manifest validator already refused anything outside the vocabulary.
+      rendererData: declared.manifest.rendererData ?? [],
+      rendererActions: declared.manifest.rendererActions ?? [],
     };
   };
 
