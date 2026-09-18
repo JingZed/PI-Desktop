@@ -134,7 +134,7 @@ Style isolation is a namespace scheme, not Shadow DOM:
   is refused rather than narrowed.
 
 Shadow DOM was rejected because portaled plugin UI would escape a shadow root
-(17 files and 39 `createPortal` call sites, zero `attachShadow` uses).
+(41 `createPortal` call sites across 18 renderer files).
 
 ### 2A.4 Crash containment and refusals
 

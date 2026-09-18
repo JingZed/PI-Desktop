@@ -83,8 +83,9 @@ pnpm pi-plugin init panel-basic ../my-first-plugin \
   --name "My First Plugin"
 ```
 
-Then open PI-Desktop, go to **Plugins**, choose **Load development plugin**, and
-select `../my-first-plugin`.
+Then open PI-Desktop, go to **Extensions**, and choose **Load local plugin** —
+the button in the empty state, or the same command in the page's overflow menu
+— then select `../my-first-plugin`.
 
 Use a reverse-domain id for a published plugin, for example
 `com.example.workspace-summary`. The `local.` prefix is a useful convention for

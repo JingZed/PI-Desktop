@@ -113,10 +113,13 @@ governs the host that loads slot implementations and the rules they are held to.
    through the host API `pi.ui.injectStyle(css)`, and the host removes them on
    unload; a registration-time check rejects stylesheets containing top-level
    `html`, `body`, `:root`, or `*` selectors. Shadow DOM was rejected because
-   the codebase has 17 files and 39 `createPortal` call sites and zero
-   `attachShadow` uses: portaled plugin UI would escape a shadow root, so the
-   isolation would be partial by construction and would hide the fact that it
-   is.
+   the renderer portals 41 `createPortal` call sites across 18 files
+   (`apps/desktop/src`, counted at `0726e0ff`): portaled plugin UI would escape
+   a shadow root, so the isolation would be partial by construction and would
+   hide the fact that it is. The only shadow roots in the repo are the
+   plugin-panel preload's closed chrome roots, which isolate host chrome from a
+   plugin page — the opposite direction, and not reusable for a slot inside the
+   host tree.
 
 10. **Crash containment is per-slot React error boundaries plus crash reporting
     — nothing more.** A slot that throws collapses to nothing and does not
@@ -227,9 +230,10 @@ defect.
 - **An `iframe`, a worker, or a second sandbox for `renderer`.** Rejected in
   Decision 6: component slots must render React inside the host tree and host
   context, which is only possible in the same realm. The cost is recorded above.
-- **Shadow DOM for style isolation.** Rejected in Decision 9: 17 files and 39
-  `createPortal` call sites would escape the shadow root, and zero `attachShadow`
-  uses exist today.
+- **Shadow DOM for style isolation.** Rejected in Decision 9: the renderer's 41
+  `createPortal` call sites (18 files) would escape the shadow root, and the
+  repo's only shadow roots isolate the host from a plugin page, not a plugin
+  from the host.
 - **One permission per slot.** Rejected in Decision 3 and Difference 3: it turns
   the tier decision into an install-review list the user cannot evaluate, and
   #545 D1 already settled the component-slot tier.

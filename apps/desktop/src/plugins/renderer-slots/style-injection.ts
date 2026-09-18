@@ -1,9 +1,9 @@
 /**
  * Style isolation for trusted-renderer plugins (ADR 0287).
  *
- * Shadow DOM was rejected: the shell has 39 `createPortal` call sites across 17
- * files and no `attachShadow` anywhere, so an isolation mode the host itself
- * does not use would break portals long before it stopped a hostile plugin.
+ * Shadow DOM was rejected: the shell portals 41 call sites across 18 files, so
+ * a shadow root would break host portals long before it contained a hostile
+ * plugin.
  * Instead every plugin stylesheet goes through this module, which owns the
  * element, namespaces it with the plugin id, and removes it on unload.
  *

@@ -494,7 +494,7 @@ ${contributions.join("\n")}
 
 ## Develop
 
-1. Open the Plugins page and use **Load development plugin**, pointing at this
+1. Open the Extensions page and use **Load local plugin**, pointing at this
    directory. PI-Desktop reloads the plugin whenever you save a file here.
 2. Verify the contributions from the command palette.
 3. Validate and package:

@@ -49,8 +49,8 @@ Provide a permission–capability–risk–default-policy reference table for re
 | `agent.complete` | high | `pi.agent.complete` | Confirm at install | Host-owned one-shot; spends user quota; `includeSessionContext` also needs `session.read` |
 | `speech.adapter.register` | high | `pi.speech.registerAdapter` / `unregisterAdapter` | Confirm at install | Registers a speech protocol. Handles stay in the guest; HTTP plans are executed by the host with the bound provider key and must stay on that origin. Built-in protocol ids are reserved |
 | `renderer.extension` | high | Run `manifest.renderer` as an ES module inside the host renderer and register components into host-owned slots | Explicit confirmation; by tier, never per slot | The module runs inside the app window, in the host's own realm, with no process isolation. One permission covers every component slot (spec 16 §2A, ADR 0287) |
-| `runtime.send.before` | high | Runtime slot consult: Before Send | Confirm at install | The plugin is consulted while a turn is running, after the user presses send and before the message reaches the model, and can stop the message |
-| `runtime.turn.abort` | high | Runtime slot consult: Abort Turn | Confirm at install | The plugin can end a running turn without asking first; work already in flight is discarded |
+| `runtime.send.before` | high | Runtime slot consult: Before Send | Confirm at install | The plugin is consulted while a turn is running, after the user presses send and before the message reaches the model, and can stop the message. Declared; not yet wired to the kernel (see §2C) |
+| `runtime.turn.abort` | high | Runtime slot consult: Abort Turn | Confirm at install | The plugin can end a running turn without asking first; work already in flight is discarded. Declared; not yet wired to the kernel (see §2C) |
 | `runtime.turn.closing` | high | Runtime slot consult: Turn Closing | Confirm at install | The plugin is consulted while a turn is running and can ask the agent to keep going, which spends more tokens with no new message from the user |
 
 ## 2A. A permission is the switch; the manifest carries the range
@@ -109,9 +109,10 @@ single grant for all of them (spec 16 §2A, ADR 0287); a plugin that does not
 declare `renderer` cannot register one, and a registration attempt is skipped
 and reported as a diagnostic rather than dropped silently. The runtime
 permissions in §2 differ in shape — one name per slot, because each one changes
-a different point of a running turn — and only the batch-A slots
-(`runtime.send.before`, `runtime.turn.abort`, `runtime.turn.closing`) are
-implemented; the remaining runtime slots are not shipped.
+a different point of a running turn — and only `runtime.turn.closing` is wired
+to the kernel so far (issue #561 item 7). `runtime.send.before` and
+`runtime.turn.abort` are declared names with no implementation behind them yet,
+and the remaining runtime slots are not shipped.
 
 ## 3. Permission dependencies
 

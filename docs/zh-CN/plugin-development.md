@@ -84,8 +84,8 @@ pnpm pi-plugin init panel-basic ../my-first-plugin \
   --name "My First Plugin"
 ```
 
-然后打开PI-Desktop，进入**插件**，选择**加载开发插件**，然后
-选择 `../my-first-plugin`。
+然后打开 PI-Desktop，进入**扩展**，选择**加载本地插件**（空状态里的按钮，或页面溢出
+菜单中的同一命令），然后选择 `../my-first-plugin`。
 
 例如，对已发布的插件使用反向域 ID
 `com.example.workspace-summary`。 `local.` 前缀是一个有用的约定

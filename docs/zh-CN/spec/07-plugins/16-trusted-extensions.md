@@ -107,7 +107,7 @@ ES 模块，由宿主渲染器在应用自己的窗口内获取并求值，在�
 - 含顶层 `html`、`body`、`:root` 或 `*` 选择器的样式表会被整个拒绝，而不是被收窄。
 
 选择拒绝 Shadow DOM 的原因：被 portal 的插件 UI 会逃出 shadow root
-（17 个文件、39 处 `createPortal` 调用，零处 `attachShadow`）。
+（渲染层 18 个文件、41 处 `createPortal` 调用）。
 
 ### 2A.4 崩溃兜底与拒绝
 

@@ -52,8 +52,8 @@
 | `agent.complete` | 高 | `pi.agent.complete` | 安装时确认 | 宿主代发一次性补全；消耗用户额度；`includeSessionContext` 还需要 `session.read` |
 | `speech.adapter.register` | 高 | `pi.speech.registerAdapter` / `unregisterAdapter` | 安装时确认 | 注册语音协议。handle 留在插件进程；HTTP 计划由宿主用绑定密钥代发且必须同 origin |
 | `renderer.extension` | 高 | 在宿主渲染器内以 ES 模块运行 `manifest.renderer`，把组件注册进宿主持有的槽位 | 显式确认；按层级，绝不逐槽位 | 模块在应用窗口内、宿主自己的 realm 中运行，没有进程隔离。一个权限覆盖全部组件槽位（规格 16 §2A、ADR 0287） |
-| `runtime.send.before` | 高 | 运行时槽位咨询：Before Send | 安装时确认 | 插件在轮次运行中被咨询：用户按下发送之后、消息到达模型之前，它可以拦下这条消息 |
-| `runtime.turn.abort` | 高 | 运行时槽位咨询：Abort Turn | 安装时确认 | 插件不必先问就能结束正在运行的轮次；已经进行中的工作会被丢弃 |
+| `runtime.send.before` | 高 | 运行时槽位咨询：Before Send | 安装时确认 | 插件在轮次运行中被咨询：用户按下发送之后、消息到达模型之前，它可以拦下这条消息。已声明，尚未接入内核（见 §2C） |
+| `runtime.turn.abort` | 高 | 运行时槽位咨询：Abort Turn | 安装时确认 | 插件不必先问就能结束正在运行的轮次；已经进行中的工作会被丢弃。已声明，尚未接入内核（见 §2C） |
 | `runtime.turn.closing` | 高 | 运行时槽位咨询：Turn Closing | 安装时确认 | 插件在轮次运行中被咨询，可以要求 agent 继续，从而在没有新用户消息的情况下消耗更多 token |
 
 ## 2A. 权限是开关，manifest 承载范围
@@ -104,9 +104,9 @@ manifest 里的字段负责回答「能做到多远」。两个字段都由主�
 组件槽位绝不逐个授权。`renderer.extension` 是覆盖它们的唯一授权（规格 16 §2A、
 ADR 0287）；没有声明 `renderer` 的插件不能注册槽位，注册尝试会被跳过并作为诊断
 上报，而不是被静默丢弃。§2 中的运行时权限形状不同 —— 每个槽位一个权限名，因为
-各自改变运行中轮次的不同位置 —— 且只实现了批次 A 的槽位
-（`runtime.send.before`、`runtime.turn.abort`、`runtime.turn.closing`），
-其余运行时槽位尚未交付。
+各自改变运行中轮次的不同位置 —— 目前只有 `runtime.turn.closing` 已接入内核
+（issue #561 第 7 项）。`runtime.send.before` 与 `runtime.turn.abort` 只是 §2 中已声明
+的权限名，背后尚无实现，其余运行时槽位尚未交付。
 
 ## 3. 权限依赖
 
