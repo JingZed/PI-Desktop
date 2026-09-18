@@ -28,6 +28,7 @@ import {
   type Entry,
   type MessageEntry,
   type PrepareNextTurnContext,
+  type ShouldStopAfterTurnContext,
 } from "@earendil-works/pi-agent-core";
 import {
   isContextOverflow,
@@ -56,6 +57,13 @@ import {
   type RegisteredTrustedExtensionAgent,
   type TrustedExtensionBridge,
 } from "./extensions/runner.js";
+import {
+  TRUSTED_EXTENSION_TURN_CLOSING_EVENT,
+  TRUSTED_EXTENSION_TURN_CLOSING_LIMIT,
+  foldTurnClosingResults,
+  turnClosingRequest,
+  type TrustedExtensionTurnClosingResult,
+} from "./extensions/turn-closing.js";
 import type {
   AgentActivity,
   AgentActivityAgent,
@@ -1500,6 +1508,11 @@ export class DesktopAgentRuntime {
   private extensionRunner?: TrustedExtensionRunner;
   private extensionSessionName?: string;
   private extensionTurnIndex = 0;
+  /**
+   * `turn_closing` continuations granted in the current run. A run resets it in
+   * `resetRunRecoveryState`, so the ceiling is per run rather than per session.
+   */
+  private turnClosingContinuations = 0;
   /** Headers an extension edited in `before_provider_headers` for the current turn. */
   private extensionProviderHeaders?: Record<string, string>;
   /** Subagent definitions offered through the `Task` tool (ADR 0062). */
@@ -1914,14 +1927,22 @@ Delegation rules:
       // ordering guarantee is untouched.
       toolExecution: "parallel",
       steeringMode: "all",
-      // A queued renderer prompt asks the current run to finish normally at
-      // the next turn boundary. pi-agent-core evaluates this after the
-      // assistant response and completed tool batch, before another provider
-      // request, so no second concurrent durable turn is created.
-      shouldStopAfterTurn: async () => {
-        if (!this.gracefulStopRequested) return false;
-        this.gracefulStopRequested = false;
-        return true;
+      // `shouldStopAfterTurn` serves two callers at the same boundary. A queued
+      // renderer prompt asks the current run to finish normally at the next turn
+      // boundary (pi evaluates this after the assistant response and completed
+      // tool batch, before another provider request, so no second concurrent
+      // durable turn is created), and a trusted extension is asked whether the
+      // run should keep going (spec 16 section 6, `turn_closing`). The kernel
+      // resumes a run only through its steering queue, so a granted extension
+      // request answers "do not stop" here and queues the next turn's message;
+      // every other answer is `false`, exactly as before.
+      shouldStopAfterTurn: async (context) => {
+        if (this.gracefulStopRequested) {
+          this.gracefulStopRequested = false;
+          return true;
+        }
+        await this.extensionTurnClosing(context);
+        return false;
       },
     });
 
@@ -2100,6 +2121,49 @@ Delegation rules:
     );
     if (!Array.isArray(result?.messages)) return update;
     return { ...update, context: { ...update.context, messages: result.messages } };
+  }
+
+  /**
+   * `turn_closing` hook: asked once per completed turn, before the run is
+   * allowed to end there. A granted request queues the next turn's message,
+   * which is what makes the kernel start another provider request, and spends
+   * one unit of the per-run continuation budget. Refusals are logged, never
+   * thrown: the run must end normally either way.
+   */
+  private async extensionTurnClosing(context: ShouldStopAfterTurnContext): Promise<void> {
+    const runner = this.extensionRunner;
+    if (!runner?.hasHandlers(TRUSTED_EXTENSION_TURN_CLOSING_EVENT)) return;
+    if (this.disposed || this.runCancelled) return;
+    let requestedBy: string | undefined;
+    const result = await runner.emit<TrustedExtensionTurnClosingResult>(
+      TRUSTED_EXTENSION_TURN_CLOSING_EVENT,
+      {
+        type: TRUSTED_EXTENSION_TURN_CLOSING_EVENT,
+        sessionId: this.sessionId,
+        turnIndex: this.extensionTurnIndex,
+        ...(typeof context?.message?.stopReason === "string"
+          ? { stopReason: context.message.stopReason }
+          : {}),
+      },
+      (acc, next, extensionId) => {
+        if (next?.continue === true) requestedBy = extensionId;
+        return foldTurnClosingResults(acc, next);
+      },
+    );
+    const request = turnClosingRequest(result);
+    if (!request || !requestedBy) return;
+    if (this.turnClosingContinuations >= TRUSTED_EXTENSION_TURN_CLOSING_LIMIT) {
+      process.stderr.write(
+        `[agent-runtime] turn_closing continuation limit reached (session=${this.sessionId} ` +
+          `turn=${this.turnId} index=${this.extensionTurnIndex} limit=${TRUSTED_EXTENSION_TURN_CLOSING_LIMIT} ` +
+          `extension=${requestedBy}): the run ends here\n`,
+      );
+      return;
+    }
+    this.turnClosingContinuations += 1;
+    // Steering is the kernel's own resume mechanism at this boundary: the loop
+    // drains it immediately after this answer and starts the next turn.
+    this.agent.steer({ role: "user", content: request.message, timestamp: Date.now() });
   }
 
   /** Mirror pi-agent-core events to extension handlers (spec 16 §6). */
@@ -5418,6 +5482,7 @@ Delegation rules:
     this.mutationRecoveryGraces.clear();
     this.pendingMutationTermination = undefined;
     this.terminatingToolCalls.clear();
+    this.turnClosingContinuations = 0;
     this.turnHadError = false;
   }
 

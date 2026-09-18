@@ -371,6 +371,7 @@ are honored where the event type defines a result.
 | `before_provider_request`, `before_provider_headers`, `after_provider_response` | Provider call wrapper | Yes for request and headers |
 | `agent_start`, `agent_end`, `agent_settled` | Agent loop boundaries | No |
 | `turn_start`, `turn_end` | Turn boundaries | No |
+| `turn_closing` | `shouldStopAfterTurn` (runtime slot 7, issue #561) | Yes: `{ continue: true, message? }` keeps the run going, bounded per run |
 | `message_start`, `message_update`, `message_end` | Agent message events | v1 note: no, pi-agent-core offers no post-hoc replacement |
 | `tool_call` | `beforeToolCall` | Yes, block with reason |
 | `tool_execution_start`, `tool_execution_update`, `tool_execution_end` | Tool execution stream | No |

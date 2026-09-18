@@ -1,5 +1,12 @@
-import { describe, expect, it, vi } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { estimateTokens, type Agent } from "@earendil-works/pi-agent-core";
+import { createAssistantMessageEventStream, type AssistantMessage } from "@earendil-works/pi-ai";
+import { clearTrustedExtensionCache } from "./extensions/runner.js";
+import { TRUSTED_EXTENSION_TURN_CLOSING_LIMIT } from "./extensions/turn-closing.js";
+import type { TrustedExtensionSpec } from "./extensions/index.js";
 import { formatSessionMessage, type SessionMessageOrigin } from "@pi-desktop/shared";
 import { buildSessionContext } from "./session-context.js";
 import {
@@ -155,6 +162,7 @@ function createRuntime(
     pluginSkills: import("./plugin-skills-prompt.js").PluginSkillDef[];
     commandShell: CommandShellOption;
     turnId: string;
+    trustedExtensions: TrustedExtensionSpec[];
     host: { call: ReturnType<typeof vi.fn>; onNotification?: ReturnType<typeof vi.fn> };
     onEvent: (envelope: unknown) => void;
   }> = {},
@@ -180,6 +188,7 @@ function createRuntime(
     projectInstructions: overrides.projectInstructions,
     projectMemory: overrides.projectMemory,
     pluginSkills: overrides.pluginSkills,
+    ...(overrides.trustedExtensions ? { trustedExtensions: overrides.trustedExtensions } : {}),
     onEvent: overrides.onEvent ?? vi.fn(),
   });
 }
@@ -8161,5 +8170,257 @@ describe("DesktopAgentRuntime compaction summary retry and sizing (#543, ADR 028
     expect(build.checkpoint.summary).toContain("Sixty reads, summarized.");
     expect(build.checkpoint.details).not.toHaveProperty("fallback");
     await runtime.dispose();
+  });
+});
+
+/**
+ * Issue #561 item 7 (`turn_closing`, spec 07-plugins/16 section 6). These drive
+ * the real agent loop through `runtime.prompt()` with a fake provider stream, so
+ * the wiring from pi-agent-core's `shouldStopAfterTurn` to the steering queue
+ * that actually resumes the run is under test - not just the reducer.
+ */
+describe("DesktopAgentRuntime turn-closing hook (#561 item 7)", () => {
+  let extensionRoot: string;
+
+  beforeEach(() => {
+    extensionRoot = mkdtempSync(join(tmpdir(), "pi-turn-closing-"));
+    clearTrustedExtensionCache();
+    delete (globalThis as { __turnClosingEvents?: unknown }).__turnClosingEvents;
+  });
+
+  afterEach(() => {
+    rmSync(extensionRoot, { recursive: true, force: true });
+  });
+
+  /** A trusted extension module on disk, as the loader sees one. */
+  function spec(name: string, source: string): TrustedExtensionSpec {
+    const entry = join(extensionRoot, `${name}.ts`);
+    writeFileSync(entry, source);
+    return { id: entry, entry, label: name, source: "user", root: extensionRoot };
+  }
+
+  /** One plain assistant text turn: no tool calls, `stopReason: "stop"`. */
+  function fauxTurn() {
+    const stream = createAssistantMessageEventStream();
+    const message = assistantMessage({
+      content: [{ type: "text", text: "done" }],
+    }) as unknown as AssistantMessage;
+    queueMicrotask(() => {
+      stream.push({ type: "done", reason: "stop", message });
+      stream.end(message);
+    });
+    return stream;
+  }
+
+  async function startRuntime(
+    specs: TrustedExtensionSpec[],
+    host: { call: ReturnType<typeof vi.fn>; onNotification?: ReturnType<typeof vi.fn> } = {
+      call: vi.fn(async () => undefined),
+      onNotification: vi.fn(() => () => {}),
+    },
+  ) {
+    const runtime = createRuntime({ host, trustedExtensions: specs });
+    await runtime.loadTrustedExtensions();
+    const models = {
+      streamSimple: vi.fn((_model: unknown, _context: { messages: unknown[] }) => fauxTurn()),
+    };
+    (runtime as any).models = models;
+    return { runtime, models, host };
+  }
+
+  it("consults turn_closing once per completed turn with the honest minimum", async () => {
+    const ext = spec(
+      "declines",
+      `export default function (pi: any) {
+  pi.on("turn_closing", (event: any) => {
+    const g = globalThis as any;
+    g.__turnClosingEvents = g.__turnClosingEvents || [];
+    g.__turnClosingEvents.push(event);
+  });
+}`,
+    );
+    const { runtime, models } = await startRuntime([ext]);
+
+    await runtime.prompt("start", "user-1", "turn-1");
+
+    expect(models.streamSimple).toHaveBeenCalledTimes(1);
+    expect(
+      (globalThis as { __turnClosingEvents?: unknown[] }).__turnClosingEvents,
+    ).toEqual([
+      { type: "turn_closing", sessionId: "session-1", turnIndex: 1, stopReason: "stop" },
+    ]);
+    expect((runtime as any).agent.hasQueuedMessages()).toBe(false);
+    await runtime.dispose();
+  });
+
+  it("leaves a run untouched when no extension registers the hook", async () => {
+    const ext = spec(
+      "turn-end-only",
+      `export default function (pi: any) {
+  pi.on("turn_end", () => {});
+}`,
+    );
+    const { runtime, models } = await startRuntime([ext]);
+    expect((runtime as any).extensionRunner.getLoadReports()).toEqual([
+      expect.objectContaining({ state: "loaded", eventNames: ["turn_end"] }),
+    ]);
+
+    await runtime.prompt("start", "user-1", "turn-1");
+
+    expect(models.streamSimple).toHaveBeenCalledTimes(1);
+    expect((globalThis as { __turnClosingEvents?: unknown }).__turnClosingEvents).toBeUndefined();
+    expect((runtime as any).turnClosingContinuations).toBe(0);
+    expect((runtime as any).agent.hasQueuedMessages()).toBe(false);
+    await runtime.dispose();
+  });
+
+  it("continues the run when a handler asks, delivering its message to the next request", async () => {
+    const ext = spec(
+      "asks-once",
+      `export default function (pi: any) {
+  let asked = false;
+  pi.on("turn_closing", () => {
+    if (asked) return undefined;
+    asked = true;
+    return { continue: true, message: "keep going" };
+  });
+}`,
+    );
+    const { runtime, models } = await startRuntime([ext]);
+
+    await runtime.prompt("start", "user-1", "turn-1");
+
+    // The continuation is a real second provider request ...
+    expect(models.streamSimple).toHaveBeenCalledTimes(2);
+    // ... whose last message is the extension's, as the provider sees it.
+    const secondRequest = models.streamSimple.mock.calls[1][1];
+    expect(secondRequest.messages.at(-1)).toMatchObject({
+      role: "user",
+      content: "keep going",
+    });
+    expect((runtime as any).turnClosingContinuations).toBe(1);
+    await runtime.dispose();
+  });
+
+  it("lets the earliest extension that asks win, and a decline is not a veto", async () => {
+    const declines = spec(
+      "declines-first",
+      `export default function (pi: any) {
+  pi.on("turn_closing", () => ({ continue: false, message: "not this one" }));
+}`,
+    );
+    const asksSecond = spec(
+      "asks-second",
+      `export default function (pi: any) {
+  let asked = false;
+  pi.on("turn_closing", () => {
+    if (asked) return undefined;
+    asked = true;
+    return { continue: true, message: "second extension message" };
+  });
+}`,
+    );
+    // Asks only on its second consultation, so turn 1 belongs to the earlier
+    // registration and turn 2 is this one's chance.
+    const asksThird = spec(
+      "asks-third",
+      `export default function (pi: any) {
+  let seen = 0;
+  pi.on("turn_closing", () => {
+    seen += 1;
+    return seen === 2 ? { continue: true, message: "third extension message" } : undefined;
+  });
+}`,
+    );
+    const { runtime, models } = await startRuntime([declines, asksSecond, asksThird]);
+
+    await runtime.prompt("start", "user-1", "turn-1");
+
+    // Load order decides: the declining first extension does not veto, and the
+    // earliest extension that asks wins over the later one in the same turn.
+    expect(models.streamSimple).toHaveBeenCalledTimes(3);
+    const requestFor = (index: number) =>
+      models.streamSimple.mock.calls[index][1].messages.at(-1);
+    expect(requestFor(1)).toMatchObject({ role: "user", content: "second extension message" });
+    // On the next turn the first asker has declined, so the later one is heard.
+    expect(requestFor(2)).toMatchObject({ role: "user", content: "third extension message" });
+    await runtime.dispose();
+  });
+
+  it("treats a throwing handler as no answer and keeps the failure visible", async () => {
+    const ext = spec(
+      "throws",
+      `export default function (pi: any) {
+  pi.on("turn_closing", () => {
+    throw new Error("boom at turn close");
+  });
+}`,
+    );
+    const { runtime, models, host } = await startRuntime([ext]);
+
+    await expect(runtime.prompt("start", "user-1", "turn-1")).resolves.toEqual({
+      turnId: "turn-1",
+    });
+
+    expect(models.streamSimple).toHaveBeenCalledTimes(1);
+    expect((runtime as any).extensionRunner.getDiagnostics()).toEqual([
+      expect.objectContaining({
+        kind: "handler_error",
+        message: "boom at turn close",
+        member: "turn_closing",
+      }),
+    ]);
+    // Visible to the desktop, not swallowed: the runner publishes diagnostics.
+    await vi.waitFor(() => {
+      expect(host.call).toHaveBeenCalledWith(
+        "extensions.diagnostics.publish",
+        expect.objectContaining({
+          sessionId: "session-1",
+          diagnostics: expect.arrayContaining([
+            expect.objectContaining({ kind: "handler_error", message: "boom at turn close" }),
+          ]),
+        }),
+      );
+    });
+    await runtime.dispose();
+  });
+
+  it("stops granting continuations at the per-run ceiling and logs the refusal", async () => {
+    const ext = spec(
+      "greedy",
+      `export default function (pi: any) {
+  pi.on("turn_closing", () => ({ continue: true }));
+}`,
+    );
+    const writes = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      const { runtime, models } = await startRuntime([ext]);
+
+      await runtime.prompt("start", "user-1", "turn-1");
+
+      const granted = TRUSTED_EXTENSION_TURN_CLOSING_LIMIT + 1;
+      expect(models.streamSimple).toHaveBeenCalledTimes(granted);
+      expect((runtime as any).turnClosingContinuations).toBe(
+        TRUSTED_EXTENSION_TURN_CLOSING_LIMIT,
+      );
+      // Asked on the refused turn too, and the refusal is observable.
+      const stderrText = writes.mock.calls.map(([chunk]) => String(chunk)).join("");
+      expect(stderrText.match(/turn_closing continuation limit reached/g)).toHaveLength(1);
+      expect(stderrText).toContain(`limit=${TRUSTED_EXTENSION_TURN_CLOSING_LIMIT}`);
+      expect(stderrText).toContain("the run ends here\n");
+      // A handler that asks without a message gets the documented default.
+      const lastRequest = models.streamSimple.mock.calls.at(-1)![1];
+      expect(lastRequest.messages.at(-1)).toMatchObject({
+        role: "user",
+        content: expect.stringContaining("asked for another turn"),
+      });
+
+      // The budget is per run, so the next run gets all of it back.
+      await runtime.prompt("again", "user-2", "turn-2");
+      expect(models.streamSimple).toHaveBeenCalledTimes(granted * 2);
+      await runtime.dispose();
+    } finally {
+      writes.mockRestore();
+    }
   });
 });

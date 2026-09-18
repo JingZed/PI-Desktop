@@ -67,6 +67,7 @@ export const TRUSTED_EXTENSION_EVENTS = [
   "tool_execution_update",
   "tool_execution_end",
   "tool_result",
+  "turn_closing",
   "model_select",
   "thinking_level_select",
   "session_before_compact",
@@ -98,6 +99,7 @@ const RESULT_EVENTS = new Set<string>([
   "message_end",
   "tool_call",
   "tool_result",
+  "turn_closing",
   "session_before_compact",
   "session_before_fork",
   "input",
@@ -546,12 +548,14 @@ export class TrustedExtensionRunner {
   /**
    * Emit one event to every handler in load order. For result events the
    * results are folded by the caller-supplied reducer; a throwing or stalled
-   * handler counts as `undefined` (spec §6).
+   * handler counts as `undefined` (spec §6). The reducer also receives the id of
+   * the extension that produced `next`, so a hook that changes control flow can
+   * name its source without a second lookup.
    */
   async emit<R = unknown>(
     event: TrustedExtensionEventName,
     payload: Record<string, unknown>,
-    fold?: (acc: R | undefined, next: R) => R,
+    fold?: (acc: R | undefined, next: R, extensionId: string) => R,
   ): Promise<R | undefined> {
     if (this.disposed) return undefined;
     let acc: R | undefined;
@@ -567,7 +571,7 @@ export class TrustedExtensionRunner {
             ? withTimeout(run, TRUSTED_EXTENSION_HANDLER_TIMEOUT_MS)
             : run)) as R | undefined;
           if (result !== undefined && result !== null) {
-            acc = fold ? fold(acc, result) : result;
+            acc = fold ? fold(acc, result, extension.spec.id) : result;
           }
         } catch (err) {
           const kind: TrustedExtensionDiagnosticKind = /exceeded \d+ms/.test(errorMessage(err))

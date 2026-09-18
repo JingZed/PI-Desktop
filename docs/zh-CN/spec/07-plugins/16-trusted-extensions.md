@@ -286,6 +286,7 @@ main、渲染层或插件宿主进程中。
 | `before_provider_request`、`before_provider_headers`、`after_provider_response` | provider 调用包装 | 请求与头部为是 |
 | `agent_start`、`agent_end`、`agent_settled` | Agent 循环边界 | 否 |
 | `turn_start`、`turn_end` | 回合边界 | 否 |
+| `turn_closing` | `shouldStopAfterTurn`（运行时槽 7，issue #561） | 是：`{ continue: true, message? }` 让本回合继续，按运行次数上限约束 |
 | `message_start`、`message_update`、`message_end` | Agent 消息事件 | v1 说明：否，pi-agent-core 不提供事后替换 |
 | `tool_call` | `beforeToolCall` | 是，可带理由阻止 |
 | `tool_execution_start`、`tool_execution_update`、`tool_execution_end` | 工具执行流 | 否 |
