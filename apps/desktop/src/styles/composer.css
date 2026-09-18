@@ -403,13 +403,13 @@
 .composer-toolbar .icon-btn.composer-web-search-on:hover,
 .composer-right .icon-btn.composer-web-search-on,
 .composer-right .icon-btn.composer-web-search-on:hover {
-  color: #059669;
+  color: var(--ds-web-search-accent);
 }
 :root[data-theme="dark"] .composer-toolbar .icon-btn.composer-web-search-on,
 :root[data-theme="dark"] .composer-toolbar .icon-btn.composer-web-search-on:hover,
 :root[data-theme="dark"] .composer-right .icon-btn.composer-web-search-on,
 :root[data-theme="dark"] .composer-right .icon-btn.composer-web-search-on:hover {
-  color: #34d399;
+  color: var(--ds-web-search-accent);
 }
 .icon-btn.active {
   background: var(--ds-bg-active);

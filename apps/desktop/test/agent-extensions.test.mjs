@@ -14,6 +14,14 @@ const {
 } = await import("../electron/main/agent-extensions.ts");
 const { withRegistryOnlyProxy } = await import("../electron/main/npm-registry-proxy.ts");
 
+/**
+ * The dependency runner goes through a shell on Windows, and a shell cannot
+ * carry the space in a default `C:\Program Files\nodejs\node.exe` install —
+ * `cmd` reads the path's first token as the command. The bare name resolves on
+ * PATH on every platform, exactly as the real npm shim is invoked.
+ */
+const NODE_COMMAND = "node";
+
 function bridge(overrides = {}) {
   const events = { changed: 0, prompts: [], toasts: [], statuses: [] };
   const b = new AgentExtensionBridge({
@@ -107,15 +115,17 @@ test("optional dependencies and overrides cannot escape the registry before npm 
     assert.match(String(result.error), /non-registry spec/);
     assert.equal(npmRan, false);
   }
-  let deepOverrides = {};
-  let cursor = deepOverrides;
-  for (let index = 0; index < 2000; index += 1) {
-    cursor[`package-${index}`] = {};
-    cursor = cursor[`package-${index}`];
-  }
-  cursor.evil = "git+ssh://git@evil.example/evil.git";
+  // Built as text: a 2000-level object is fine for JSON.parse but overflows
+  // the stack in this process's own JSON.stringify before npm ever sees it.
+  const DEEP_OVERRIDE_DEPTH = 2000;
+  const deepPackageJson =
+    '{"dependencies":{"ok":"^1"},"overrides":' +
+    '{"package":'.repeat(DEEP_OVERRIDE_DEPTH) +
+    '{"evil":"git+ssh://git@evil.example/evil.git"}' +
+    "}".repeat(DEEP_OVERRIDE_DEPTH) +
+    "}";
   const deepRoot = mkdtempSync(join(tmpdir(), "ext-deps-deep-overrides-"));
-  writeFileSync(join(deepRoot, "package.json"), JSON.stringify({ dependencies: { ok: "^1" }, overrides: deepOverrides }));
+  writeFileSync(join(deepRoot, "package.json"), deepPackageJson);
   const deepResult = await installExtensionDependencies(deepRoot, { runner: async () => ({ code: 0, stderr: "" }) });
   assert.equal(deepResult.state, "failed");
   assert.match(String(deepResult.error), /non-registry spec/);
@@ -346,7 +356,7 @@ test("default runner caps captured stderr and escalates the timeout kill", async
   const { defaultDependencyRunner } = await import("../electron/main/agent-extensions.ts");
 
   const flooded = await defaultDependencyRunner(
-    process.execPath,
+    NODE_COMMAND,
     ["-e", "process.stderr.write('x'.repeat(40000)); process.exit(0)"],
     process.cwd(),
     30_000,
@@ -356,19 +366,26 @@ test("default runner caps captured stderr and escalates the timeout kill", async
   // 2× the keep size, regardless of how the pipe chunks the writes.
   assert.ok(flooded.stderr.length <= 16384, "stderr is capped to a bounded tail");
 
+  // The stall script is a file, not an inline `-e` payload: the runner goes
+  // through a shell on Windows, which eats the spaces and the `>` in
+  // `setTimeout(() => {}, 60000)` and lets the child exit as a syntax error
+  // before the kill timer can fire.
+  const stallDir = mkdtempSync(join(tmpdir(), "ext-deps-stall-"));
+  writeFileSync(join(stallDir, "hang.mjs"), "setTimeout(() => {}, 60000);\n");
   const stalled = await defaultDependencyRunner(
-    process.execPath,
-    ["-e", "setTimeout(() => {}, 60000)"],
-    process.cwd(),
+    NODE_COMMAND,
+    ["hang.mjs"],
+    stallDir,
     300,
   );
   assert.notEqual(stalled.code, 0, "a stalled install is killed");
   assert.match(stalled.stderr, /dependency install exceeded 300ms and was terminated/);
+  rmSync(stallDir, { recursive: true, force: true });
 });
 test("the default dependency runner isolates npm config sources and proxies", async () => {
   const { defaultDependencyRunner } = await import("../electron/main/agent-extensions.ts");
   const result = await defaultDependencyRunner(
-    process.execPath,
+    NODE_COMMAND,
     ["-e", "process.stderr.write(JSON.stringify(process.env))"],
     process.cwd(),
     30_000,

@@ -269,7 +269,11 @@ test("macOS installers expose DMG guidance and retain the ZIP helper", () => {
   ]);
   assert.equal(dmgBackgroundRetina.readUInt32BE(16), 1440);
   assert.equal(dmgBackgroundRetina.readUInt32BE(20), 1000);
-  assert.ok(macOpenScriptStat.mode & 0o111, "opening helper must be executable");
+  // NTFS has no execute bits; the helper's mode is recorded by the git index
+  // (100755) and restored on a POSIX checkout.
+  if (process.platform !== "win32") {
+    assert.ok(macOpenScriptStat.mode & 0o111, "opening helper must be executable");
+  }
   assert.match(
     macOpenFixNote,
     /xattr -r -d com\.apple\.quarantine \/Applications\/PI-Desktop\.app/,

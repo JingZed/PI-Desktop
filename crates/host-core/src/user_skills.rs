@@ -117,9 +117,8 @@ fn place_file(source: &Path, target: &Path, mode: ImportMode) -> Result<()> {
     }
     match mode {
         ImportMode::Copy => {
-            fs::copy(source, target).with_context(|| {
-                format!("copy {} to {}", source.display(), target.display())
-            })?;
+            fs::copy(source, target)
+                .with_context(|| format!("copy {} to {}", source.display(), target.display()))?;
         }
         ImportMode::Link => symlink_path(source, target)?,
     }
@@ -149,9 +148,8 @@ fn place_dir(source_dir: &Path, target_dir: &Path, mode: ImportMode) -> Result<(
 
 #[cfg(unix)]
 fn symlink_path(source: &Path, target: &Path) -> Result<()> {
-    std::os::unix::fs::symlink(source, target).with_context(|| {
-        format!("symlink {} -> {}", target.display(), source.display())
-    })
+    std::os::unix::fs::symlink(source, target)
+        .with_context(|| format!("symlink {} -> {}", target.display(), source.display()))
 }
 
 #[cfg(windows)]

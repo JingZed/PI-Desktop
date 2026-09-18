@@ -89,7 +89,14 @@ test("the chained write step produces a package.json Node will treat as ESM", as
 
     // Execute the real write command from package.json against a scratch
     // dist-bundle so the payload (not just the source string) is validated.
-    execFileSync("bash", ["-c", writeStep], {
+    // The step is a bare `node -e`, so run it directly: `bash -c` only adds a
+    // shell hop (Git Bash takes seconds on Windows) and can never differ.
+    const nodeStep = writeStep.match(/^node\s+-e\s+"([\s\S]+)"$/);
+    assert.ok(
+      nodeStep,
+      `the chained write step must be a node -e invocation, got: ${writeStep}`,
+    );
+    execFileSync(process.execPath, ["-e", nodeStep[1]], {
       cwd: workDir,
       stdio: ["ignore", "pipe", "pipe"],
     });

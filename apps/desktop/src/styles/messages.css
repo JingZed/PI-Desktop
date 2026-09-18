@@ -3064,13 +3064,13 @@
 }
 .hosted-search-favicon {
   flex: none;
-  border-radius: 3px;
+  border-radius: var(--radius-3xs);
   object-fit: contain;
   background: var(--ds-bg-hover);
 }
 .hosted-search-favicon-fallback {
   display: inline-block;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   background: var(--ds-bg-active);
 }
 .citation-badge-wrap {
@@ -3084,11 +3084,11 @@
   align-items: center;
   gap: 4px;
   padding: 1px 6px 1px 4px;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   background: var(--ds-bg-hover);
   color: var(--ds-text-secondary);
   font-size: var(--text-xs);
-  line-height: 1.4;
+  line-height: var(--leading-normal);
   vertical-align: middle;
 }
 .citation-badge:hover {
@@ -3107,7 +3107,7 @@
   z-index: 40;
   width: 280px;
   padding: 10px 12px;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--ds-bg-primary);
   opacity: 1;
   backdrop-filter: none;
@@ -3115,10 +3115,10 @@
   color: var(--ds-text-primary);
 }
 :root[data-theme="light"] .citation-card {
-  background: #ffffff;
+  background: var(--ds-bg-elevated-opaque);
 }
 :root[data-theme="dark"] .citation-card {
-  background: #1f2125;
+  background: var(--ds-citation-card-bg);
 }
 .citation-card-nav {
   display: flex;
@@ -3156,7 +3156,7 @@
   display: -webkit-box;
   overflow: hidden;
   font-size: var(--text-sm);
-  line-height: 1.35;
+  line-height: var(--leading-compact-plus);
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;

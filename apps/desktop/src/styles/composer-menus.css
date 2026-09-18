@@ -32,7 +32,7 @@
 
 :root[data-theme="dark"] .composer-toolbar .icon-btn.composer-web-search-on,
 :root[data-theme="dark"] .composer-toolbar .icon-btn.composer-web-search-on:hover {
-  color: #34d399;
+  color: var(--ds-web-search-accent);
 }
 
 :root[data-theme="dark"] .empty-hero-icon {

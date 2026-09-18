@@ -482,9 +482,10 @@ pub(crate) fn record_to_ui(record: MessageRecord) -> UiMessage {
         })
         .collect::<Vec<_>>();
     let thinking = (!thinking.is_empty()).then(|| thinking.concat());
-    let hosted_search = blocks.iter().find(|b| {
-        b.get("type").and_then(|t| t.as_str()) == Some("hostedSearch")
-    }).cloned();
+    let hosted_search = blocks
+        .iter()
+        .find(|b| b.get("type").and_then(|t| t.as_str()) == Some("hostedSearch"))
+        .cloned();
     let is_error = record.is_error.then_some(true);
     let attachments = blocks
         .iter()
