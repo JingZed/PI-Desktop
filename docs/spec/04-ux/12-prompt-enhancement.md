@@ -132,12 +132,12 @@ stored as absent rather than as an empty string.
 
 ### Enhancement model and reasoning
 
-Which model runs the rewrite, and with how much reasoning, are model decisions
-and live on Settings -> Models, in their own card titled `Enhancement prompt`,
-below the Defaults card. The card has its own title because it carries a
-model picker, which — like the default-model row — needs a title, the current
-value, and a control, and does not fit the single-control row shape the Defaults
-card uses.
+Which model runs the rewrite, and with how much reasoning, live on
+Settings -> AI, in their own card titled `Enhancement prompt`, immediately
+below the Prompt enhancement card. The card has its own title because it
+carries a model picker, which — like the default-model row — needs a title,
+the current value, and a control, and does not fit the switch-and-icon-button
+row on the prompt card.
 
 | Field | Effect when empty |
 |---|---|
@@ -145,9 +145,9 @@ card uses.
 | `promptEnhancementThinkingLevel` | `off` |
 
 The card's model row is titled `Default model` and uses the same anchored,
-searchable menu as the Defaults card's row, so the page shows one kind of model
-picker. Both rows therefore read `Default model`; the card heading is what
-separates the conversation's default from the enhancement's. When
+searchable menu as Settings -> Models' default-model row, so both destinations
+offer one kind of model picker. Both rows therefore read `Default model`; the
+card heading is what separates the conversation's default from the enhancement's. When
 `promptEnhancementProviderId` is set, the row still shows that pin even if the
 provider is gone or disabled, with an unavailable hint. Main prefers the pin
 and logs a warning plus falls back to the Composer's current model if it cannot

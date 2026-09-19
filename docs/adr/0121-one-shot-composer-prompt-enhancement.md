@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-08-24
-- Updated: 2026-09-18 (user-overridable templates; enhancement model pin)
+- Updated: 2026-09-20 (enhancement model card on Settings → AI)
 - Related: Issue #14, Issue #562
 
 ## Context
@@ -59,11 +59,12 @@ value. One request is bounded by a 60-second ceiling: expiry aborts the
 in-flight call (best-effort) and races the promise so the renderer is released,
 then fails with `TIMEOUT` rather than retrying on the session model.
 
-The enhancement model and its reasoning level are configured on the Model
-configuration page, in their own card titled "Enhancement prompt", because both
-are model decisions and the model picker needs a title and a current value rather
-than a bare control;
-the prompt card keeps only the switch and the template editor. The enhancement
+The enhancement model and its reasoning level are configured on Settings → AI,
+in their own card titled "Enhancement prompt", immediately below the Prompt
+enhancement card, so the template, model, and reasoning for the same action live
+on one destination. The model picker still needs a title and a current value
+rather than a bare control, so it keeps its own card rather than joining the
+prompt card's switch row; the prompt card keeps the switch and the template editor. The enhancement
 model follows the Composer's current model unless
 `promptEnhancementProviderId` / `promptEnhancementModelId` pin another. A pin
 whose provider is disabled, whose account is signed out, or whose binding no

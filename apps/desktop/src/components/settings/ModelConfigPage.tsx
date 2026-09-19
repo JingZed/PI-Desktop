@@ -38,7 +38,6 @@ import {
 } from "./default-model";
 import { copyProviderConfiguration, type ProviderCopyDraft } from "./provider-copy";
 import { ProviderSetupDialog } from "./ProviderSetupDialog";
-import { EnhancementModelCard } from "./EnhancementModelCard";
 import { VendorAccountsSection } from "./VendorAccountsSection";
 
 const DELETE_CONFIRM_MS = 3000;
@@ -417,8 +416,6 @@ export function ModelConfigPage() {
           </div>
         </div>
       </section>
-
-      <EnhancementModelCard />
 
       <section className="settings-card-block">
         <div className="model-config-section-head">

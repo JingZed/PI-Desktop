@@ -6209,3 +6209,14 @@ that was sitting at the bottom — including after the turn had finished.
   in the inspector. Archived records stay grouped and visible.
 - Presentation only: no IPC, storage, or host protocol change. See
   `04-ux/06-settings-ia.md` and E2E-038.
+
+## 2026-09-20 — Prompt-enhancement model card moves to Settings → AI
+
+- Amend ADR 0121 and the 2026-09-18 D447 placement: the Enhancement prompt card
+  (default model + reasoning) leaves Settings → Models and sits on Settings → AI
+  immediately below Prompt enhancement, so the template and the rewrite model for
+  the same Composer action live on one destination. The card keeps its own title
+  because the model picker still needs title / current value / control. Settings
+  search indexes those rows on the AI tab. Presentation only: no IPC, storage, or
+  host-protocol change. See `04-ux/06-settings-ia.md` and
+  `04-ux/12-prompt-enhancement.md` §5.

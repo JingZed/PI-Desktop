@@ -1,14 +1,14 @@
 /**
  * Enhancement prompt model and reasoning (ADR 0121).
  *
- * Which model rewrites the Composer draft, and with how much reasoning, are
- * model decisions, so they live on this page next to the default model. They get
- * their own card rather than joining the Defaults card: that card's rows pair a
- * short value with one control, and the enhancement model needs a title, the
- * current value, and a picker — the same shape as the default-model row, which
- * has a card of its own for exactly that reason.
+ * Which model rewrites the Composer draft, and with how much reasoning, live
+ * on Settings → AI, in their own card immediately below Prompt enhancement, so
+ * the template and the rewrite model for the same action sit together. They get
+ * their own card rather than joining the prompt card: that card's row is a
+ * switch plus an icon button, and the enhancement model needs a title, the
+ * current value, and a picker — the same shape as the default-model row.
  *
- * The picker reuses the default-model anchored menu so the page offers one kind
+ * The picker reuses the default-model anchored menu so Settings offers one kind
  * of model picker, and the reasoning row reuses the shared settings menu select.
  */
 import { useMemo, useState } from "react";
@@ -29,7 +29,7 @@ import { Button, Input, cx } from "../ui";
 import { IconCheck, IconChevronDown, IconSearch } from "../icons";
 import { AnchoredMenu } from "./AnchoredMenu";
 import { SettingsMenuSelect } from "./SettingsMenuSelect";
-import { SettingsRow } from "../../features/settings/primitives";
+import { SettingsCard, SettingsRow } from "../../features/settings/primitives";
 import { defaultModelOptions } from "./default-model";
 import {
   groupSubagentModelChoices,
@@ -157,11 +157,7 @@ export function EnhancementModelCard() {
   };
 
   return (
-    <section className="settings-card-block">
-      <div className="model-config-section-head">
-        <h3 className="settings-card-heading">{t("settings.promptEnhancementModelTitle")}</h3>
-      </div>
-      <div className="settings-panel model-default-panel">
+    <SettingsCard title={t("settings.promptEnhancementModelTitle")}>
         <SettingsRow
           title={t("settings.promptEnhancementModel")}
           description={
@@ -316,7 +312,6 @@ export function EnhancementModelCard() {
             }
           />
         </SettingsRow>
-      </div>
-    </section>
+    </SettingsCard>
   );
 }

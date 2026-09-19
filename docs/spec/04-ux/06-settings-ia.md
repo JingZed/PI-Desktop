@@ -163,15 +163,16 @@ Settings is a **full-window page** that replaces the app sidebar + main chrome (
   template without that variable is refused. The system prompt is built in and
   exposes no field. Settings search indexes the card, its switch, and the
   template row.
-- **Enhancement prompt** is its own card on the Models tab, below Defaults,
-  because both fields are model decisions and the model picker needs the
-  title/value/control shape the Defaults rows do not have. Its `Default model`
-  row uses the same anchored, searchable menu as the Defaults card's row; empty
-  means "follow the Composer's current model". Two rows therefore read `Default
-  model`, distinguished by their card headings. The reasoning row is a menu
-  select listing the levels the selected model actually supports (the row is
-  disabled when it supports none), defaults to Off, and has no
-  follow-the-session entry. Settings search indexes the card and both rows.
+- **Enhancement prompt** is its own card on the AI tab, immediately below
+  Prompt enhancement, so the template and the rewrite model for the same
+  Composer action live together. Its `Default model` row uses the same
+  anchored, searchable menu as the Models tab's default-model row; empty
+  means "follow the Composer's current model". Two rows therefore read
+  `Default model`, distinguished by their card headings (Prompt enhancement
+  vs Models Defaults). The reasoning row is a menu select listing the levels
+  the selected model actually supports (the row is disabled when it supports
+  none), defaults to Off, and has no follow-the-session entry. Settings
+  search indexes the card and both rows on the AI tab.
 - **Thinking display mode** uses a menu select with Detailed (default) and
   Compact. Detailed retains reasoning text; Compact shows only an active
   thinking indicator and hides finished thought rows. The global preference

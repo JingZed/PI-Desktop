@@ -4,7 +4,7 @@
  * This card owns the prompt itself: a switch that chooses between the built-in
  * user template and a saved one, and the settings icon button that opens the
  * template editor. Which model runs the rewrite, and with how much reasoning,
- * is a model decision and lives on the Model configuration page.
+ * lives on the same AI tab in the Enhancement prompt card below this one.
  *
  * What is deliberately not editable: the system prompt. It carries the rewrite
  * contract the feature is verified against (proper-noun preservation, language
