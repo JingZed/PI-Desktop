@@ -2415,7 +2415,7 @@ fn manifest_entry_verdicts_match_the_sdk() {
     }
 }
 
-/// `rendererData` / `rendererActions` (ADR 0290) name a vocabulary the host
+/// `rendererData` / `rendererActions` (ADR 0294) name a vocabulary the host
 /// owns, so a plugin picks from it instead of inventing names.
 ///
 /// Both lists are declarations: validated here, granting nothing, and allowed

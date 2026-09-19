@@ -179,7 +179,7 @@ handle(IPC.invoke.mcpList, async (query: Partial<AgentCapabilityQuery> = {}) => 
         throw new Error(`MCP server ${payload.id} is not an HTTP transport server`);
       }
 
-      return oauth.start(server.id, server.url);
+      return oauth.start(server.id, server.url, server);
     },
   );
 

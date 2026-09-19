@@ -1,12 +1,12 @@
-# ADR 0291: Runtime slots, their permissions, and the rules that hold across them
+# ADR 0295: Runtime slots, their permissions, and the rules that hold across them
 
 - Status: Accepted for implementation
 - Date: 2026-09-18
 - Related: issue #528 (sub-issue #561) ·
-  [ADR 0287](0287-trusted-renderer-execution-host.md) ·
-  [ADR 0288](0288-runtime-hooks-for-plugin-host-processes.md) ·
-  [ADR 0289](0289-plugin-authored-transcript-rows.md) ·
-  [ADR 0290](0290-renderer-plugin-interface-and-host-relay.md) ·
+  [ADR 0291](0291-trusted-renderer-execution-host.md) ·
+  [ADR 0292](0292-runtime-hooks-for-plugin-host-processes.md) ·
+  [ADR 0293](0293-plugin-authored-transcript-rows.md) ·
+  [ADR 0294](0294-renderer-plugin-interface-and-host-relay.md) ·
   [13-plugin-permissions-matrix](../spec/07-plugins/13-plugin-permissions-matrix.md) ·
   [16-trusted-extensions](../spec/07-plugins/16-trusted-extensions.md)
 
@@ -57,7 +57,7 @@ by the fourteen UI slots). Eleven slots are built; the twelfth is not:
 | 4 | `runtime.tool.gate` | Block a tool call with a reason, replace a tool's *result*, request early termination of a batch | **Modifying arguments is permanently excluded** (rule 4). Asking the user is the plugin's job (rule 6) |
 | 5 | `runtime.tool.extend` | Plugin tools as first-class: introduce a tool at runtime, report their own spend, request early termination | A runtime-introduced tool is labelled as such in the UI |
 | 6 | `runtime.request.before` | Rewrite what is sent to the model: system prompt, model and thinking level, request payload, **message list** (delete / replace / reorder history) | All four; every rewrite is audited at diff level (rule 5) |
-| 7 | `runtime.turn.closing` | Before a turn closes: let it close, or ask for another turn with an instruction | The continuation is persisted as a real, visible user row with plugin provenance (ADR 0289) |
+| 7 | `runtime.turn.closing` | Before a turn closes: let it close, or ask for another turn with an instruction | The continuation is persisted as a real, visible user row with plugin provenance (ADR 0293) |
 | 8 | `runtime.turn.recap` | A plugin reads session content | Whole-session reads need `runtime.session.read` as well (rule 7) |
 | 9 | `runtime.turn.facts` | Structured facts about a turn: tool calls and outcomes, tokens, spend, duration, files touched | The `artifacts` model is extended so "this turn" is answerable (rule 8) |
 | 10 | `runtime.turn.continue` | The plugin starts a new continuation after a turn ends | **No quota** (rule 9) |
@@ -171,7 +171,7 @@ part of the exposed shape together with a per-turn query. This is what makes
 ### 9. Continuations are visible and unbounded
 
 A plugin-triggered continuation (#10) is persisted as a real row with plugin
-provenance (ADR 0289), so the user can see that a plugin asked for another round.
+provenance (ADR 0293), so the user can see that a plugin asked for another round.
 There is no numeric quota: the host's own continuation loops have none (ADR 0253
 removed `maxTurns`), and inventing a limit for plugins only would make the same
 capability behave differently depending on who asked. What replaces a quota is
@@ -208,7 +208,7 @@ session switch or delete never waits on a plugin.
   without display copy.
 - Argument rewriting is gone for good, and the docs must stop implying it exists.
 - Three pieces of work are now prerequisites rather than side quests: fixing the
-  `artifacts` model, persisting continuations as visible rows (ADR 0289), and
+  `artifacts` model, persisting continuations as visible rows (ADR 0293), and
   gating the closing hook with its own permission.
 - The audit surface grows: diff-level records for rewrites are new storage and a
   new inspection UI.
@@ -250,7 +250,7 @@ shippable):
 3. **The highest-power rewrite**: #6 before request, gated on the diff-level
    audit from rule 5 landing first.
 4. **Closing the loop**: #7 turn closing — wire the permission (rule 2) and
-   complete ADR 0289's persistence, which the hook currently does not do.
+   complete ADR 0293's persistence, which the hook currently does not do.
 5. **Last, and only when the audit surface exists**: #4 tool gate (informed by
    the confirmation patterns of rule 6).
 6. **Not this cycle**: #12 approval before.

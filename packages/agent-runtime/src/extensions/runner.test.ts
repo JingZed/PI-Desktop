@@ -44,7 +44,7 @@ afterEach(() => {
 /**
  * One extension module on disk. `permissions` is the set its owning plugin was
  * loaded with; absent means the plugin holds nothing, which is what the slot
- * gate refuses on (ADR 0291 rule 2).
+ * gate refuses on (ADR 0295 rule 2).
  */
 function spec(name: string, source: string, permissions?: readonly string[]): TrustedExtensionSpec {
   const entry = join(root, `${name}.ts`);
@@ -221,7 +221,7 @@ export default function (pi: any) {
 `,
       // The plugin's own grants: the tier (`agent.extension`) plus the slots its
       // two hooks exercise — `before_agent_start` (slot 6) and `tool_call`
-      // (slot 4). Without them the runner skips both handlers (ADR 0291 rule 2).
+      // (slot 4). Without them the runner skips both handlers (ADR 0295 rule 2).
       ["agent.extension", "runtime.request.before", "runtime.tool.gate"],
     );
     const { bridge, log } = fakeBridge();
@@ -429,7 +429,7 @@ export default function (pi: any) {
   pi.on("context", (e: any) => ({ messages: e.messages.slice(0, 1) }));
   pi.on("tool_result", () => { throw new Error("nope"); });
 }`,
-      // `context` is slot 6 and `tool_result` is slot 4 (ADR 0291 rule 2).
+      // `context` is slot 6 and `tool_result` is slot 4 (ADR 0295 rule 2).
       ["runtime.request.before", "runtime.tool.gate"],
     );
     const { bridge } = fakeBridge();
@@ -452,7 +452,7 @@ export default function (pi: any) {
   });
 
   it("maps every wired event to its slot permission and leaves the rest unrestricted", () => {
-    // The map is the contract (ADR 0291 rule 2): whatever the runner does not
+    // The map is the contract (ADR 0295 rule 2): whatever the runner does not
     // find here has no slot and stays unrestricted.
     expect(trustedExtensionEventPermission("turn_closing")).toBe("runtime.turn.closing");
     expect(trustedExtensionEventPermission("tool_call")).toBe("runtime.tool.gate");
@@ -515,12 +515,12 @@ export default function (pi: any) {
 
     // The reservation window is over: every mapped slot name is in the
     // registry, so the runner enforces all of them and none is left
-    // unrestricted (ADR 0291 Consequences, spec 13 §2C).
+    // unrestricted (ADR 0295 Consequences, spec 13 §2C).
     const mapped = new Set<string>(Object.values(TRUSTED_EXTENSION_EVENT_PERMISSIONS));
     for (const name of mapped) {
       expect(REGISTERED_SLOT_PERMISSIONS as readonly string[], name).toContain(name);
     }
-    // The one slot ADR 0291 does not build is reserved and absent: nothing is
+    // The one slot ADR 0295 does not build is reserved and absent: nothing is
     // mapped to it, so no handler can depend on it.
     expect(mapped.has("runtime.approval.before")).toBe(false);
     expect(REGISTERED_SLOT_PERMISSIONS as readonly string[]).not.toContain("runtime.approval.before");
@@ -537,7 +537,7 @@ export default function (pi: any) {
     return { continue: true };
   });
 }`,
-      // The tier grant the loader recorded; the slot is not in it (ADR 0291
+      // The tier grant the loader recorded; the slot is not in it (ADR 0295
       // rule 2: `agent.extension` never implies a slot permission).
       ["agent.extension"],
     );
@@ -582,7 +582,7 @@ export default function (pi: any) {
   it("refuses a tool_call handler from a plugin that holds only the tier grant", async () => {
     // Slot 4 is registered, so the high-trust tier is not enough: the handler
     // is skipped with a diagnostic and its answer never reaches the caller
-    // (ADR 0291 rule 2).
+    // (ADR 0295 rule 2).
     const ext = spec(
       "tool-call-refused",
       `export default function (pi: any) {
@@ -620,7 +620,7 @@ export default function (pi: any) {
 
   it("names each non-event call's slot permission in the same contract as events", () => {
     // Slots 3, 5, 8, 9 and 10 are API-shaped, not event-shaped: an API call has
-    // no event name, so the contract names the call instead (ADR 0291 rule 2).
+    // no event name, so the contract names the call instead (ADR 0295 rule 2).
     expect(TRUSTED_EXTENSION_API_PERMISSIONS.requestTurnAbort).toBe("runtime.turn.abort");
     expect(TRUSTED_EXTENSION_API_PERMISSIONS.toolResult).toBe("runtime.tool.extend");
     expect(TRUSTED_EXTENSION_API_PERMISSIONS.turnFacts).toBe("runtime.turn.facts");
@@ -819,7 +819,7 @@ export default function (pi: any) {
   it("gates the input hook on runtime.send.before, for the whole action contract", async () => {
     // Slot 1: the hook is consulted once per prompt and may pass the message
     // through, rewrite it, or keep it away from the model. A plugin without the
-    // grant is skipped with a diagnostic instead (ADR 0291 rule 2).
+    // grant is skipped with a diagnostic instead (ADR 0295 rule 2).
     const refused = spec(
       "input-refused",
       `export default function (pi: any) {
@@ -927,7 +927,7 @@ export default function (pi: any) {
     (globalThis as any).__facts = await pi.turnFacts();
   });
 }`,
-      // The tier grant the loader recorded; the slot is not in it (ADR 0291
+      // The tier grant the loader recorded; the slot is not in it (ADR 0295
       // rule 2: `agent.extension` never implies a slot permission).
       ["agent.extension"],
     );
@@ -1162,7 +1162,7 @@ export default function (pi: any) {
   it("starts another turn through the host queue and carries the plugin's identity", async () => {
     // Slot 10: the host owns the queue, so the continuation is a real durable
     // turn. The request names the plugin that asked, because only the caller
-    // knows it (ADR 0289); the queued turn's id comes back from the host.
+    // knows it (ADR 0293); the queued turn's id comes back from the host.
     const ext = spec(
       "continue-granted",
       `export default function (pi: any) {

@@ -15,7 +15,7 @@ const store = {
   showToast: () => {},
   activeSessionId: "session-1",
   plugins: [],
-  // Rewrite records ride the session read (ADR 0291 rule 5); a row with none is
+  // Rewrite records ride the session read (ADR 0295 rule 5); a row with none is
   // the ordinary case these tests keep covering.
   pluginRewrites: {},
 };
@@ -71,17 +71,6 @@ function loadComponent(name, extras = {}) {
     "../../../components/Markdown": { Markdown: ({ source: text }) => text },
     "../../../components/icons": new Proxy({}, { get: () => Icon }),
     "../../../components/ui": { TooltipButton },
-    "../../../lib/hosted-search-ui": {
-      HOSTED_SEARCH_PREVIEW_COUNT: 5,
-      hostedSearchHost: () => "",
-      hostedSearchFaviconCandidates: () => [],
-      hostedSearchLabel: () => "",
-      hostedSearchTitle: () => "",
-      rewriteInlineCitationMarkup: (text) => text,
-      urlsReferToSameSource: () => false,
-      sourcesForHref: () => [],
-      openChatHttpUrl: () => {},
-    },
     "./shared": shared,
     // `MessageRow` mounts the `entryExtra` slot; that test renders with no
     // session, so the slot is never entered.

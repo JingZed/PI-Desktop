@@ -1,6 +1,6 @@
 /**
  * The renderer's view of the diff-level rewrite records host-core stores
- * (ADR 0291 rule 5). The records are written by the runtime's send hook and
+ * (ADR 0295 rule 5). The records are written by the runtime's send hook and
  * read back through `plugin.rewrites.list`; a row badge shows who rewrote an
  * outgoing message, and the record carries enough to show what the model
  * received instead.

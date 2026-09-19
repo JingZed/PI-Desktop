@@ -20,7 +20,7 @@ export type TrustedExtensionSpec = {
   root: string;
   /**
    * Permissions the owning plugin holds, exactly as the loader granted them.
-   * The runtime slot gate consults this list (ADR 0291 rule 2); absent means
+   * The runtime slot gate consults this list (ADR 0295 rule 2); absent means
    * none, because a tier permission must never imply a slot permission.
    */
   permissions?: readonly string[];
@@ -152,7 +152,7 @@ export type TrustedExtensionsListResult = {
 export const TRUSTED_EXTENSION_HANDLER_TIMEOUT_MS = 30_000;
 
 /**
- * Runtime slot behind each wired extension event (ADR 0291 rule 2).
+ * Runtime slot behind each wired extension event (ADR 0295 rule 2).
  *
  * A tier permission says where plugin code runs (`agent.extension`); a slot
  * permission says what that code may do to a running turn. This map is the
@@ -206,7 +206,7 @@ export const TRUSTED_EXTENSION_EVENT_PERMISSIONS = {
 } as const satisfies Record<string, string>;
 
 /**
- * The `input` event for a prompt that is about to reach the model (ADR 0291
+ * The `input` event for a prompt that is about to reach the model (ADR 0295
  * slot 1).
  *
  * The runtime emits it once per prompt, after the desktop has accepted and
@@ -235,7 +235,7 @@ export type TrustedExtensionInputPayload = {
 };
 
 /**
- * What an `input` handler may answer (ADR 0291 slot 1). The three actions are
+ * What an `input` handler may answer (ADR 0295 slot 1). The three actions are
  * the kernel's own: `continue` passes the message through unchanged, and is
  * the answer a handler that returns nothing gives.
  *
@@ -257,7 +257,7 @@ export type TrustedExtensionInputResult = {
 };
 
 /**
- * One diff-level audit record of a rewrite a slot performed (ADR 0291 rule 5),
+ * One diff-level audit record of a rewrite a slot performed (ADR 0295 rule 5),
  * as the runtime hands it to the embedding host.
  *
  * The host owns persistence: `plugin_rewrites` already stores this shape
@@ -275,7 +275,7 @@ export type TrustedExtensionRewriteRecord = {
   pluginId: string;
   /** Short label of the owning plugin, for the row and the audit view. */
   pluginLabel: string;
-  /** The one kind this slot produces (ADR 0291 table, slot 1). */
+  /** The one kind this slot produces (ADR 0295 table, slot 1). */
   kind: "outgoing_message";
   /** Transcript row the rewrite changed what the model saw for. */
   targetMessageId: string;
@@ -289,7 +289,7 @@ export type TrustedExtensionRewriteRecord = {
 export const TRUSTED_EXTENSION_SESSION_LIFECYCLE_EVENT = "session_lifecycle";
 
 /**
- * A session lifecycle notice the kernel has no hook for (ADR 0291 slot 11,
+ * A session lifecycle notice the kernel has no hook for (ADR 0295 slot 11,
  * rule 11). The host emits it at the moment the desktop creates or deletes a
  * session; a plugin is told and can veto nothing.
  *
@@ -307,7 +307,7 @@ export type TrustedExtensionSessionLifecyclePayload = {
 
 /**
  * A session lifecycle moment the embedding host observed, as it reports it to
- * the session's runtime (ADR 0291 slot 11, rule 11).
+ * the session's runtime (ADR 0295 slot 11, rule 11).
  *
  * The desktop owns these moments, so it names them here rather than pretending
  * the kernel produced them: `created` and `deleted` have no kernel hook at all,
@@ -326,7 +326,7 @@ export type TrustedExtensionSessionLifecycleNotice =
 
 /**
  * The kernel's `session_before_switch`, emitted by the desktop host when the
- * user leaves a session for a new one or for another session (ADR 0291 slot
+ * user leaves a session for a new one or for another session (ADR 0295 slot
  * 11). Informed-only in PI-Desktop: the kernel lets a handler cancel the
  * switch, rule 11 does not.
  */
@@ -341,7 +341,7 @@ export type TrustedExtensionSessionBeforeSwitchPayload = {
 
 /**
  * The kernel's `session_before_fork`, emitted by the desktop host before the
- * session is forked (ADR 0291 slot 11). Informed-only, like the switch above.
+ * session is forked (ADR 0295 slot 11). Informed-only, like the switch above.
  */
 export type TrustedExtensionSessionBeforeForkPayload = {
   type: "session_before_fork";
@@ -351,7 +351,7 @@ export type TrustedExtensionSessionBeforeForkPayload = {
   position: "before" | "at";
 };
 
-/** The conversation a compaction is about to replace (ADR 0291 rule 7). */
+/** The conversation a compaction is about to replace (ADR 0295 rule 7). */
 export type TrustedExtensionCompactionSegment = {
   /** The messages that will be summarized away, oldest first. */
   messages: ReadonlyArray<unknown>;
@@ -367,7 +367,7 @@ export type TrustedExtensionSlotEvent = keyof typeof TRUSTED_EXTENSION_EVENT_PER
 
 /**
  * The slot permission a handler for `event` must hold; `undefined` means the
- * event has no slot and stays unrestricted (ADR 0291 rule 2).
+ * event has no slot and stays unrestricted (ADR 0295 rule 2).
  */
 export function trustedExtensionEventPermission(event: string): string | undefined {
   return Object.hasOwn(TRUSTED_EXTENSION_EVENT_PERMISSIONS, event)
@@ -378,7 +378,7 @@ export function trustedExtensionEventPermission(event: string): string | undefin
 
 /**
  * The one slot permission behind a plugin tool's extended result fields (ADR
- * 0291 slot 5): introducing a tool, reporting spend, and requesting early
+ * 0295 slot 5): introducing a tool, reporting spend, and requesting early
  * termination. `TRUSTED_EXTENSION_API_PERMISSIONS.toolResult` is the same name
  * seen from an agent extension; the constant exists so Electron main, which
  * holds no extension context, refuses with exactly the same permission.
@@ -386,7 +386,7 @@ export function trustedExtensionEventPermission(event: string): string | undefin
 export const PLUGIN_TOOL_EXTEND_PERMISSION = "runtime.tool.extend";
 
 /**
- * Runtime slot behind each extension call that is not an event (ADR 0291
+ * Runtime slot behind each extension call that is not an event (ADR 0295
  * rule 2).
  *
  * {@link TRUSTED_EXTENSION_EVENT_PERMISSIONS} answers "may this handler run";
@@ -416,7 +416,7 @@ export const TRUSTED_EXTENSION_API_PERMISSIONS = {
 } as const satisfies Record<string, string>;
 
 /**
- * Reading a session's own content is a permission of its own (ADR 0291 rule
+ * Reading a session's own content is a permission of its own (ADR 0295 rule
  * 7): slot 8's whole-session read needs this on top of `runtime.turn.recap`,
  * while reading a single turn needs only the slot's own name. Reads are
  * deliberately **not** recorded one by one; the install review and the plugin
@@ -466,12 +466,12 @@ export function trustedExtensionApiPermission(apiCall: string): string | undefin
  *
  * {@link TRUSTED_EXTENSION_EVENT_PERMISSIONS} is the whole contract; this is
  * the subset a plugin can actually be granted, and the subset the gate refuses
- * on. It is the ADR 0291 slot set with no gaps: every mapped name is registered
+ * on. It is the ADR 0295 slot set with no gaps: every mapped name is registered
  * together with the slot it gates, so a mapped name never falls back to "no
  * gate" behavior. A name that is mapped and missing here would silently leave
  * its event unrestricted, which is the drift
  * `apps/desktop/test/runtime-slot-permissions.test.mjs` exists to catch: it
- * fails when this list and `PLUGIN_PERMISSIONS` disagree. The twelfth ADR 0291
+ * fails when this list and `PLUGIN_PERMISSIONS` disagree. The twelfth ADR 0295
  * slot, `runtime.approval.before`, is not built and is deliberately absent.
  */
 export const REGISTERED_SLOT_PERMISSIONS = [
@@ -491,7 +491,7 @@ export const REGISTERED_SLOT_PERMISSIONS = [
 
 /**
  * True when `permission` is a slot permission the registry holds. The runner
- * enforces every mapped slot name directly (ADR 0291 rule 2) and no longer
+ * enforces every mapped slot name directly (ADR 0295 rule 2) and no longer
  * consults this; the guard test and the docs use it to say which names the
  * registry actually holds.
  */
@@ -574,7 +574,7 @@ export type TrustedExtensionToolCallFacts = {
 };
 
 /**
- * One file a turn touched (host-core `Artifact`, ADR 0291 rule 8).
+ * One file a turn touched (host-core `Artifact`, ADR 0295 rule 8).
  *
  * A touch is the unit, so a file changed in three turns appears once per turn.
  * `op` is `create | write | edit | download | delete` and is exposed verbatim,
@@ -592,7 +592,7 @@ export type TrustedExtensionTurnFile = {
 };
 
 /**
- * One turn's facts: the host's own answer for `turn.facts` (ADR 0291 rule 8,
+ * One turn's facts: the host's own answer for `turn.facts` (ADR 0295 rule 8,
  * slot 9 `runtime.turn.facts`), passed to a plugin unchanged.
  *
  * Every number comes from a host table and "this turn" means exactly one
@@ -620,7 +620,7 @@ export type TrustedExtensionTurnFacts = {
   /**
    * The turn's plugin-tool spend: the `pluginToolUsage` member of the recorded
    * usage, exposed on its own because it is spend a plugin reported and never
-   * part of the model's tokens (ADR 0291 slot 5).
+   * part of the model's tokens (ADR 0295 slot 5).
    */
   pluginToolUsage: unknown;
   toolCalls: TrustedExtensionToolCallFacts;
@@ -662,10 +662,10 @@ export type TrustedExtensionTurnRecap =
     };
 
 /**
- * The request a slot-10 continuation carries to the host (ADR 0291 rule 9).
+ * The request a slot-10 continuation carries to the host (ADR 0295 rule 9).
  *
  * `pluginId` and `pluginLabel` travel with the message so the host can
- * attribute the continuation to the plugin that asked for it (ADR 0289). They
+ * attribute the continuation to the plugin that asked for it (ADR 0293). They
  * are part of the request rather than inferred later from the session.
  */
 export type TrustedExtensionContinuationRequest = {
@@ -682,7 +682,7 @@ export type TrustedExtensionContinuationRequest = {
  * from it is created by the host at the next turn boundary and carries its own
  * durable turn id, so this id is not a `turn.facts` key.
  *
- * ADR 0291 rule 9 asks for the continuation to be persisted as a visible row
+ * ADR 0295 rule 9 asks for the continuation to be persisted as a visible row
  * naming the plugin, and for it to be unbounded. There is no quota here. The
  * visible-row half is not complete yet: host-core's `turn_queue` and `messages`
  * rows carry no plugin provenance column, so the queued turn is real and

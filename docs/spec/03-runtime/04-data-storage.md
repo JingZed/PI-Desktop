@@ -227,6 +227,17 @@ The app settings JSON optionally stores `thinkingDisplayMode` (`detailed` or
 `compact`). Missing values retain detailed presentation. This additive display
 preference neither rewrites stored reasoning nor changes the database schema.
 
+The same blob optionally stores the prompt-enhancement overrides
+`promptEnhancementCustomTemplate` (the switch that decides whether a stored
+template applies), `promptEnhancementUserTemplate`,
+`promptEnhancementProviderId`, `promptEnhancementModelId`, and
+`promptEnhancementThinkingLevel` (ADR 0121). An absent or blank user template means the
+built-in default applies, so clearing the field stores no key rather than an
+empty string. A non-blank user template must contain the draft variable and stay
+within `PROMPT_ENHANCEMENT_TEMPLATE_MAX_LENGTH`; host-core rejects a write that
+breaks either rule and drops any stored `promptEnhancementSystemPrompt`, which is
+no longer read. No schema version bump is required.
+
 New config domains (e.g. MCP servers) start as a namespace; they graduate to
 tables only when they need relations or indexes.
 
@@ -509,7 +520,7 @@ own record exactly as Electron reported it at `session.endTurn` — the cached /
 reasoning breakdown lives there. That record also carries the turn's
 **plugin-tool spend** as its own `pluginToolUsage` member when a plugin tool
 reported spend, kept beside the model totals instead of summed into them
-(ADR 0291 slot 5); a turn whose plugin tools reported nothing has no such
+(ADR 0295 slot 5); a turn whose plugin tools reported nothing has no such
 member. Both are read back as they were stored: `turn.facts` exposes the record
 verbatim plus `pluginToolUsage` on its own (§4.16).
 
@@ -916,7 +927,7 @@ CREATE INDEX idx_message_revisions_root
 ### 4.10 artifacts — files a session produced
 
 Backs the Artifacts surface (benchmark §3.7) and is the host-owned answer to
-"which files did this turn change?" (ADR 0291 rule 8). v1 planned to derive
+"which files did this turn change?" (ADR 0295 rule 8). v1 planned to derive
 this from `audit_log`, but audit payloads never recorded file paths; an
 explicit projection is precise, indexed, and survives audit pruning.
 
@@ -1040,7 +1051,7 @@ CREATE INDEX idx_audit_turn ON audit_log(turn_id, ts)
   WHERE turn_id IS NOT NULL;
 ```
 
-`turn_id` (schema v21, ADR 0291 rule 8) is the turn a record belongs to, so one
+`turn_id` (schema v21, ADR 0295 rule 8) is the turn a record belongs to, so one
 turn's records are an indexed read instead of a scan of redacted payloads. The
 host writes it where it knows the turn: `tool_execute`, `tool_denied` and
 `tool_aborted` carry the turn the call was made in, and `turn.facts` counts
@@ -1098,7 +1109,7 @@ CREATE INDEX idx_notifications_unread
 
 Every rewrite a runtime slot performs on what the model receives is recorded at
 **diff level** — which characters, which messages, which payload fields changed
-(ADR 0291 rule 5). Slot #1 (`runtime.send.before`, the outgoing message) is the
+(ADR 0295 rule 5). Slot #1 (`runtime.send.before`, the outgoing message) is the
 producer that exists: the agent runtime's send hook hands the two texts to the
 host, `plugin.rewrites.record` stores the diff, and the transcript marks the row
 ("rewritten by plugin X") with the changed span behind the expansion. Slot #6
@@ -1178,7 +1189,7 @@ accept an optional kind filter, and both clamp the limit to 500.
 ### 4.16 turn facts — one turn's authoritative numbers (slot #9)
 
 `turn.facts` answers "what happened in this turn" from host-owned tables only
-(ADR 0291 rule 8, slot #9 `runtime.turn.facts`); no number is reconstructed
+(ADR 0295 rule 8, slot #9 `runtime.turn.facts`); no number is reconstructed
 from plugin-observed events and no conversation text is involved. "This turn"
 means exactly one thing, because every source below is keyed by the turn's own
 id:
@@ -1420,21 +1431,21 @@ truncating at a guessed position.
   `(session_id, path)` primary key is dropped and the surrogate `id` plus the
   `idx_artifacts_session_turn` index are added, so `turn_id` can attribute a
   file to every turn that changed it and `artifacts.list { sessionId, turnId }`
-  answers "this turn" directly (ADR 0291 rule 8). Every existing row is carried
+  answers "this turn" directly (ADR 0295 rule 8). Every existing row is carried
   over with its `path`, `op`, `turn_id`, and `updated_at` intact — the old
   shape could hold only one row per file, so nothing merges — and `op` stays
   unconstrained in SQL, which is why no stored value has to be rewritten. A
   `pi.sqlite.v18.bak` copy precedes the step.
 - **Schema v20 is additive.** It adds `plugin_rewrites`, the diff-level audit of
   what a plugin changed in what the model receives, with its two read indexes
-  (ADR 0291 rule 5). No existing row changes and no stored value is rewritten;
+  (ADR 0295 rule 5). No existing row changes and no stored value is rewritten;
   the table starts empty because its producers — slot #1
   (`runtime.send.before`) and slot #6 (`runtime.request.before`) — are not built
   yet, so the audit surface lands ahead of the capability that depends on it. A
   `pi.sqlite.v19.bak` copy precedes the step.
 - **Schema v21 is additive.** It adds the nullable `audit_log.turn_id` column and
   its partial index `idx_audit_turn`, so one turn's records — and with them
-  `turn.facts` (§4.16, ADR 0291 rule 8) — are an indexed read rather than a scan
+  `turn.facts` (§4.16, ADR 0295 rule 8) — are an indexed read rather than a scan
   of redacted payloads. Every existing row keeps its content and carries a NULL
   turn: the column is a fact the host writes when it knows the turn, never a
   backfilled guess, so a per-turn read sees only rows the host actually

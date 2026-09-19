@@ -99,7 +99,6 @@ type RuntimeParams = {
   /** Durable host turn ID for the prompt currently being executed. */
   turnId?: string;
   thinkingLevel?: ThinkingLevel;
-  nativeWebSearch?: boolean;
   provider: RuntimeProviderConfig;
   commandShell: CommandShellOption;
   pluginTools?: PluginToolDef[];
@@ -332,7 +331,6 @@ async function runtimeFor(
     mode,
     provider,
     thinkingLevel,
-    nativeWebSearch: params.nativeWebSearch === true,
     pluginTools,
     pluginSkills,
     trustedExtensions,
@@ -388,7 +386,6 @@ async function runtimeFor(
     provider,
     commandShell: params.commandShell,
     thinkingLevel,
-    nativeWebSearch: params.nativeWebSearch === true,
     history,
     compaction,
     compactionSettings: params.compactionSettings,
@@ -458,7 +455,7 @@ function classifiedRuntimeError(err: unknown) {
 
 
 /**
- * Validate one `agent.notifyLifecycle` notice (ADR 0291 slot 11). The desktop
+ * Validate one `agent.notifyLifecycle` notice (ADR 0295 slot 11). The desktop
  * host owns these moments, so the runtime only ever sees a shape it named; an
  * unknown `change` is rejected instead of guessed, and a `switch` / `fork`
  * without its own fields falls back to the safe defaults.
@@ -552,6 +549,17 @@ async function handle(method: string, params: any): Promise<unknown> {
         typeof params.userMessageId === "string" && params.userMessageId
           ? params.userMessageId
           : undefined;
+      // A `permissionMode` override on `agent.prompt` is the per-turn ceiling
+      // from spec §7.3 (R1 leftover). The sidecar accepts it so callers do not
+      // have to guard the field, but tool-approval enforcement still consults
+      // the session's stored mode inside host-core. Once host-core
+      // `session.beginTurn` accepts a per-turn override, this record will drive
+      // the enforcement gate; until then it stays a documented stub.
+      if (typeof params.permissionMode === "string" && params.permissionMode) {
+        // Log-only stub: observable in the sidecar log without affecting
+        // execution. Deliberately omitted from user-visible events.
+        void params.permissionMode;
+      }
       const prompt: RuntimePrompt = {
         text: content,
         attachments,
@@ -681,7 +689,7 @@ async function handle(method: string, params: any): Promise<unknown> {
       };
     }
     case "agent.notifyLifecycle": {
-      // Session lifecycle notices the desktop host owns (ADR 0291 slot 11,
+      // Session lifecycle notices the desktop host owns (ADR 0295 slot 11,
       // rule 11). They are fire-and-forget by design: the reply is sent before
       // any handler finishes, so a plugin that stalls cannot hold up a session
       // switch, a delete or a fork. `created` is broadcast to the sessions that

@@ -11,17 +11,18 @@
 ### E2E-PLUGIN-appearance-extension-lifecycle
 
 - **Preconditions:** A fixture plugin declares `ui.theme`, `ui.settings`, one
-  asset-backed theme with a typed `--fixture-backdrop-blur` `0..20px` variable,
-  and one Settings HTML entry.
+  asset-backed scenic card with a typed `--nexus-backdrop-blur` `0..20px` variable.
 - **Steps:** Open Settings, find the final Extensions group by search and
   keyboard navigation, open the entry, change the variable, select/reselect the
   theme, restart, then disable, reload and uninstall the plugin while its entry
   is active.
-- **Expected:** Only the declared variable rule changes; static
-  `plugin-asset://` URLs remain valid; the value restores after restart; no
-  plugin page covers native controls or core Settings. Invalid/cross-plugin
-  values are refused. Every lifecycle transition removes the entry and returns
-  the app to General.
+- **Expected:** Only the declared variable rule changes after Apply; static
+  `plugin-asset://` URLs remain valid; the value restores after restart; host-
+  rendered cards retain the scenic backdrop behind their translucent content,
+  have no opaque native rectangle, and leave Windows/Linux minimize/maximize
+  controls clickable while Settings is open. Invalid/cross-plugin values are
+  refused. Every lifecycle transition removes the entry and returns the app to
+  General.
 - **Status:** Documented; run after integration into main.
 
 - Document every user-visible and protocol-visible behavior that MVP must verify.
@@ -259,25 +260,23 @@ identify the platform validation still needed.
   `development-branding.test.mjs`, `ci-workflow.test.mjs`); Fedora KDE/Wayland
   installation remains runner validation
 
-#### E2E-196a: Default unsigned macOS release lane
+#### E2E-196a: Unsigned macOS debug lane
 
-- **Preconditions**: A `vX.Y.Z` tag matches `apps/desktop/package.json`, or the
-  Release workflow is manually dispatched with `sign_macos` omitted or false;
-  Windows and Linux release credentials are not affected.
-- **Steps**: 1) Run the tag workflow or dispatch it with the default signing
-  input. 2) Confirm both macOS architectures complete ordinary DMG/ZIP
-  packaging without certificate secrets. 3) Inspect the artifacts and workflow
-  steps.
+- **Preconditions**: The Release workflow is manually dispatched with
+  `sign_macos: false`; Windows and Linux release credentials are not affected.
+  This path must not be used to publish a GitHub Release tag.
+- **Steps**: 1) Dispatch the Release workflow with `sign_macos: false`. 2)
+  Confirm both macOS architectures complete ordinary DMG/ZIP packaging without
+  certificate secrets. 3) Inspect the artifacts and workflow steps.
 - **Expected**: macOS DMG/ZIP artifacts are produced and uploaded without
   Developer ID signatures or notarization, using explicit `-arm64` and `-x64`
   filename markers for their native architecture; macOS staple and Gatekeeper
   checks are explicitly skipped. Windows/Linux artifacts and the merged updater
-  feed still publish normally. This exception must be removed before the next
-  stable release; it does not satisfy E2E-196c.
+  feed still publish normally. This exception does not satisfy E2E-196c.
 - **Specs linked**: `06-delivery/06-release-runbook.md`
-- **Acceptance**: Quality (default release packaging)
+- **Acceptance**: Quality (debug packaging)
 - **Milestone**: M6+
-- **Status**: Active default; this scenario does not satisfy E2E-196c.
+- **Status**: Opt-in debug lane; tag releases must satisfy E2E-196c.
 
 #### E2E-196b: Unsigned macOS packages expose first-launch guidance
 
@@ -313,24 +312,30 @@ identify the platform validation still needed.
 
 #### E2E-196c: macOS tag artifacts pass Gatekeeper without a quarantine bypass
 
-- **Preconditions**: The Release workflow is manually dispatched for a
-  `vX.Y.Z` tag with `sign_macos: true`; the tag matches
-  `apps/desktop/package.json`; GitHub Actions has `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`,
+- **Preconditions**: A `vX.Y.Z` tag matching `apps/desktop/package.json` is
+  pushed, or the Release workflow is dispatched with `sign_macos: true`
+  (default); GitHub Actions has `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`,
   `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID` secrets; both native macOS
   runners are available.
-- **Steps**: 1) Run the explicitly signed workflow. 2) For each macOS architecture,
-  inspect the unpacked app with `codesign -dv --verbose=4` and confirm a
-  `Developer ID Application` authority. 3) Run `codesign --verify --deep
-  --strict`, `spctl -a -vv`, and `xcrun stapler validate` against the app. 4)
-  Run `xcrun stapler validate` against the matching DMG. 5) Download the DMG on
-  a clean macOS profile, move the app to `/Applications`, and open it without
-  clearing `com.apple.quarantine`.
+- **Steps**: 1) Run the tag workflow. 2) For each macOS architecture, inspect
+  the unpacked app with `codesign -dv --verbose=4` and confirm authority
+  `Developer ID Application: XingYu Liu (DUV63RKYTW)`. 3) Run
+  `codesign --verify --deep --strict --verbose=2`,
+  `spctl --assess --type execute --verbose=4`, and `xcrun stapler validate`
+  against the app, including `Contents/Resources/bin/pi-desktop-host-core`.
+  4) Confirm the workflow's DMG step reported an Apple notary status of
+  `Accepted` and then run `xcrun stapler validate` against the matching DMG.
+  5) Download the DMG on a clean macOS profile, move the app to
+  `/Applications`, and open it without clearing `com.apple.quarantine`.
 - **Expected**: Each macOS app passes signature integrity, Gatekeeper reports
-  `Notarized Developer ID`, and both app and DMG contain valid stapled tickets.
-  The app opens normally; no `xattr` quarantine-removal command or Security &
-  Privacy override is required.
+  `source=Notarized Developer ID`, and both app and DMG contain valid stapled
+  tickets. The DMG has its own submission: a DMG that was never submitted has
+  no ticket and fails `stapler staple` with error 65, so a tag build must never
+  reach that state. The app opens normally; no `xattr` quarantine-removal
+  command or Security & Privacy override is required. Missing secrets, a
+  rejected submission, or an exhausted staple retry fail the job.
 - **Specs linked**: `06-delivery/06-release-runbook.md`,
-  `05-security/01-security.md`
+  `05-security/01-security.md`, ADR 0289
 - **Acceptance**: Quality, Security
 - **Milestone**: M6+
 - **Status**: Workflow script/unit-covered; clean-machine journey required for
@@ -3248,7 +3253,9 @@ identify the platform validation still needed.
   Repeat with failed, denied, and scratch writes.
 - **Expected**: Each successful workspace Write/Edit creates one message-owned
   review record and one adjacent keyboard-accessible card; the card is never a
-  bottom/global entry. Every review card, inline and in the Review tab, is
+  bottom/global entry. The completion opens nothing: the panel keeps whatever
+  the user left it showing, and Review appears only after the user opens it.
+  Every review card, inline and in the Review tab, is
   collapsed by default and expands on demand. The Review tab lists A's
   chronological recorded changes, independent of Git status, repository
   presence, commit state, focus refresh,
@@ -3278,11 +3285,12 @@ identify the platform validation still needed.
   interactive shell is opened in the user's external terminal instead of the
   work panel. 5) Build/package the desktop app and inspect the dependency and
   unpacked-resource lists.
-- **Expected**: The work panel offers Browser and in-scope plugin views plus
-  transcript-opened Review/file resources; no PTY is created and no terminal
-  tab can be opened. Agent Bash remains non-interactive and fully visible in
-  the transcript. Interactive shell work is performed by the external
-  terminal. Desktop packaging has no PTY/xterm dependency, terminal-specific
+- **Expected**: The work panel offers the Review launcher row plus Browser and
+  in-scope plugin views; Review opens on explicit user action and file resources
+  are transcript-opened; no PTY is created and no terminal tab can be opened.
+  Agent Bash remains non-interactive and fully visible in the transcript.
+  Interactive shell work is performed by the external terminal. Desktop
+  packaging has no PTY/xterm dependency, terminal-specific
   IPC, or native terminal payload, while generic lifecycle `terminal` values
   continue to work.
 - **Specs linked**: `02-architecture/02-tech-stack.md`,
@@ -3893,12 +3901,12 @@ identify the platform validation still needed.
   automatic check or invoke Check for Updates from the application menu /
   Settings → Info.
 - **Expected**: Update state reports `available` (manual platforms) or
-  advances through in-app download for Windows NSIS / Linux AppImage with
-  `availableVersion` equal to the newer stable tag. A Windows portable run
-  (`PORTABLE_EXECUTABLE_FILE`) stays on the manual notify-and-link path and
-  must not download or run the NSIS installer. The client must not report
-  up-to-date merely because no newer release shares the same `rc` prerelease
-  channel.
+  advances through in-app download for packaged macOS, Windows NSIS, and
+  Linux AppImage with `availableVersion` equal to the newer stable tag. A
+  Windows portable run (`PORTABLE_EXECUTABLE_FILE`) stays on the manual
+  notify-and-link path and must not download or run the NSIS installer. The
+  client must not report up-to-date merely because no newer release shares the
+  same `rc` prerelease channel.
 - **Specs linked**: `04-ux/09-interaction-patterns.md`,
   `05-security/01-security.md`, `08-meta/decisions-log.md` (D120),
   ADR 0022
@@ -4548,7 +4556,8 @@ identify the platform validation still needed.
   request in A as well. 5) Open B explicitly, resolve only B's request, then
   return to A and resolve A's request. 6) Rapidly select A then B while session
   details load in opposite completion order. 7) While B is loading, resolve A's
-  Write/Edit request so its tool completion creates Review, then let B emit a
+  Write/Edit request so its tool completion records an inline review card, then
+  let B emit a
   BrowserPreview artifact while A is visible. Switch back to each session.
 - **Expected**: B's background events update only B's row and retained state;
   they do not change A's active session/project/page, transcript, draft, scroll,
@@ -4556,7 +4565,7 @@ identify the platform validation still needed.
   inline card with its original countdown. Both requests remain independently
   actionable, and resolving B does not clear A. The final rapid selection stays
   on B even when A's older load finishes later. Only explicit notification or
-  session activation may navigate. A's post-approval Review is retained only in
+  session activation may navigate. A's post-approval review card is retained only in
   A without a transient open/close flash in B; B's BrowserPreview carries B's
   session identity, updates only B's retained Browser resource, and never opens,
   navigates, focuses, or resizes A's panel. Explicitly returning to either
@@ -5425,8 +5434,10 @@ identify the platform validation still needed.
 - **Steps**: 1) Let the Agent call `SubmitPlan` with fixed title, Markdown, and
   question. 2) Inspect the new `.pi/plan/*.md` file byte-for-byte and the
   `plan_approvals` row. 3) Inspect the card's title and artifact opener; confirm
-  the question/description, validity/deadline, and status are absent and only
-  Approve and Reject are offered. 4) Open the approval mode menu, choose Auto,
+  the opener uses the bundled file view when it is launchable and the host
+  file tab otherwise (D452), and that the question/description,
+  validity/deadline, and status are absent with only Approve and Reject
+  offered. 4) Open the approval mode menu, choose Auto,
   and verify the next approval defaults to Auto. 5) Reject the
   proposal. 6) Confirm durable mode is Plan, live state is editable `planning`,
   the approval gate is cleared, and a later prompt is accepted. 7) Let the
@@ -5436,7 +5447,9 @@ identify the platform validation still needed.
   unique artifact, records its relative path/hash/size with structured
   title/question, and never lets the renderer or sidecar write or replace it.
   The title-derived artifact filename is recognizable from the title, including
-  non-ASCII title characters. The card shows the title and opens the artifact;
+  non-ASCII title characters. The card shows the title and opens the artifact in
+  the bundled file view, falling back to the host file tab when that view is not
+  launchable (D452);
   it does not require inline question/Markdown/hash/size or a validity/deadline
   indicator. The selected approval mode is remembered locally for the next
   approval.
@@ -6229,7 +6242,7 @@ identify the platform validation still needed.
   6. Settings UI updates status to `Ready` with discovered tools, shows localized success toast, and displays `OAuth` badge.
   7. When access token expires, `UserMcpRuntime` transparently uses refresh token to obtain a fresh access token without user prompt.
   8. Moving the server via `mcp.transfer` preserves and re-keys the OAuth token secret under the destination ID.
-- **Specs linked**: `03-runtime/01-ipc-protocol.md`, ADR 0281, ADR 0142
+- **Specs linked**: `03-runtime/01-ipc-protocol.md`, ADR 0283, ADR 0142
 - **Acceptance**: E (tools & permissions), Security
 - **Milestone**: M5
 - **Status**: Unit-covered (`apps/desktop/test/mcp-oauth.test.mjs`, `apps/desktop/test/user-mcp.test.mjs`); full UI journey Draft
@@ -7158,8 +7171,8 @@ identify the platform validation still needed.
      no Uninstall action.
   2. Reveal the work panel and click `+` to create a New launcher tab. Confirm
      its rows include Review and the plugin-contributed File Manager and Browser
-     views. Trigger an agent edit and confirm Review opens itself under Open
-     resources — it is an artifact surface, not a launcher entry.
+     views. Trigger an agent edit and confirm the panel does not open itself:
+     Review appears under Open resources only after the user selects its row.
   3. Open the File Manager view. Confirm the tree lists the project, expands
      directories lazily, and omits `node_modules`, `.git`, and `.env`. Switch
      the view's top-left folder control to the project's second folder and
@@ -7557,16 +7570,16 @@ identify the platform validation still needed.
 | B / F / Security — Provider copy | E2E-PROVIDER-copy-config-without-credentials |
 | A — App startup | E2E-001, E2E-002, E2E-003, E2E-004, E2E-067, E2E-076, E2E-079, E2E-092, E2E-097, E2E-143, E2E-150, E2E-168, E2E-204 |
 | B — Model config | E2E-005, E2E-006, E2E-007, E2E-038, E2E-050, E2E-052, E2E-055, E2E-066, E2E-080, E2E-082, E2E-102c, E2E-102d, E2E-102e, E2E-151, E2E-154, E2E-163, E2E-166, E2E-172, E2E-174, E2E-197, E2E-005G, E2E-005J, E2E-199, E2E-201, E2E-202, E2E-203, E2E-205, E2E-206, E2E-209 |
-| C — Conversation & stream | E2E-008, E2E-008d, E2E-008a, E2E-009, E2E-010, E2E-011, E2E-011a, E2E-011b, E2E-011d, E2E-011e, E2E-011g, E2E-031, E2E-040, E2E-047, E2E-048, E2E-048A, E2E-049, E2E-052, E2E-053, E2E-054, E2E-055, E2E-059, E2E-059a, E2E-060c, E2E-060d, E2E-061, E2E-061a, E2E-062, E2E-064, E2E-065, E2E-068, E2E-071, E2E-073, E2E-074, E2E-075, E2E-081, E2E-083, E2E-084, E2E-086, E2E-087, E2E-088, E2E-088b, E2E-089, E2E-090, E2E-COMPOSER-narrow-controls, E2E-094, E2E-095, E2E-096, E2E-097, E2E-098, E2E-099, E2E-102, E2E-102a, E2E-102b, E2E-102c, E2E-102d, E2E-102g, E2E-106, E2E-109, E2E-111, E2E-114, E2E-116, E2E-117, E2E-118, E2E-119, E2E-120, E2E-121, E2E-218, E2E-219, E2E-AGENTS-001, E2E-142, E2E-144, E2E-145, E2E-146, E2E-146a, E2E-147, E2E-151, E2E-154, E2E-155, E2E-158, E2E-159, E2E-161, E2E-162, E2E-166, E2E-172, E2E-173, E2E-174, E2E-177, E2E-178, E2E-179, E2E-180, E2E-182, E2E-183, E2E-187, E2E-198, E2E-199, E2E-202, E2E-203, E2E-207, E2E-208, E2E-CHAT-content-width-handles, E2E-250, E2E-102i, E2E-PLUGIN-session-orchestrator-real-workers, E2E-SUBAGENT-settlement-updates-before-parent-poll, E2E-SUBAGENT-resume-a-settled-delegation |
+| C — Conversation & stream | E2E-008, E2E-008d, E2E-008a, E2E-009, E2E-010, E2E-011, E2E-011a, E2E-011b, E2E-011d, E2E-011e, E2E-011g, E2E-031, E2E-040, E2E-047, E2E-048, E2E-048A, E2E-049, E2E-052, E2E-053, E2E-054, E2E-055, E2E-059, E2E-059a, E2E-060c, E2E-060d, E2E-061, E2E-061a, E2E-062, E2E-064, E2E-065, E2E-068, E2E-071, E2E-073, E2E-074, E2E-075, E2E-081, E2E-083, E2E-084, E2E-086, E2E-087, E2E-088, E2E-088b, E2E-089, E2E-090, E2E-COMPOSER-narrow-controls, E2E-094, E2E-095, E2E-096, E2E-097, E2E-098, E2E-099, E2E-102, E2E-102a, E2E-102b, E2E-102c, E2E-102d, E2E-102g, E2E-106, E2E-109, E2E-111, E2E-114, E2E-116, E2E-117, E2E-118, E2E-119, E2E-120, E2E-121, E2E-218, E2E-259, E2E-219, E2E-AGENTS-001, E2E-142, E2E-144, E2E-145, E2E-146, E2E-146a, E2E-147, E2E-151, E2E-154, E2E-155, E2E-158, E2E-159, E2E-161, E2E-162, E2E-166, E2E-172, E2E-173, E2E-174, E2E-177, E2E-178, E2E-179, E2E-180, E2E-182, E2E-183, E2E-187, E2E-198, E2E-199, E2E-202, E2E-203, E2E-207, E2E-208, E2E-CHAT-content-width-handles, E2E-250, E2E-102i, E2E-PLUGIN-session-orchestrator-real-workers, E2E-SUBAGENT-settlement-updates-before-parent-poll, E2E-SUBAGENT-resume-a-settled-delegation |
 | D — Workspace | E2E-012, E2E-013, E2E-022B, E2E-024I, E2E-047, E2E-049, E2E-057, E2E-058, E2E-060, E2E-068, E2E-075, E2E-078, E2E-153, E2E-158, E2E-182, E2E-187, E2E-252 |
 | D — Workspace (project ordering) | E2E-253 |
 | E — Tools & permissions | E2E-008a, E2E-014, E2E-015, E2E-016, E2E-017, E2E-018, E2E-019, E2E-024I, E2E-024K, E2E-040, E2E-049, E2E-074, E2E-093, E2E-097, E2E-099, E2E-100, E2E-101, E2E-102, E2E-102d, E2E-102e, E2E-102g, E2E-103, E2E-105, E2E-106, E2E-107, E2E-111, E2E-112, E2E-113, E2E-114, E2E-115, E2E-116, E2E-119, E2E-121, E2E-122, E2E-142, E2E-145, E2E-147, E2E-155, E2E-158, E2E-166, E2E-181, E2E-PLUGIN-imported-pi-package-skills |
 | F — Persistence | E2E-020, E2E-021, E2E-021a, E2E-036, E2E-037, E2E-038, E2E-040, E2E-042, E2E-047, E2E-048, E2E-051, E2E-054, E2E-056, E2E-061, E2E-062, E2E-064, E2E-066, E2E-068, E2E-071, E2E-072, E2E-073, E2E-082, E2E-084, E2E-096, E2E-098, E2E-102, E2E-102b, E2E-102c, E2E-102d, E2E-102g, E2E-102i, E2E-103, E2E-AGENTS-001, E2E-061a, E2E-073a, E2E-104, E2E-106, E2E-107, E2E-108, E2E-109, E2E-110, E2E-112, E2E-118, E2E-119, E2E-120, E2E-121, E2E-123, E2E-142, E2E-146, E2E-146a, E2E-148, E2E-151, E2E-158, E2E-160, E2E-168, E2E-171, E2E-177, E2E-178, E2E-183, E2E-186, E2E-005J, E2E-PLUGIN-session-orchestrator-real-workers |
 | F — Persistence (project ordering) | E2E-251 |
-| G — Plugins | E2E-022, E2E-022A, E2E-022B, E2E-022C, E2E-023, E2E-024, E2E-024B, E2E-024C, E2E-024D, E2E-024AA, E2E-024E, E2E-024W, E2E-024F, E2E-024G, E2E-024H, E2E-024I, E2E-024J, E2E-024K, E2E-024L, E2E-024M, E2E-024N, E2E-024O, E2E-024P, E2E-025, E2E-026, E2E-105, E2E-117, E2E-120, E2E-122, E2E-123, E2E-024Q, E2E-148, E2E-152, E2E-153, E2E-PLUGIN-imported-pi-package-skills, E2E-PLUGIN-import-extension-installs-dependencies, E2E-PLUGIN-import-extension-reports-missing-dependency, E2E-PLUGIN-global-shortcut-owns-only-its-own-command, E2E-PLUGIN-permission-gate-for-real-time-capabilities, E2E-PLUGIN-background-audio-and-realtime-connection, E2E-PLUGIN-fs-root-follows-the-calling-session |
+| G — Plugins | E2E-022, E2E-022A, E2E-022B, E2E-022C, E2E-023, E2E-024, E2E-024B, E2E-024C, E2E-024D, E2E-024AA, E2E-024E, E2E-024W, E2E-024F, E2E-024G, E2E-024H, E2E-024I, E2E-024J, E2E-024K, E2E-024L, E2E-024M, E2E-024N, E2E-024O, E2E-024P, E2E-025, E2E-026, E2E-105, E2E-117, E2E-120, E2E-122, E2E-123, E2E-024Q, E2E-148, E2E-152, E2E-153, E2E-PLUGIN-imported-pi-package-skills, E2E-PLUGIN-imported-pi-package-wrapper, E2E-PLUGIN-import-extension-installs-dependencies, E2E-PLUGIN-import-extension-reports-missing-dependency, E2E-PLUGIN-global-shortcut-owns-only-its-own-command, E2E-PLUGIN-permission-gate-for-real-time-capabilities, E2E-PLUGIN-background-audio-and-realtime-connection, E2E-PLUGIN-fs-root-follows-the-calling-session |
 | H — Diagnostics | E2E-027, E2E-031, E2E-034, E2E-042, E2E-096, E2E-098, E2E-104, E2E-107, E2E-108, E2E-109, E2E-110, E2E-113, E2E-115, E2E-116, E2E-118, E2E-121, E2E-146, E2E-146a, E2E-155, E2E-159, E2E-176, E2E-194, E2E-195 |
 | Security | E2E-028, E2E-029, E2E-030, E2E-024J, E2E-024K, E2E-024M, E2E-049, E2E-068, E2E-086, E2E-102c, E2E-102d, E2E-102e, E2E-105, E2E-106, E2E-107, E2E-108, E2E-109, E2E-110, E2E-112, E2E-113, E2E-115, E2E-116, E2E-117, E2E-119, E2E-121, E2E-122, E2E-123, E2E-142, E2E-148, E2E-151, E2E-153, E2E-158, E2E-187, E2E-196c, E2E-196b, E2E-196, E2E-PLUGIN-fs-root-follows-the-calling-session |
-| Quality | E2E-032, E2E-033, E2E-039, E2E-043, E2E-044, E2E-045, E2E-046, E2E-047, E2E-048, E2E-048A, E2E-049, E2E-050, E2E-053, E2E-055, E2E-056, E2E-057, E2E-058, E2E-059, E2E-060, E2E-061, E2E-062, E2E-063, E2E-064, E2E-065, E2E-066, E2E-067, E2E-068, E2E-069, E2E-070, E2E-071, E2E-072, E2E-073, E2E-074, E2E-075, E2E-076, E2E-077, E2E-078, E2E-079, E2E-080, E2E-081, E2E-082, E2E-083, E2E-084, E2E-085, E2E-086, E2E-092, E2E-093, E2E-094, E2E-095, E2E-096, E2E-097, E2E-098, E2E-099, E2E-100, E2E-101, E2E-102, E2E-102a, E2E-102b, E2E-102c, E2E-102d, E2E-102e, E2E-103, E2E-AGENTS-001, E2E-021a, E2E-024N, E2E-059a, E2E-060b, E2E-060c, E2E-061a, E2E-073a, E2E-111, E2E-114, E2E-117, E2E-118, E2E-119, E2E-120, E2E-122, E2E-123, E2E-142, E2E-143, E2E-144, E2E-145, E2E-146, E2E-147, E2E-148, E2E-150, E2E-151, E2E-153, E2E-155, E2E-158, E2E-159, E2E-160, E2E-161, E2E-162, E2E-163, E2E-168, E2E-172, E2E-173, E2E-174, E2E-011g, E2E-176, E2E-177, E2E-178, E2E-179, E2E-180, E2E-181, E2E-182, E2E-183, E2E-186, E2E-187, E2E-194, E2E-195, E2E-196a, E2E-196b, E2E-196c, E2E-198, E2E-199, E2E-200, E2E-196, E2E-201, E2E-204, E2E-202, E2E-203, E2E-205, E2E-206, E2E-207, E2E-208, E2E-209, E2E-210, E2E-218, E2E-219, E2E-250, E2E-252, E2E-102i, E2E-SUBAGENT-settlement-updates-before-parent-poll, E2E-PLUGIN-imported-pi-package-skills, E2E-PLUGIN-fs-root-follows-the-calling-session, E2E-SUBAGENT-resume-a-settled-delegation |
+| Quality | E2E-032, E2E-033, E2E-039, E2E-043, E2E-044, E2E-045, E2E-046, E2E-047, E2E-048, E2E-048A, E2E-049, E2E-050, E2E-053, E2E-055, E2E-056, E2E-057, E2E-058, E2E-059, E2E-060, E2E-061, E2E-062, E2E-063, E2E-064, E2E-065, E2E-066, E2E-067, E2E-068, E2E-069, E2E-070, E2E-071, E2E-072, E2E-073, E2E-074, E2E-075, E2E-076, E2E-077, E2E-078, E2E-079, E2E-080, E2E-081, E2E-082, E2E-083, E2E-084, E2E-085, E2E-086, E2E-092, E2E-093, E2E-094, E2E-095, E2E-096, E2E-097, E2E-098, E2E-099, E2E-100, E2E-101, E2E-102, E2E-102a, E2E-102b, E2E-102c, E2E-102d, E2E-102e, E2E-103, E2E-AGENTS-001, E2E-021a, E2E-024N, E2E-059a, E2E-060b, E2E-060c, E2E-061a, E2E-073a, E2E-111, E2E-114, E2E-117, E2E-118, E2E-119, E2E-120, E2E-122, E2E-123, E2E-142, E2E-143, E2E-144, E2E-145, E2E-146, E2E-147, E2E-148, E2E-150, E2E-151, E2E-153, E2E-155, E2E-158, E2E-159, E2E-160, E2E-161, E2E-162, E2E-163, E2E-168, E2E-172, E2E-173, E2E-174, E2E-011g, E2E-176, E2E-177, E2E-178, E2E-179, E2E-180, E2E-181, E2E-182, E2E-183, E2E-186, E2E-187, E2E-194, E2E-195, E2E-196a, E2E-196b, E2E-196c, E2E-198, E2E-199, E2E-200, E2E-196, E2E-201, E2E-204, E2E-202, E2E-203, E2E-205, E2E-206, E2E-207, E2E-208, E2E-209, E2E-210, E2E-218, E2E-259, E2E-219, E2E-250, E2E-252, E2E-102i, E2E-SUBAGENT-settlement-updates-before-parent-poll, E2E-PLUGIN-imported-pi-package-skills, E2E-PLUGIN-fs-root-follows-the-calling-session, E2E-SUBAGENT-resume-a-settled-delegation |
 | Quality (project ordering) | E2E-253 |
 | C — Conversation & stream (IME slash alias) | E2E-255 |
 | E — Tools & permissions (Skill residency) | E2E-254 |
@@ -7618,7 +7631,7 @@ identify the platform validation still needed.
 | M2 (IME slash alias) | E2E-255 |
 | M5 (Skill residency) | E2E-254 |
 | M6 | E2E-104, E2E-105, E2E-106, E2E-107, E2E-108, E2E-109, E2E-110, E2E-111, E2E-112, E2E-113, E2E-114, E2E-115, E2E-116, E2E-117, E2E-118, E2E-119, E2E-120, E2E-103, E2E-172 |
-| M6+ | E2E-121, E2E-122, E2E-148, E2E-150, E2E-151, E2E-154, E2E-155, E2E-158, E2E-159, E2E-160, E2E-161, E2E-162, E2E-163, E2E-166, E2E-168, E2E-173, E2E-174, E2E-176, E2E-179, E2E-196a, E2E-196b, E2E-196c, E2E-198, E2E-199, E2E-200, E2E-202, E2E-203, E2E-205, E2E-209, E2E-210, E2E-212, E2E-213, E2E-214, E2E-215, E2E-216, E2E-217, E2E-218, E2E-219, E2E-257, E2E-SUBAGENT-settlement-updates-before-parent-poll, E2E-PLUGIN-fs-root-follows-the-calling-session, E2E-SUBAGENT-resume-a-settled-delegation |
+| M6+ | E2E-121, E2E-122, E2E-148, E2E-150, E2E-151, E2E-154, E2E-155, E2E-158, E2E-159, E2E-160, E2E-161, E2E-162, E2E-163, E2E-166, E2E-168, E2E-173, E2E-174, E2E-176, E2E-179, E2E-196a, E2E-196b, E2E-196c, E2E-198, E2E-199, E2E-200, E2E-202, E2E-203, E2E-205, E2E-209, E2E-210, E2E-212, E2E-213, E2E-214, E2E-215, E2E-216, E2E-217, E2E-218, E2E-259, E2E-219, E2E-257, E2E-SUBAGENT-settlement-updates-before-parent-poll, E2E-PLUGIN-fs-root-follows-the-calling-session, E2E-SUBAGENT-resume-a-settled-delegation |
 | M6+ (Session Orchestrator) | E2E-PLUGIN-session-orchestrator-real-workers |
 | M6+ (Session list responsiveness) | E2E-SESSION-list-refresh-keeps-desktop-responsive |
 | M6+ (Independent session communication) | E2E-SESSION-independent-top-level-communication, E2E-SESSION-hover-card-model-and-links |
@@ -8482,8 +8495,8 @@ This test plan spec is accepted when:
   action removes or changes the other card.
 - Resolve A's Write/Edit permission and switch to B before completion. Expect no
   transient Review panel in B and no panel/window flash; returning to A restores
-  A's resulting Review tab and prior panel selection, while B's tabs and Browser
-  resource remain unchanged.
+  A's prior panel selection with the inline review card in its transcript — the
+  edit opened no tab — while B's tabs and Browser resource remain unchanged.
 
 ### US-UI-69 Sidebar type balance (D144/D161)
 - Open the expanded sidebar in light and dark themes at default and minimum
@@ -9886,33 +9899,38 @@ This test plan spec is accepted when:
   3. With the work panel open or on a small supported window, continue the
      resize toward the maximum; inspect the composer toolbar while the main
      pane reflows.
-  4. Repeat with a target below the minimum and above the maximum; release and
-     confirm the sidebar width stops at 240px and 520px respectively while the
-     MainChat reservation remains intact.
+  4. Repeat with a target below 240px and above the live maximum; release and
+     confirm the sidebar width stops at 240px and the live cap (at most 520px)
+     while MainChat stays at or above 450px. Continue the drag below 160px and
+     confirm the sidebar collapses immediately without saving the in-progress
+     width.
   5. Focus the edge handle and press ArrowLeft/ArrowRight, Home, and End;
-     inspect the separator's current ARIA value.
+     inspect the separator's current ARIA value. ArrowLeft at 240px must not
+     collapse the sidebar.
   6. Start a resize, press Escape or cancel the pointer, then restart the app.
-     Collapse and re-expand the sidebar as a separate check.
+     Collapse and re-expand the sidebar as a separate check; the preferred
+     expanded width must return.
 - **Expected**: The handle is discoverable on direct hover/focus without a
   full-height white/accent rail when the sidebar body is hovered, has no native
   window drag or text-selection side effect, and remains anchored to the press
-  point. MainChat follows the live width until its 515px floor. Pointer release saves one clamped
-  preferred width; Escape/cancellation restores the starting width without
-  saving it. Keyboard changes commit immediately and expose localized width
-  semantics. The saved width survives relaunch and is restored after sidebar
-  collapse; collapse does not convert the preferred width into the icon-rail
-  width. MainChat never falls below its reserved 515px width, and the composer
-  toolbar keeps its left and right groups on one row without squeezed buttons.
-  Mode/permission labels remain single-line and ellipsized; no toolbar text is
-  vertically split or overlapped.
+  point. MainChat follows the live width until its 450px floor. Pointer release
+  saves one clamped preferred width; Escape/cancellation restores the starting
+  width without saving it. A pointer width below 160px collapses the sidebar as
+  a user action and restores the preferred expanded width on reopen. Keyboard
+  changes commit immediately and expose localized width semantics. The saved
+  width survives relaunch and is restored after sidebar collapse; collapse does
+  not convert the preferred width into the icon-rail width. MainChat never
+  falls below 450px, and the composer toolbar keeps its left and right groups
+  on one row without squeezed buttons. Mode/permission labels remain
+  single-line and ellipsized; no toolbar text is vertically split or overlapped.
 - **Specs linked**: `04-ux/01-ui-ia.md`, `04-ux/07-ui-design-system.md`,
   `04-ux/08-component-spec.md`, `04-ux/09-interaction-patterns.md`,
-  ADR 0141, ADR 0226, D280, D401
+  ADR 0141, ADR 0238, ADR 0290, D280, D408, D451
 - **Acceptance**: A (app shell), F (persistence), Quality
 - **Milestone**: M6+
 - **Status**: Unit/source-contract covered (`sidebar-preferences.test.mjs`,
-  `sidebar-resize.test.mjs`); rendered desktop drag and relaunch journey
-  remains pending
+  `sidebar-resize.test.mjs`, `sidebar-resize-math.test.mjs`); rendered desktop
+  drag and relaunch journey remains pending
 
 #### E2E-162: A vendor account and an AI service offer the same model picker
 
@@ -11026,6 +11044,26 @@ are withdrawn with ADR 0165.
 - **Milestone**: M6+
 - **Status**: Host/RPC/unit-covered; full UI journey Draft (run only in a capable environment when this surface changes)
 
+#### E2E-PLUGIN-usage-listTurns: Plugin usage fact listing
+
+- **Preconditions**: A test plugin is granted `usage.read`. The host database
+  has completed turns across live and soft-deleted sessions.
+- **Steps**: 1) Call `pi.usage.listTurns` without the permission. 2) Call it
+  with the permission, page by cursor, and filter by session/project/window.
+  3) Pass inverted bounds, a window longer than 365 days, and a malformed
+  cursor. 4) Confirm rows include token counters and titles but no message
+  bodies, and that trashed sessions are absent.
+- **Expected**: Missing permission returns `PERMISSION_DENIED` and does not
+  hit the host. Valid calls return keyset pages of completed-turn facts.
+  Invalid params return `INVALID_PARAMS`. Empty titles are `null`.
+- **Specs linked**: `07-plugins/03-plugin-api.md`,
+  `07-plugins/13-plugin-permissions-matrix.md`,
+  `03-runtime/06-host-rpc-protocol.md`, ADR 0173, D335
+- **Acceptance**: Security, Quality
+- **Milestone**: M6+
+- **Status**: Unit/RPC/wiring-covered (`plugin-session-api.test.mjs`,
+  host-core `plugin_usage`); full UI journey Draft
+
 #### E2E-216: Explicit plugin project binding and host-owned sidebar refresh
 
 - **Preconditions**: A test plugin has `project.create` and `session.import`
@@ -11086,7 +11124,9 @@ are withdrawn with ADR 0165.
   successfully, and rewrites that text. The image chip remains at the front of
   the draft, remains removable, and is dispatched exactly once with the
   enhanced prompt. Enhancement does not create a transcript row or alter the
-  attachment bytes.
+  attachment bytes. The request is built from the built-in system prompt and the
+  effective user template: with no saved override the built-in template applies;
+  with an override saved in Settings, that text applies instead (E2E-259).
 - **Specs linked**: `04-ux/12-prompt-enhancement.md`,
   `04-ux/08-component-spec.md` §11.3/§11.7–11.8,
   `03-runtime/01-ipc-protocol.md` §13,
@@ -11095,32 +11135,58 @@ are withdrawn with ADR 0165.
 - **Milestone**: M6+
 - **Status**: Unit/source-contract-covered; full UI journey Draft (run only in a capable environment when this surface changes)
 
-#### E2E-219: Delegation cards show the resolved thinking level
+#### E2E-259: Prompt enhancement honors the configurable user template
 
-- **Preconditions**: A project-bound Agent session with two delegation model
-  bindings: one supports `max`, and one supports no reasoning or only `off`.
-  The provider stream can start parallel `Task` calls using different models or
-  subagent definitions, and the session can be reloaded after the turn.
-- **Steps**: 1) Start parallel delegates whose requested levels resolve to
-  `max` for one model and `high` clamped to `off` for the other. 2) Inspect the
-  live delegation card nodes and open each node in the side dock. 3) Resize to
-  a narrow conversation/work-panel layout and inspect the node and side-dock
-  captions with keyboard focus and hover. 4) Finish the turn, reload the
-  session, and inspect the same card and side-dock details again.
-- **Expected**: Each node and its side-dock header use the delegation result's
-  effective `modelId` and `thinkingLevel`, independently of sibling delegates.
-  The reasoning-capable node shows the raw canonical `max` value after the
-  model name; the unsupported node shows only its model name. No
-  `Off` or `omit` suffix appears. Inheritance and model capability clamping are
-  reflected without UI re-derivation, the full label remains available through
-  the accessible name and hover title, and narrow layouts ellipsize without
-  overflow. Reloaded history matches the live presentation.
-- **Specs linked**: `03-runtime/02-agent-runtime.md` §5f,
-  `04-ux/08-component-spec.md` §5.7, ADR 0202, ADR 0221
-- **Acceptance**: C (chat/stream) + Quality
+- **Preconditions**: A configured, authenticated model is available; an Agent
+  session has an empty Composer draft; Settings -> AI is reachable.
+- **Steps**: 1) Open Settings -> AI and inspect the Prompt enhancement card with
+  no saved override: the custom-template switch is off, disabled, and explains
+  that saving a template unlocks it, and the row offers only the edit icon
+  button. 2) Confirm no field for the system prompt is offered
+  anywhere on the card or in the editor. 3) Open the editor; while the sheet is
+  open, clear the draft variable token out of the user template and attempt to
+  save. 4) Use the insert action to put the draft variable back, save, and
+  confirm the sheet closes and the switch is now enabled and on. 5) Enhance a
+  Chinese draft
+  that also names a file such as `prompt-templates.ts`. 6) Enhance a
+  mixed-language draft. 7) Resolve a model that returns the rewritten draft
+  wrapped in quotation marks. 8) Reopen the editor, press `Escape`, and confirm
+  the edit was abandoned. 9) Reopen the editor, edit the template, and close it
+  by clicking the backdrop. 10) Turn the switch off and enhance again, then turn
+  it back on and confirm the user's text is still there. 11) Pin an enhancement
+  model, disable that provider, and enhance once more. 12) Confirm the reasoning row
+  defaults to `Off (no reasoning)` and offers no follow-the-session entry, then
+  raise it and enhance again to see the difference.
+- **Expected**: With no override the editor opens on the built-in default text,
+  so the displayed value equals the value in force, and the card shows no
+  system-prompt field at all. Saving a user template without the draft variable
+  is refused locally with a message, and no write reaches host-core. With no
+  saved template the switch is disabled; after saving one it is enabled and on
+  without a separate toggle. `Escape` and
+  a backdrop click abandon the edit, leaving the stored value unchanged. With the
+  switch off, enhancement uses the built-in template even though a custom one is
+  stored; with it on, the stored template applies. Either way the request's system
+  prompt is the built-in one and its user message contains the draft inside
+  `<draft>` tags with the placeholder substituted. The rewritten draft keeps the
+  draft's language, carries no language meta note, keeps `prompt-templates.ts`
+  byte-identical, and has the wrapping quotation pair removed. Turning the switch
+  off and on again leaves the user's stored text intact. A disabled pinned
+  enhancement provider falls back to the Composer's current model, the
+  enhancement still succeeds, and the fallback is logged as a warning. The
+  reasoning row defaults to `Off (no reasoning)`, offers every canonical level
+  plus `Off`, has no follow-the-session entry, and a level the model cannot
+  honour is clamped rather than rejected. An enhancement that receives no provider response fails
+  within about 60 seconds with `TIMEOUT` and a message naming the budget and the
+  setting to change; it does not hang and does not silently retry on the session
+  model.
+- **Specs linked**: `04-ux/12-prompt-enhancement.md` §3/§5,
+  `04-ux/06-settings-ia.md`, `03-runtime/01-ipc-protocol.md` §13,
+  `03-runtime/04-data-storage.md`, ADR 0121, D447
+- **Acceptance**: C (conversation & stream), Quality
 - **Milestone**: M6+
-- **Status**: Unit/source-contract covered; full multi-provider rendered journey
-  remains Draft (run only in a capable environment when this surface changes)
+- **Status**: Unit/RPC/source-contract-covered for the template resolution,
+  validation, and quote stripping; full UI journey Draft (run only in a capable
+  environment when this surface changes)
 
 #### E2E-220: Local MCP control drives a running desktop
 
@@ -11816,6 +11882,32 @@ plugin-form fixtures in an isolated temporary directory at runtime.
 - **Milestone**: Post-MVP (R7 v1)
 - **Status**: Partially automated (`pnpm test:e2e:trusted-extensions`); the headless journey covers plugin discovery/projection, project scope, load state, and diagnostics, while native picker import and explicit enablement remain renderer/platform validation.
 
+#### E2E-PLUGIN-imported-pi-package-wrapper: Imported package module types preserve plugin initialization
+
+- **Preconditions**: Isolated local Pi packages declare `type: module`,
+  `type: commonjs`, or no `type`; each has an extension and skill contributions.
+  A fourth fixture represents an older imported ESM package with the generated
+  CommonJS `main.js` and matching manifest.
+- **Steps**: Run `node --test apps/desktop/test/imported-package-skills-runtime.test.mjs`.
+  Generate each plugin through the production importer, load it through
+  `PluginRuntime` and the real child-process plugin host, read its skill catalog
+  and bodies, and inspect its declared extension. Re-import the older fixture
+  without loading it, then load the older fixture itself.
+- **Expected**: Each new manifest points to an existing `main.cjs`; initialization
+  succeeds for all three package types. Source and both copied `package.json`
+  files retain the same bytes. The repeated import has a distinct path/id and
+  loads successfully; generating it leaves the older manifest, wrapper, and
+  package files unchanged. Loading the older fixture rewrites its generated
+  `main.js` in place to `main.cjs`, keeps the copied `package.json` bytes, and
+  initializes. A customized `main.js` is not rewritten.
+- **Specs linked**: `07-plugins/16-trusted-extensions.md` §3.2; ADR 0215.
+- **Acceptance**: Quality
+- **Status**: Automated import-to-plugin-host fixture. Run against the committed
+  task candidate after incorporating the latest `origin/main`; record the tested
+  candidate, base, result, and environment in delivery evidence. Native picker,
+  npm dependency installation, Windows execution, and third-party extension
+  execution during a provider turn are not covered by this fixture.
+
 #### E2E-PLUGIN-imported-pi-package-skills: Explicit package import exposes skills through plugin grants
 
 - **Preconditions**: A local fixture package under an npm-style
@@ -12049,7 +12141,7 @@ plugin-form fixtures in an isolated temporary directory at runtime.
   validates, requests `renderer.extension`, and its `main` and `renderer` files
   exist.
 - **Specs linked**: `07-plugins/16-trusted-extensions.md` §2A.1, §2A.2, §2A.4,
-  §2A.5; ADR 0287
+  §2A.5; ADR 0291
 - **Acceptance**: Security, Quality
 - **Milestone**: Post-MVP (R7 v1)
 - **Status**: Automated by `pnpm test:e2e:plugin-slots` against the real modules
@@ -13195,24 +13287,6 @@ plugin-form fixtures in an isolated temporary directory at runtime.
   Renderer fixtures alone do not prove settings persistence.
 - **Specs:** 04-ux/06-settings-ia, 04-ux/08-component-spec,
   04-ux/09-interaction-patterns; ADR turn-process-and-thinking-display.
-
-### E2E-CHAT-hosted-search-citations-stay-local
-
-- **Preconditions:** An assistant turn with `hostedSearch.sources` that include
-  `https://example.com/a`, plus markdown that contains `#cite=1`,
-  `[Read here](https://example.com)`, and `[Same path](https://example.com/a)`.
-- **Steps:** Render the turn. Inspect citation badges, remaining hyperlinks,
-  and favicon image URLs (including failed loads).
-- **Expected:** `#cite=1` and the same-path source URL render as citation
-  badges. The same-host different-path `https://example.com` link stays an
-  ordinary hyperlink with its original text. Favicon requests go only to each
-  source origin's `/favicon.ico`; no third-party favicon host is contacted.
-- **Automation:** `apps/desktop/test/hosted-search-ui.test.mjs`.
-- **Specs:** `03-runtime/11-provider-model-system.md` §16.
-- **Acceptance:** Security + C (sessions/transcript).
-- **Milestone:** M6+.
-- **Status:** Automated unit coverage; renderer E2E still draft.
-
 
 ### E2E-RPC-unicode-separators
 

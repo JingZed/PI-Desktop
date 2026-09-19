@@ -1,5 +1,5 @@
 /**
- * The component-slot registry for trusted-renderer plugins (ADR 0287).
+ * The component-slot registry for trusted-renderer plugins (ADR 0291).
  *
  * Slots are registered at runtime, never declared in the manifest (D6), so this
  * is the single place the host learns that a plugin wants to draw somewhere. It
@@ -31,7 +31,7 @@ export type PluginSlotRegistration = {
 
 /**
  * Something a plugin tried that the host will not honour. Registration
- * failures and refused dispatches are never silent (D6/D12, ADR 0290): the
+ * failures and refused dispatches are never silent (D6/D12, ADR 0294): the
  * plugins page and the diagnostics list read these, so a plugin author sees
  * why nothing appeared or why a call was refused.
  */
@@ -45,7 +45,7 @@ export type PluginSlotDiagnostic = {
     | CodeBlockLanguageDiagnostic
     | "PLUGIN_SLOT_RENDER_FAILED"
     | "PLUGIN_SLOT_LOAD_FAILED"
-    // Dispatch refusals from the action relay (ADR 0290): an action the plugin
+    // Dispatch refusals from the action relay (ADR 0294): an action the plugin
     // did not declare, or a declared one the host has no handler for yet.
     | "PLUGIN_ACTION_UNDECLARED"
     | "PLUGIN_ACTION_UNROUTED"
@@ -53,7 +53,7 @@ export type PluginSlotDiagnostic = {
     // no mounted composer consumed (renderer-host/host-actions.ts).
     | "PLUGIN_ACTION_INVALID_PAYLOAD"
     | "PLUGIN_ACTION_DRAFT_UNCONSUMED"
-    // Refusals of a forwarded renderer call (ADR 0290 decision 4), reported by
+    // Refusals of a forwarded renderer call (ADR 0294 decision 4), reported by
     // the `plugin.call` handler in renderer-host/host-actions.ts: anything the
     // main process or the plugin's own headless entry refused the call with.
     | "PLUGIN_CALL_INVALID"
@@ -65,7 +65,7 @@ export type PluginSlotDiagnostic = {
     | "PLUGIN_CALL_NO_HANDLER"
     | "PLUGIN_CALL_UNSERIALIZABLE"
     | "PLUGIN_CALL_FAILED"
-    // Host-callable functions a plugin registered (ADR 0290 decision 6,
+    // Host-callable functions a plugin registered (ADR 0294 decision 6,
     // renderer-host/host-functions.ts): a registration refused by the name
     // grammar or by a duplicate name, and every way a host call can fail —
     // missing, threw, past the one-frame budget, or disabled by the breaker.

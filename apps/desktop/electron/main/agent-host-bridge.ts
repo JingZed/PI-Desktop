@@ -26,6 +26,22 @@ import { IPC, isGlobalPermissionMode } from "@pi-desktop/shared";
 
 type IpcInvoke = (channel: string, args: readonly unknown[]) => Promise<unknown>;
 
+/**
+ * Rank the three permission modes on a permissive scale so a "narrower"
+ * per-turn ceiling can be recognised. `ask` (0) is most restrictive; `auto`
+ * (2) is most permissive. A ceiling that lowers rank narrows; one that
+ * raises rank widens (an escalation the runtime must refuse).
+ */
+const PERMISSION_MODE_RANK: Record<RacpPermissionMode, number> = {
+  ask: 0,
+  "accept-edits": 1,
+  auto: 2,
+};
+
+function isWidening(session: RacpPermissionMode, effective: RacpPermissionMode): boolean {
+  return PERMISSION_MODE_RANK[effective] > PERMISSION_MODE_RANK[session];
+}
+
 type HostLike = {
   call<T = unknown>(method: string, params?: Record<string, unknown>): Promise<T>;
 };
@@ -70,22 +86,45 @@ export function createAgentHostBridge(options: AgentHostBridgeOptions) {
     async prompt(request: TurnStartRequest) {
       try {
         const summary = await sessions.get(request.sessionId);
-        if (summary && summary.permissionMode !== request.effectivePermissionMode) {
-          // The local prompt path runs under the session's durable permission
-          // mode. A per-turn ceiling needs runtime support that lands with the
-          // RACP-WS binding; until then a capped turn fails closed.
+        // A per-turn ceiling that would WIDEN the session's stored mode is a
+        // real escalation attempt — e.g. a remote viewer whose principal is
+        // subject to `remoteMaxPermissionMode: "ask"` should never be able to
+        // run a turn at `auto`. Refuse before the sidecar sees the request.
+        //
+        // A NARROWER ceiling (or the same mode) is safe to accept: it can only
+        // reduce what the turn is allowed to do. The runtime still uses the
+        // session's stored mode when it enforces tool decisions, so a narrower
+        // request is not yet honoured turn-locally — that is the R1 leftover
+        // waiting on host-core to accept a `permissionMode` override on
+        // `session.beginTurn`. We plumb the parameter end-to-end anyway so the
+        // enforcement gate can flip on without another wire change.
+        if (
+          summary &&
+          summary.permissionMode !== request.effectivePermissionMode &&
+          isWidening(summary.permissionMode, request.effectivePermissionMode)
+        ) {
           throw new RacpError(
             "FORBIDDEN",
-            "the local runtime cannot apply a per-turn permission ceiling yet",
-            { details: { effectivePermissionMode: request.effectivePermissionMode } },
+            "the local runtime cannot widen the per-turn permission ceiling",
+            {
+              details: {
+                sessionPermissionMode: summary.permissionMode,
+                effectivePermissionMode: request.effectivePermissionMode,
+              },
+            },
           );
         }
+        const permissionModeOverride =
+          summary && summary.permissionMode !== request.effectivePermissionMode
+            ? request.effectivePermissionMode
+            : undefined;
         const result = (await options.invoke(options.channels.agentPrompt, [
           {
             sessionId: request.sessionId,
             content: request.content,
             ...(request.sessionMessageId ? { sessionMessageId: request.sessionMessageId } : {}),
             ...(request.attachments ? { attachments: request.attachments } : {}),
+            ...(permissionModeOverride ? { permissionMode: permissionModeOverride } : {}),
           },
         ])) as { accepted?: boolean; turnId: string };
         return { turnId: result.turnId };

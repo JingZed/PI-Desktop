@@ -42,6 +42,23 @@ type IpcInvoker = (
   args?: readonly unknown[],
 ) => Promise<unknown>;
 
+/**
+ * The remote-host modules pass their log `data` as a structured object (e.g.
+ * `{hostKey, error}`); a bare `String(data)` prints `[object Object]` and
+ * loses the context. Errors keep their `String(error)` shape ("Error: ..."),
+ * plain strings pass through, everything else JSON-stringifies.
+ */
+function formatRemoteLogData(data: unknown): string | undefined {
+  if (data === undefined) return undefined;
+  if (typeof data === "string") return data;
+  if (data instanceof Error) return String(data);
+  try {
+    return JSON.stringify(data);
+  } catch {
+    return String(data);
+  }
+}
+
 export type StartupState = {
   applicationBooted: boolean;
   closeBehavior: CloseBehavior;
@@ -104,7 +121,7 @@ export function registerApplicationStartup(deps: StartupDependencies): void {
   // runs from the composition root, before the `whenReady` promise can settle.
   registerPluginAssetScheme();
   // The trusted renderer host needs the same pre-ready reservation, for the
-  // same reason (ADR 0287).
+  // same reason (ADR 0291).
   registerPluginRendererScheme();
   void app.whenReady().then(async () => {
     const {
@@ -148,7 +165,7 @@ export function registerApplicationStartup(deps: StartupDependencies): void {
     );
 
     // The trusted renderer host serves plugin module source over its own scheme
-    // (ADR 0287). Same rule as theme assets: installed once, before the first
+    // (ADR 0291). Same rule as theme assets: installed once, before the first
     // window can ask for anything.
     installPluginRendererProtocol((pluginId, requestPath) =>
       plugins.resolveRendererSource(pluginId, requestPath),
@@ -182,7 +199,7 @@ export function registerApplicationStartup(deps: StartupDependencies): void {
     // sessions here once paired (later stages).
     state.backendRouter = createBackendRouter({
       log: (level, message, data) =>
-        logger.app("runtime", level, message, { data: data === undefined ? undefined : String(data) }),
+        logger.app("runtime", level, message, { data: formatRemoteLogData(data) }),
     });
     // Every paired remote `pi-host` opens against the router this boot just
     // created. An empty registry (default install with no user pairing) makes
@@ -202,7 +219,7 @@ export function registerApplicationStartup(deps: StartupDependencies): void {
       emit: sendToRenderer,
       clientInfo: { name: APP_NAME, version: APP_VERSION },
       log: (level, message, data) =>
-        logger.app("runtime", level, message, { data: data === undefined ? undefined : String(data) }),
+        logger.app("runtime", level, message, { data: formatRemoteLogData(data) }),
     });
     setActiveRemoteHostsBoot(remoteHostsBoot);
     // Boot in the background: a slow or unreachable host must not delay the

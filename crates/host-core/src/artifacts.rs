@@ -4,7 +4,7 @@ use serde::Serialize;
 
 use crate::db::{ms_to_ts, now_ms, Database};
 
-/// What one recorded touch did to a file (ADR 0291 rule 8).
+/// What one recorded touch did to a file (ADR 0295 rule 8).
 ///
 /// The vocabulary is closed at this boundary — `record` / `record_tx` accept
 /// nothing else — rather than by a SQL `CHECK`, so a stored row this build does
@@ -20,7 +20,7 @@ pub enum ArtifactOp {
     Edit,
     /// The turn produced the file by downloading or generating it. No host tool
     /// reports this shape yet, so only a caller that knows it can record it;
-    /// the vocabulary is what ADR 0291 rule 8 asks for and the store keeps it
+    /// the vocabulary is what ADR 0295 rule 8 asks for and the store keeps it
     /// valid until the producer lands.
     #[allow(dead_code)]
     Download,
@@ -62,7 +62,7 @@ pub struct Artifact {
 }
 
 /// Record one touch. Rows are facts: a file changed in three turns gets three
-/// rows, so every one of those turns stays attributable (ADR 0291 rule 8).
+/// rows, so every one of those turns stays attributable (ADR 0295 rule 8).
 pub fn record(
     db: &Database,
     session_id: &str,
@@ -138,7 +138,7 @@ pub fn list(db: &Database, session_id: Option<&str>, limit: i64) -> Result<Vec<A
 }
 
 /// The artifacts one turn touched, oldest touch first — the host-owned answer
-/// to "which files did this turn change?" (ADR 0291 rule 8, slot
+/// to "which files did this turn change?" (ADR 0295 rule 8, slot
 /// `runtime.turn.facts`). The `id` tiebreak keeps the order stable when two
 /// touches share a millisecond.
 pub fn list_for_turn(

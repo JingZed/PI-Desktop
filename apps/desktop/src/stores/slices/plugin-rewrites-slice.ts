@@ -4,7 +4,7 @@ import type { AppState } from "../app-state";
 import type { StoreAccess } from "./types";
 
 /**
- * The renderer's copy of the rewrite audit (ADR 0291 rule 5).
+ * The renderer's copy of the rewrite audit (ADR 0295 rule 5).
  *
  * The records live in host-core and only ever arrive through a session read or
  * an explicit re-read; this is the single place that puts them in the store, so

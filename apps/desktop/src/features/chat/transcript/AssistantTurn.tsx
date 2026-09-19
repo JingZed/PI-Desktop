@@ -7,7 +7,6 @@ import { useTranslation } from "react-i18next";
 import type {
   AgentActivity,
   ContextCompactionMark,
-  HostedSearchSource,
 } from "@pi-desktop/shared";
 import { formatCompactTokenCount } from "@pi-desktop/shared";
 import {
@@ -29,8 +28,6 @@ import {
 import { projectTurnProcess } from "../../../lib/turn-process";
 import { useAppStore } from "../../../stores/app-store";
 import { Markdown } from "../../../components/Markdown";
-import { rewriteInlineCitationMarkup } from "../../../lib/hosted-search-ui";
-import { HostedSearchCitationsProvider } from "../../../components/CitationBadge";
 import { IconBranch, IconReview } from "../../../components/icons";
 import { TooltipButton } from "../../../components/ui";
 import {
@@ -280,18 +277,6 @@ export const AssistantTurn = memo(function AssistantTurn({
   timingsRef.current = turnDelegationTimings;
   const { process, responses } = projectTurnProcess(entry);
   const activePart = isActive ? entry.parts.at(-1) : undefined;
-  const citationSources = useMemo(() => {
-    const sources: HostedSearchSource[] = [];
-    const seen = new Set<string>();
-    for (const message of messages) {
-      for (const source of message.hostedSearch?.sources ?? []) {
-        if (seen.has(source.url)) continue;
-        seen.add(source.url);
-        sources.push(source);
-      }
-    }
-    return sources;
-  }, [messages]);
 
   const renderPart = (part: AssistantTurnPart) =>
     part.kind === "activity" ? (
@@ -317,9 +302,7 @@ export const AssistantTurn = memo(function AssistantTurn({
       >
         {part.message.content ? (
           <div className="prose-chat">
-            <Markdown
-              source={rewriteInlineCitationMarkup(part.message.content, citationSources)}
-            />
+            <Markdown source={part.message.content} />
           </div>
         ) : null}
         {part.message.error ? (
@@ -329,7 +312,6 @@ export const AssistantTurn = memo(function AssistantTurn({
     );
 
   return (
-    <HostedSearchCitationsProvider sources={citationSources}>
     <div
       className={`message-row assistant assistant-turn${streaming ? " streaming" : ""}`}
       data-minimap-id={entry.anchorId}
@@ -379,7 +361,6 @@ export const AssistantTurn = memo(function AssistantTurn({
         ) : null}
       </div>
     </div>
-    </HostedSearchCitationsProvider>
   );
 }, assistantTurnPropsEqual);
 

@@ -29,6 +29,10 @@ docs/image/pi_logo.webp
 .env.*
 !.env.example
 *.local
+*.p12
+*.cer
+*.p8
+*.mobileprovision
 
 # IDE / OS
 .DS_Store

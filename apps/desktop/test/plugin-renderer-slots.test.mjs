@@ -1,5 +1,5 @@
 /**
- * Unit tests for the trusted renderer host's host-side pieces (ADR 0287).
+ * Unit tests for the trusted renderer host's host-side pieces (ADR 0291).
  *
  * The renderer host is the first plugin surface that runs inside the app window,
  * so the parts that decide what a plugin may own are tested directly rather than

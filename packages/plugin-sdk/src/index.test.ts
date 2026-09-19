@@ -144,7 +144,7 @@ describe("validateManifest", () => {
     ).toMatch(/duplicate session source/);
   });
 
-  it("validates typed theme variables and sandboxed settings destinations", () => {
+  it("validates typed theme variables and data-only scenic Settings contributions", () => {
     expect(
       validateContributions({
         themes: [{
@@ -153,12 +153,18 @@ describe("validateManifest", () => {
           path: "themes/scenic.css",
           variables: [{ name: "--nexus-backdrop-blur", type: "length", unit: "px", min: 0, max: 20, default: 6 }],
         }],
-        settingsDestinations: [{
+        scenicThemes: {
           id: "scenic-themes",
           label: { en: "Scenic themes", "zh-CN": "风景主题" },
+          description: { en: "Scenic cards", "zh-CN": "风景卡片" },
           icon: "palette",
-          entry: "settings/index.html",
-        }],
+          themes: [{
+            themeId: "scenic",
+            label: { en: "Scenic", "zh-CN": "风景" },
+            description: { en: "Scenic card", "zh-CN": "风景卡片" },
+            previewAsset: "assets/scenic.png",
+          }],
+        },
       }),
     ).toBeUndefined();
     expect(
@@ -262,6 +268,26 @@ describe("validateManifest", () => {
     expect(validateManifest({ ...base, main: 7 as never }).error).toBe(
       "manifest.main must be a non-empty string",
     );
+  });
+
+  it("validates host-rendered scenic Settings contributions", () => {
+    const scenicThemes = {
+      id: "nexus-scenic-themes",
+      label: { en: "Nexus Scenic Themes", "zh-CN": "Nexus 风景主题" },
+      description: { en: "Four scenic themes", "zh-CN": "四款风景主题" },
+      icon: "palette" as const,
+      themes: [{
+        themeId: "twilight-mountains",
+        label: { en: "Twilight Mountains", "zh-CN": "暮光山脉" },
+        description: { en: "Twilight glass", "zh-CN": "暮光玻璃" },
+        previewAsset: "assets/twilight-mountains.png",
+      }],
+    };
+    expect(validateContributions({ scenicThemes })).toBeUndefined();
+    expect(validateContributions({ scenicThemes: { ...scenicThemes, themes: [] } })).toMatch(/1 to 12 cards/);
+    expect(validateContributions({ scenicThemes: { ...scenicThemes, themes: [{ ...scenicThemes.themes[0], previewAsset: "../escape.png" }] } })).toMatch(/previewAsset/);
+    expect(validateContributions({ scenicThemes: { ...scenicThemes, themes: [{ ...scenicThemes.themes[0], label: "Twilight" as unknown as typeof scenicThemes.themes[number]["label"] }] } })).toMatch(/localized label/);
+    expect(validateContributions({ scenicThemes: { ...scenicThemes, keywords: ["scenic" as unknown as { en: string; "zh-CN": string }] } })).toMatch(/keywords/);
   });
 });
 
@@ -464,7 +490,7 @@ describe("planSafeActions contract (ADR 0211)", () => {
 });
 
 describe("contributed theme assets and window appearance", () => {
-  it("accepts a whitelisted absolute asset list", () => {
+  it("accepts whitelisted package-relative and absolute asset lists", () => {
     expect(
       validateContributions({
         themes: [
@@ -472,17 +498,15 @@ describe("contributed theme assets and window appearance", () => {
             id: "midnight",
             label: "Midnight",
             path: "a.css",
-            assets: ["C:/art/bg.png", "file:///C:/font/ui.woff2", "/art/sheen.svg"],
+            assets: ["assets/bg.png", "fonts/ui.woff2", "assets/sheen.svg", "C:/art/external.png"],
           },
         ],
       }),
     ).toBeUndefined();
   });
 
-  it("rejects a relative path, an escape, an unknown scheme or a wrong extension", () => {
+  it("rejects an escape, an unknown scheme or a wrong extension", () => {
     for (const asset of [
-      "art/bg.png",
-      "./art/bg.png",
       "../bg.png",
       "art/../bg.png",
       "C:/art/../bg.png",
@@ -506,7 +530,7 @@ describe("contributed theme assets and window appearance", () => {
             id: "m",
             label: "M",
             path: "a.css",
-            assets: ["C:/art/bg.png", "file:///C:/art/bg.png"],
+            assets: ["assets/bg.png", "./assets/bg.png", "C:/art/external.png", "file:///C:/art/external.png"],
           },
         ],
       }),
@@ -642,6 +666,7 @@ describe("PLUGIN_PERMISSIONS", () => {
       "models.list",
       "project.create",
       "session.read",
+      "usage.read",
       "fs.read",
       "fs.write",
       "fs.delete",
@@ -1030,12 +1055,6 @@ describe("manifest i18n", () => {
 
 describe("manifestEntries / pluginHasEntry", () => {
   const view = { id: "changes", title: "Changes", entry: "views/changes.html" };
-  const destination = {
-    id: "scenic-themes",
-    label: { en: "Scenic themes", "zh-CN": "风景主题" },
-    icon: "palette",
-    entry: "settings/index.html",
-  } as const;
 
   it("reports all four flags for a manifest that declares everything", () => {
     const full = {
@@ -1044,7 +1063,6 @@ describe("manifestEntries / pluginHasEntry", () => {
       ui: { panel: "renderer/index.html" },
       contributes: {
         views: [view],
-        settingsDestinations: [destination],
         agentExtensions: ["agent/hooks.ts"],
       },
     };
@@ -1055,7 +1073,6 @@ describe("manifestEntries / pluginHasEntry", () => {
   it("treats every plugin page as an entry, and agent extensions as none", () => {
     expect(pluginHasEntry({ ui: { panel: "renderer/index.html" } })).toBe(true);
     expect(pluginHasEntry({ contributes: { views: [view] } })).toBe(true);
-    expect(pluginHasEntry({ contributes: { settingsDestinations: [destination] } })).toBe(true);
     expect(pluginHasEntry({})).toBe(false);
     // An empty list is not a page either.
     expect(pluginHasEntry({ contributes: { views: [] } })).toBe(false);

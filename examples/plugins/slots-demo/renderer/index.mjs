@@ -1,5 +1,5 @@
 /**
- * Renderer half of the slots demo (ADR 0287, spec 07-plugins/16 §2A).
+ * Renderer half of the slots demo (ADR 0291, spec 07-plugins/16 §2A).
  *
  * The host fetches this file from
  * `plugin-renderer://acme.slots-demo/renderer/index.mjs` and evaluates it inside
@@ -9,7 +9,7 @@
  *
  * A slot component is handed exactly two things: the slot's host data as props,
  * and `dispatch(action, payload)` — the plugin's one way to ask the host to do
- * something (ADR 0290). `dispatch` acts for `acme.slots-demo`, and it accepts
+ * something (ADR 0294). `dispatch` acts for `acme.slots-demo`, and it accepts
  * only the actions this manifest lists in `rendererActions`: an action the
  * plugin did not declare is refused with a structured error
  * (`PLUGIN_ACTION_UNDECLARED`) instead of being silently ignored.
@@ -93,7 +93,7 @@ const STYLES = `
  * Everything this component gets arrives as a prop. The slot's data comes in as
  * `entry` — the `{ id, role }` of the row the badge sits under — and the
  * plugin's one way out to the host comes in as `dispatch(action, payload)`
- * (ADR 0290). Nothing is ambient and nothing is guaranteed: the host may mount
+ * (ADR 0294). Nothing is ambient and nothing is guaranteed: the host may mount
  * a slot before the data a plugin declared is ready, so this reads `entry?.id`
  * and falls back, the way any React component tolerates a missing prop.
  */

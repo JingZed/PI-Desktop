@@ -83,14 +83,14 @@ Local plugins usable → developer-friendly → marketplace distribution → sig
   `completionSource`、`inlineConfirm`、`modal`、`overlay`、`composerReference` ✅
 - 通过 `plugin-renderer` scheme 惰性获取与求值、命名空间样式隔离、React 单例规则、
   逐槽位错误边界，以及插件行上的 `renderer` 能力标记 ✅
-- 规格：[16-trusted-extensions.md](/zh-CN/spec/07-plugins/16-trusted-extensions) §2A；ADR 0287
+- 规格：[16-trusted-extensions.md](/zh-CN/spec/07-plugins/16-trusted-extensions) §2A；ADR 0291
 
 ### R9 — 运行时槽位（issue #561）
-- 槽位权限模型已交付：ADR 0291 要建的每个 `runtime.*` 名字都已注册，sidecar 会在
+- 槽位权限模型已交付：ADR 0295 要建的每个 `runtime.*` 名字都已注册，sidecar 会在
   处理器运行前解析该事件的槽位权限，只持有 `agent.extension` 的插件会被拒绝并收到
-  `permission_denied` 诊断（规格 13 §2C、ADR 0291 规则 2）。本节此前描述的 D1 偏离
+  `permission_denied` 诊断（规格 13 §2C、ADR 0295 规则 2）。本节此前描述的 D1 偏离
   就此消除。
-- ADR 0291 分期中的批次 A 已交付：Abort Turn (3) 有自己的入口（`requestTurnAbort`）
+- ADR 0295 分期中的批次 A 已交付：Abort Turn (3) 有自己的入口（`requestTurnAbort`）
   以及插件任务可观察到的该轮取消信号；Tool Extend (5) 接入工具结果折叠；Turn Facts
   (9) 由 host-core 在架构 v21 上通过 `turn.facts` RPC 回答（04-data-storage §4.16）。
   面向插件的读取入口尚未实现，所以该槽位目前没有插件可调用的东西。
@@ -99,13 +99,13 @@ Local plugins usable → developer-friendly → marketplace distribution → sig
   桌面当前触发哪些钩子点，规格 13 §2C 按事件逐一说明。
 - 已交付：Before Send (1) —— 运行时的 `input` 钩子在 Electron main 持久化用户消息之后、
   进入队列之前触发，三种内核动作全部采纳；插件所做的每次改写都经 `plugin.rewrites.record`
-  RPC 按差异级别存入（04-data-storage §4.15）并在消息行上标出（ADR 0291 规则 5）——
+  RPC 按差异级别存入（04-data-storage §4.15）并在消息行上标出（ADR 0295 规则 5）——
   以及 Session Lifecycle (11) —— 创建、切换、删除与 fork 均以仅告知方式通告，压缩交接保留其取消。
 - 尚未交付：Turn Recap (8) 与 Turn Continue (10) —— 只有已注册的名字，背后没有钩子或调用；
   Approval Before (12) —— 未实现。
-- Before Request (6) 按 ADR 0291 的分期仍排除在本轮之外；槽位集合、逐槽位权限与实施
+- Before Request (6) 按 ADR 0295 的分期仍排除在本轮之外；槽位集合、逐槽位权限与实施
   顺序都由
-  [ADR 0291](../../../adr/0291-runtime-slots-and-their-permissions.md) 固定。
+  [ADR 0295](../../../adr/0295-runtime-slots-and-their-permissions.md) 固定。
 
 ## 3. 映射到产品里程碑
 

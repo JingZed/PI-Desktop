@@ -12,7 +12,8 @@
 # with its native pi-desktop-host-core Rust sidecar. The Linux app.asar is also
 # exported as a system-Electron repackaging asset, and all outputs — with their
 # electron-updater latest*.yml feeds — are published to the GitHub Release
-# (D126/D285/D364).
+# (D126/D285/D364). macOS tag artifacts are Developer ID-signed, notarized, and
+# stapled before upload (D450 / ADR 0289).
 #
 # It also builds the headless `pi-host` bundle for every Linux platform the
 # desktop publishes (currently x64) and publishes it as
@@ -29,9 +30,9 @@ on:
   workflow_dispatch:
     inputs:
       sign_macos:
-        description: 'Sign and notarize macOS artifacts for this run'
+        description: 'Sign and notarize macOS artifacts (default true; set false only for unsigned debug artifacts)'
         required: false
-        default: false
+        default: true
         type: boolean
 
 # Least privilege by default; only the publish job needs to write the release.
@@ -84,6 +85,9 @@ jobs:
   build:
     name: Build ${{ matrix.name }}
     needs: verify
+    env:
+      # Tag pushes always sign. workflow_dispatch signs unless explicitly disabled.
+      MACOS_SIGN_RELEASE: ${{ github.event_name != 'workflow_dispatch' || inputs.sign_macos == true }}
     strategy:
       fail-fast: false
       matrix:
@@ -194,10 +198,9 @@ jobs:
         run: pnpm --filter @pi-desktop/desktop run ${{ matrix.dist }} -- --${{ matrix.arch }}
 
       - name: Package unsigned macOS installer
-        if: matrix.platform == 'macos' && inputs.sign_macos != true
+        if: matrix.platform == 'macos' && env.MACOS_SIGN_RELEASE != 'true'
         env:
-          # Default release lane: macOS artifacts stay unsigned unless a
-          # workflow_dispatch run explicitly sets sign_macos=true.
+          # Debug-only lane: workflow_dispatch with sign_macos=false.
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: |
           set -euo pipefail
@@ -205,11 +208,41 @@ jobs:
           # pattern labels ZIPs, and the dmg target pattern labels DMGs.
           pnpm --filter @pi-desktop/desktop run dist:mac -- --${{ matrix.arch }}
 
-      - name: Package signed and notarized macOS installer
-        if: matrix.platform == 'macos' && inputs.sign_macos == true
+      - name: Require macOS signing and notarization secrets
+        if: matrix.platform == 'macos' && env.MACOS_SIGN_RELEASE == 'true'
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [[ -n "${CSC_LINK}" ]] || missing+=(CSC_LINK)
+          [[ -n "${CSC_KEY_PASSWORD}" ]] || missing+=(CSC_KEY_PASSWORD)
+          [[ -n "${APPLE_ID}" ]] || missing+=(APPLE_ID)
+          [[ -n "${APPLE_APP_SPECIFIC_PASSWORD}" ]] || missing+=(APPLE_APP_SPECIFIC_PASSWORD)
+          [[ -n "${APPLE_TEAM_ID}" ]] || missing+=(APPLE_TEAM_ID)
+          if ((${#missing[@]} > 0)); then
+            echo "::error::Missing GitHub Actions secrets for macOS signing/notarization: ${missing[*]}"
+            echo "::error::Add them under Settings → Secrets and variables → Actions. See docs/spec/06-delivery/06-release-runbook.md."
+            exit 1
+          fi
+          if [[ "${APPLE_TEAM_ID}" != "DUV63RKYTW" ]]; then
+            echo "::error::APPLE_TEAM_ID must be DUV63RKYTW (XingYu Liu Developer ID team)."
+            exit 1
+          fi
+
+      - name: Package signed and notarized macOS installer
+        if: matrix.platform == 'macos' && env.MACOS_SIGN_RELEASE == 'true'
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          # electron-builder rejects the "Developer ID Application:" prefix on
+          # identity names and resolves the certificate itself, so CSC_NAME
+          # carries the bare common name only.
+          CSC_NAME: "XingYu Liu (DUV63RKYTW)"
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -221,12 +254,16 @@ jobs:
             -c.mac.forceCodeSigning=true \
             -c.mac.notarize=true
 
-      - name: Staple macOS installer ticket
-        if: matrix.platform == 'macos' && inputs.sign_macos == true
-        run: scripts/staple-macos-release-dmg.sh apps/desktop/release
+      - name: Notarize and staple the macOS DMG
+        if: matrix.platform == 'macos' && env.MACOS_SIGN_RELEASE == 'true'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: scripts/notarize-and-staple-macos-release-dmg.sh apps/desktop/release
 
       - name: Verify signed and notarized macOS installer
-        if: matrix.platform == 'macos' && inputs.sign_macos == true
+        if: matrix.platform == 'macos' && env.MACOS_SIGN_RELEASE == 'true'
         run: scripts/verify-macos-release.sh apps/desktop/release
 
       - name: Verify Linux host-core glibc floor

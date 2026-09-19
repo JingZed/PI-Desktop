@@ -461,7 +461,7 @@ CREATE INDEX idx_turns_session ON turns(session_id, started_at DESC);
 未记录 usage 记录的回合保留该行创建时的零值。`usage_json` 是 Electron 在
 `session.endTurn` 上报的 provider 原始记录——缓存／推理细项都在其中。当插件工具
 上报过花费时，该记录还以独立的 `pluginToolUsage` 成员携带该回合的**插件工具花费**，
-它与模型总量并列而不是被并入其中（ADR 0291 槽位 5）；插件工具没有上报花费的回合
+它与模型总量并列而不是被并入其中（ADR 0295 槽位 5）；插件工具没有上报花费的回合
 没有该成员。两者都按存储原样读回：`turn.facts` 原样给出该记录，并单独暴露
 `pluginToolUsage`（§4.16）。
 
@@ -823,7 +823,7 @@ CREATE INDEX idx_message_revisions_root
 ### 4.10 artifacts — 会话生成的文件
 
 支撑工件表面（基准 §3.7），也是"这一回合改了哪些文件"的 host 侧答案
-（ADR 0291 规则 8）。v1 计划从 `audit_log` 推导出它，但审计有效负载从未记录
+（ADR 0295 规则 8）。v1 计划从 `audit_log` 推导出它，但审计有效负载从未记录
 文件路径；显式的投影精确、有索引，并且能够经受审计修剪。
 
 ```sql
@@ -940,7 +940,7 @@ CREATE INDEX idx_audit_turn ON audit_log(turn_id, ts)
   WHERE turn_id IS NOT NULL;
 ```
 
-`turn_id`（架构 v21，ADR 0291 规则 8）是记录所属的回合，因此某个回合的记录是一次
+`turn_id`（架构 v21，ADR 0295 规则 8）是记录所属的回合，因此某个回合的记录是一次
 索引读取，而不必扫描已脱敏的有效负载。主机在知道回合时写入它：`tool_execute`、
 `tool_denied` 与 `tool_aborted` 都带有该调用发生所在的回合，`turn.facts` 按它统计
 已执行的调用（§4.16）。当记录与回合无关时它为 NULL，v21 之前写入的每一行同样为
@@ -994,7 +994,7 @@ CREATE INDEX idx_notifications_unread
 ### 4.15 plugin_rewrites — 插件改写的差分级审计（架构 v20）
 
 运行时插槽对"模型收到的内容"所做的每一次改写都按**差分级**记录 —— 改了哪些字符、哪些
-消息、哪些负载字段（ADR 0291 规则 5）。生产者是插槽 #1（`runtime.send.before`，发出的
+消息、哪些负载字段（ADR 0295 规则 5）。生产者是插槽 #1（`runtime.send.before`，发出的
 消息）与插槽 #6（`runtime.request.before`，系统提示词 / 消息列表 / 请求负载）。插槽 #1
 已实现：agent 运行时的发送钩子把两段文本交给宿主，`plugin.rewrites.record` 存入差异，
 transcript 在对应行标出（"由插件 X 改写"），展开可见改动片段。插槽 #6 尚未实现：存储与
@@ -1060,7 +1060,7 @@ CREATE INDEX idx_plugin_rewrites_turn
 
 ### 4.16 回合事实 —— 单个回合的权威数字（槽位 #9）
 
-`turn.facts` 只从主机拥有的表中回答"这个回合发生了什么"（ADR 0291 规则 8，槽位 #9
+`turn.facts` 只从主机拥有的表中回答"这个回合发生了什么"（ADR 0295 规则 8，槽位 #9
 `runtime.turn.facts`）；没有任何数字是从插件观察到的事件重建的，也不涉及对话正文。
 "这个回合"只意味着一种东西，因为以下每个来源都以该回合自身的 id 为键：
 
@@ -1225,18 +1225,18 @@ outbox 排空。渲染器侧的停止绝不重写已有已开始回复的转录
 - **架构 v19 把 `artifacts` 重建为每次记录的触碰一行。** 旧的 `(session_id, path)`
   主键被去掉，新增代理列 `id` 和 `idx_artifacts_session_turn` 索引，于是 `turn_id`
   能把文件归属到每一个改动它的回合，`artifacts.list { sessionId, turnId }` 直接回答
-  "这一回合"（ADR 0291 规则 8）。所有已有行连同 `path`、`op`、`turn_id` 和
+  "这一回合"（ADR 0295 规则 8）。所有已有行连同 `path`、`op`、`turn_id` 和
   `updated_at` 原样保留 —— 旧形状每个文件只能有一行，因此不会发生合并 —— `op`
   在 SQL 中不受约束，所以不需要重写任何已存值。该步骤之前保留
   `pi.sqlite.v18.bak` 副本。
 - **架构 v20 是追加式的。** 它新增 `plugin_rewrites`，即"插件改动了模型收到内容"的差分级
-  审计，连同两个读取索引（ADR 0291 规则 5）。没有任何已有行变化，也没有已存值被重写；
+  审计，连同两个读取索引（ADR 0295 规则 5）。没有任何已有行变化，也没有已存值被重写；
   该表初始为空，因为它的生产者 —— 插槽 #1（`runtime.send.before`）与插槽 #6
   （`runtime.request.before`）—— 尚未实现，审计面因此先于依赖它的能力落地。该步骤之前
   保留 `pi.sqlite.v19.bak` 副本。
 - **架构 v21 是追加式的。** 它新增可空的 `audit_log.turn_id` 列及其部分索引
   `idx_audit_turn`，使单个回合的记录 —— 以及随其而来的 `turn.facts`（§4.16，
-  ADR 0291 规则 8）—— 成为索引读取，而不必扫描已脱敏的有效负载。每一条已有行都保留
+  ADR 0295 规则 8）—— 成为索引读取，而不必扫描已脱敏的有效负载。每一条已有行都保留
   自己的内容并携带 NULL 回合：该列是主机在知道回合时写入的事实，绝不是回填的猜测，
   因此按回合读取只会看到主机真正归属过的行。该列追加在最后（`ALTER TABLE` 只能追加），
   所以迁移后的文件与全新文件保持相同的列顺序。该步骤在改动前先探测
@@ -1286,6 +1286,14 @@ outbox 排空。渲染器侧的停止绝不重写已有已开始回复的转录
 主机读取设置时会将缺失、格式错误或超出范围的值规范化为 600，设置写入则验证
 1–1,000,000 的整数范围。因此现有数据库会在读取时延迟获得默认值，不需要破坏性
 迁移或第二个设置存储。
+
+同一个应用设置 JSON 还可选存储提示词增强的覆盖值
+`promptEnhancementCustomTemplate`（决定已存模板是否生效的开关）、
+`promptEnhancementUserTemplate`、`promptEnhancementProviderId`、
+`promptEnhancementModelId` 与 `promptEnhancementThinkingLevel`（ADR 0121）。用户模板缺失或为空表示使用内置默认值，
+因此清空字段不会写入空字符串而是不写该键。非空的用户模板必须包含草稿变量，且
+不得超过 `PROMPT_ENHANCEMENT_TEMPLATE_MAX_LENGTH`；host-core 会拒绝违反任一规则的
+写入，并丢弃已不再读取的 `promptEnhancementSystemPrompt`。无需提升 schema 版本。
 - Plan 和 Goal 工件永远不会根据转录内容重建。开
   启动,
   一笔交易标志着每笔 `pending` 批准和每笔 `queued` 或

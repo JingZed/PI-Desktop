@@ -1,4 +1,4 @@
-# ADR 0287: Trusted renderer execution host
+# ADR 0291: Trusted renderer execution host
 
 - Status: Accepted for implementation
 - Date: 2026-09-18

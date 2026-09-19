@@ -44,7 +44,7 @@ export function createSessionCoordination({
   const turnSettlements = new Map<string, Set<() => void>>();
   const activeTurnUsages = new Map<string, MessageUsage>();
   /**
-   * Spend plugin tools reported for the session's current turn (ADR 0291 slot
+   * Spend plugin tools reported for the session's current turn (ADR 0295 slot
    * 5). It is recorded as its own component of the turn, never summed into the
    * model's token counts.
    */

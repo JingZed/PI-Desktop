@@ -1,16 +1,16 @@
-# ADR 0290: The renderer plugin interface and its host relay
+# ADR 0294: The renderer plugin interface and its host relay
 
 - Status: Accepted for implementation
 - Date: 2026-09-18
 - Related: issue #528 (sub-issue #545) ·
-  [ADR 0287](0287-trusted-renderer-execution-host.md) ·
-  [ADR 0288](0288-runtime-hooks-for-plugin-host-processes.md) ·
+  [ADR 0291](0291-trusted-renderer-execution-host.md) ·
+  [ADR 0292](0292-runtime-hooks-for-plugin-host-processes.md) ·
   [02-plugin-manifest-schema](../spec/07-plugins/02-plugin-manifest-schema.md) ·
   [16-trusted-extensions](../spec/07-plugins/16-trusted-extensions.md)
 
 ## Context
 
-ADR 0287 fixed how a trusted renderer module is loaded, how its styles are
+ADR 0291 fixed how a trusted renderer module is loaded, how its styles are
 namespaced, and what a crash costs. It did not fix what a slot component may
 *do*. Today the answer is "nothing":
 
@@ -32,10 +32,10 @@ would invent its own callback props — fourteen undocumented interfaces, each
 with its own error behaviour, and no single place where a plugin states what it
 uses and what it does.
 
-Two facts from ADR 0287 bound what such a wire can be worth. The trusted
+Two facts from ADR 0291 bound what such a wire can be worth. The trusted
 renderer module shares the host's realm, module graph and React tree, and it can
 reach `window.piDesktop` and all 243 whitelisted preload channels with no
-per-caller check (ADR 0287 decision 6, measured in a real Electron run). So this
+per-caller check (ADR 0291 decision 6, measured in a real Electron run). So this
 interface is a contract for plugins that behave, not a wall around plugins that
 do not.
 
@@ -92,7 +92,7 @@ do not.
    the calling plugin's own entry rather than a neighbour's. This is a
    correctness measure for the normal case. It is not containment, and is not
    described as such: a module in the host realm can call IPC directly, so a
-   plugin that intends to lie is not stopped by this check (ADR 0287 decision 6).
+   plugin that intends to lie is not stopped by this check (ADR 0291 decision 6).
 
 6. **Some positions need the host to call the plugin locally, and synchronously.**
    A slot that sits inside rendering — a per-message block whose height the
@@ -120,11 +120,11 @@ do not.
 
 8. **Within one slot, plugins render in registration order.** A later plugin
    cannot take a position away from an earlier one, matching the ordering rule
-   ADR 0288 fixed for runtime hooks.
+   ADR 0292 fixed for runtime hooks.
 
 9. **A refused dispatch is visible.** A disallowed or unknown action returns a
    structured error, is audited, and leaves a diagnostic on the plugin's row,
-   the same way ADR 0288 treats a refusing hook.
+   the same way ADR 0292 treats a refusing hook.
 
 ## Consequences
 
@@ -155,7 +155,7 @@ do not.
   to state what it uses.
 - **One ambient dispatch handle on the document, e.g. `window.piPlugin`.** Rejected:
   it would be a single handle for every plugin in the window, with no natural
-  way to attribute a call to a plugin — the same mistake ADR 0287 decision 6
+  way to attribute a call to a plugin — the same mistake ADR 0291 decision 6
   recorded about the preload bridge.
 - **Isolation first: iframe, worker, or `MessagePort` behind a token.** Rejected,
   and the evidence is specific rather than theoretical: a comparable plugin host

@@ -3,7 +3,7 @@
 A PI-Desktop example plugin for the trusted renderer host: it registers React
 components into host-owned slots and injects one namespaced stylesheet. It is the
 copy-me shape for `manifest.renderer` (spec `07-plugins/16-trusted-extensions.md`
-§2A, ADR 0287).
+§2A, ADR 0291).
 
 ## What it demonstrates
 
@@ -19,7 +19,7 @@ copy-me shape for `manifest.renderer` (spec `07-plugins/16-trusted-extensions.md
   a transcript entry) and `modal` (a blocking, app-level dialog).
 - **Data in, actions out.** A slot component is handed two things: the slot's
   host data as props, and `dispatch(action, payload)`, which acts for the plugin
-  that registered the component (ADR 0290). `rendererData` and
+  that registered the component (ADR 0294). `rendererData` and
   `rendererActions` in the manifest name what the module reads and calls, and
   the vocabulary belongs to the host — this example reads `entry`, dispatches
   `ui.toast` from the badge's first button, and `plugin.call` from its second.
@@ -99,5 +99,5 @@ the host's default rendering and the crash is reported as a diagnostic.
 ## Reference
 
 - Spec: `docs/spec/07-plugins/16-trusted-extensions.md` §2A
-- Decision: `docs/adr/0287-trusted-renderer-execution-host.md`
+- Decision: `docs/adr/0291-trusted-renderer-execution-host.md`
 - Other examples: `examples/plugins/README.md`

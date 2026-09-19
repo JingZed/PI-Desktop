@@ -97,7 +97,7 @@ CSS 无法脚本化，但它可能会产生误导：主题仍然是第三方代�
 
 受信任 UI 层级把插件代码放进**应用自己的窗口**：入口模块与宿主渲染器共享
 JavaScript realm、DOM、模块图和 React 树。没有进程隔离，没有 `iframe`，也没有
-第二层沙箱（ADR 0287）。随之交付的缓解措施：
+第二层沙箱（ADR 0291）。随之交付的缓解措施：
 
 - **React 单例。** 宿主通过模块的 import map 注入自己的 React；自带 React 的插件
   在加载时被拒绝并记录诊断，因为两份 React 会破坏 hooks 与 context。
@@ -115,7 +115,7 @@ JavaScript realm、DOM、模块图和 React 树。没有进程隔离，没有 `i
 
 这一层级放弃了什么会被记录而不是被隐含：入口的无限循环、内存泄漏或全局污染不会被
 错误边界兜住，卸载也不保证回滚插件造成的全局改动。渲染器宿主的崩溃半径是同一
-realm 设计的已知代价（ADR 0287）。入口契约本身见
+realm 设计的已知代价（ADR 0291）。入口契约本身见
 [16-trusted-extensions.md](/zh-CN/spec/07-plugins/16-trusted-extensions) §2A。
 
 ## 4. 权限授予用户体验

@@ -256,6 +256,8 @@ export const fr = {
     "speakSaved": "Audio enregistré dans {{path}}",
     "undoEnhancement": "Annuler l'amélioration",
     "enhancementFailed": "L'amélioration de l'invite a échoué",
+    "enhancementTimeout":
+      "La réécriture a pris trop de temps. Réessayez, ou choisissez un modèle plus rapide dans les réglages.",
     "dismissEnhancementError": "Ignorer l'erreur d'amélioration",
     sendWhileRunning: "Envoyer à la suite · {{shortcut}} pour réorienter",
     steeringUnavailable: "Ce tour ne peut plus recevoir de consignes. Votre brouillon a été conservé.",
@@ -464,21 +466,6 @@ export const fr = {
     "thinking": "Réflexion",
     "thinkingShow": "Afficher la réflexion",
     "thinkingHide": "Masquer la réflexion",
-    webSearch: "Web search",
-    webSearchOn: "Web search on",
-    webSearchOff: "Web search off",
-    webSearchUnsupported: "Current API style does not support native web search",
-    webSearchRunning: "Searching the web…",
-    webSearchSources: "{{count}} source",
-    webSearchSources_other: "{{count}} sources",
-    webSearchQuery: "Searched {{query}}",
-    webSearchShow: "Show web search",
-    webSearchHide: "Hide web search",
-    webSearchEmpty: "No sources were returned for this search.",
-    webSearchSummary: "Searched {{searchCount}} times · {{sourceCount}} sources",
-    webSearchMore: "View {{count}} more sources",
-    webSearchCitationPrev: "Previous citation",
-    webSearchCitationNext: "Next citation",
     "untitledTask": "Nouvelle tâche"
   },
   "session": {
@@ -638,6 +625,7 @@ sklm: {
       "subagents": "Sous-agents",
       "import": "Importation",
       "projects": "Projets",
+      "remoteHosts": "Hôtes distants",
       "info": "Informations"
     },
     "general": "Général",
@@ -836,6 +824,34 @@ sklm: {
     "subagentSaved": "Enregistré {{name}}",
     "import": "Importation",
     "projectArchive": "Archive du projet",
+    "remoteHosts": {
+      "title": "Hôtes distants",
+      "overview": "Machines pi-host appariées que vous pouvez piloter depuis ce bureau. Les sessions sur un hôte apparié s'affichent comme locales ; la connexion reste dans le processus principal et aucun jeton d'appareil n'atteint cette page.",
+      "listTitle": "Hôtes distants appariés",
+      "listError": "Impossible de charger les hôtes",
+      "loading": "Chargement…",
+      "emptyTitle": "Aucun hôte apparié pour l'instant",
+      "emptyBody": "Appariez une machine ci-dessous pour y démarrer une session.",
+      "statusOnline": "En ligne",
+      "statusOffline": "Hors ligne",
+      "remove": "Supprimer",
+      "removing": "Suppression…",
+      "removed": "{{label}} supprimé.",
+      "removeFailed": "Échec de la suppression : {{message}}",
+      "pairTitle": "Apparier un nouvel hôte",
+      "pair": "Apparier",
+      "pairing": "Appariement…",
+      "pairAction": "Ajouter",
+      "pairSucceeded": "{{label}} apparié.",
+      "pairFailed": "Échec de l'appariement : {{message}}",
+      "fieldLabel": "Étiquette",
+      "fieldLabelDesc": "Affichée dans la liste et enregistrée sur l'hôte apparié.",
+      "fieldLabelPlaceholder": "Linux à la maison",
+      "fieldUrl": "URL RACP",
+      "fieldUrlDesc": "Point d'accès en boucle locale de pi-host, ex. ws://127.0.0.1:9443/racp (transmis via SSH).",
+      "fieldPairingToken": "Jeton d'appariement",
+      "fieldPairingTokenDesc": "Jeton ppt1.* à usage unique de la sortie de démarrage de pi-host. Consommé à l'appariement."
+    },
     "importTitle": "Importer à partir d'autres outils",
     "importScan": "Scanner",
     "importScanning": "Analyse…",
@@ -1165,6 +1181,33 @@ sklm: {
     "fontSizeXl": "Trenta",
     "fontSizeScale": "Échelle de taille du texte",
     "fontSizePercent": "{{value}}%",
+    "promptEnhancementTitle": "Amélioration du prompt",
+    "promptEnhancementDesc":
+      "S'applique à l'action « Améliorer le prompt » du compositeur. Le prompt système est intégré ; le modèle et le modèle de texte sont personnalisables.",
+    "promptEnhancementCustomTemplate": "Utiliser un modèle personnalisé",
+    "promptEnhancementCustomTemplateDesc":
+      "Remplace le modèle utilisateur intégré par le vôtre. Le prompt système reste intégré.",
+    "promptEnhancementCustomTemplateNeedsTemplate":
+      "Enregistrez d'abord un modèle personnalisé ; l'interrupteur choisit ensuite entre celui-ci et le modèle intégré.",
+    "promptEnhancementEdit": "Modifier",
+    "promptEnhancementModelTitle": "Amélioration du prompt",
+    "promptEnhancementModel": "Modèle par défaut",
+    "promptEnhancementThinking": "Effort de raisonnement",
+    "promptEnhancementThinkingDesc":
+      "Effort de raisonnement pour la réécriture. Désactivé est la valeur par défaut et la plus rapide.",
+    "promptEnhancementThinkingOff": "Désactivé",
+    "promptEnhancementModelFollow": "Suivre le modèle actuel",
+    "promptEnhancementModelUnavailable":
+      "Indisponible — l'amélioration utilisera le modèle actuel",
+    "promptEnhancementUserTemplate": "Modèle utilisateur",
+    "promptEnhancementUserTemplateDesc":
+      "Encadre le brouillon. Doit contenir la variable de brouillon ; utilisez le bouton d'insertion.",
+    "promptEnhancementInsertDraft": "Insérer la variable de brouillon",
+    "promptEnhancementRestore": "Rétablir la valeur par défaut",
+    "promptEnhancementMissingDraftVariable":
+      "Le modèle utilisateur doit contenir la variable de brouillon, sinon le brouillon ne peut pas être envoyé.",
+    "promptEnhancementTooLong": "Le modèle utilisateur ne doit pas dépasser 8000 caractères.",
+    "promptEnhancementSaveError": "Impossible d'enregistrer les paramètres d'amélioration du prompt.",
   },
   "project": {
     "open": "Ouvrir le projet",
@@ -1749,7 +1792,8 @@ sklm: {
       "net.websocket": "Ouvrir des connexions en temps réel",
       "bus.publish": "Envoyer des messages à d'autres plugins",
       "bus.subscribe": "Recevoir des messages d'autres plugins",
-      "browser.cdp": "Contrôler le navigateur du panneau de travail"
+      "browser.cdp": "Contrôler le navigateur du panneau de travail",
+      "usage.read": "Lire les statistiques d'utilisation"
     },
     "permissionHelp": {
       "ui.panel": "Permet au plugin d'afficher son propre panneau dans l'application.",
@@ -1811,7 +1855,9 @@ sklm: {
       "net.websocket": "Ouvre des connexions bidirectionnelles en temps réel vers les hôtes déclarés par le plugin.",
       "bus.publish": "Peut envoyer des messages sur les sujets qu'il a déclarés.",
       "bus.subscribe": "Peut recevoir des messages sur les sujets qu'il a déclarés.",
-      "browser.cdp": "Peut naviguer dans le navigateur du panneau de travail, lire la page, exécuter JavaScript et envoyer des commandes Chrome DevTools sur liste autorisée. Les cookies et les méthodes de stockage sont bloqués."
+      "browser.cdp": "Peut naviguer dans le navigateur du panneau de travail, lire la page, exécuter JavaScript et envoyer des commandes Chrome DevTools sur liste autorisée. Les cookies et les méthodes de stockage sont bloqués.",
+      "usage.read":
+        "Liste les données d'utilisation des tours terminés (compteurs de tokens par tour, paginés). Aucun contenu de message n'est inclus.",
     }
   },
   "extensions": {

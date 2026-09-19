@@ -5,12 +5,12 @@
 > Interaction behavior: [09-interaction-patterns.md](09-interaction-patterns.md)
 
 
-> Shell layout is Codex-aligned: left thread sidebar (fixed 275px), main transcript, floating bottom composer with runtime mode/permission/model controls, and a compact action-only top bar. Prefer neutral charcoal surfaces over blue-slate chrome.
+> Shell layout is Codex-aligned: left thread sidebar (240–520px, default 275px), main transcript, floating bottom composer with runtime mode/permission/model controls, and a compact action-only top bar. Prefer neutral charcoal surfaces over blue-slate chrome.
 >
 > **Precedence rule**: where a metric or copy string below disagrees with a
 > Codex parity decision in [decisions-log §D](../08-meta/decisions-log.md)
 > (D034+), the decision log wins — it tracks the live gold captures. Known
-> updated values: sidebar 275px fixed, toolbar 46px (not 44px),
+> updated values: sidebar 240–520px (default 275px), toolbar 46px (not 44px),
 > composer placeholder per D094/D066, home empty stack and bottom composer per
 > D111/D204/D206,
 > Projects index table per D066/D133, settings full-page shell per D063 with the
@@ -30,7 +30,7 @@ Outer frame that positions Topbar, Sidebar, MainChat, and WorkPanel. Owns resize
 ```text
 +------------------+------------------------------+------------------+
 | Sidebar          | MainChat                     | WorkPanel        |
-| (275px / 48px) | (flex-1)                   | (≥244px / dynamic|
+| (240–520px / 48px) | (flex-1)                   | (≥244px / dynamic|
 |                  |                              |  hidden)         |
 +------------------+------------------------------+------------------+
 | Titlebar row: 46px, traffic lights at {x:16,y:16} (D034/D070)      |
@@ -60,9 +60,9 @@ Outer frame that positions Topbar, Sidebar, MainChat, and WorkPanel. Owns resize
   restore the full retained layout directly. Entering Settings cancels either
   pending phase, including during rapid navigation; no hidden shell is kept
   mounted solely to suppress animation.
-- Sidebar width: the expanded column is fixed at 275px. Collapse/open changes
-  only whether the column is present; the historical resize handle is hidden
-  and legacy persisted width preferences are ignored.
+- Sidebar width: the expanded column is user-resizable from 240px to 520px
+  (default 275px) via the right-edge handle. Dragging below 160px collapses
+  the sidebar and preserves the preferred expanded width (ADR 0141 / ADR 0290).
 - Work panel collapse: the sole control is the viewport-fixed toggle in the
   window's top-right corner, available on every non-Settings route whether the
   panel is open or closed. It does not sit in the work-panel content header.
@@ -92,8 +92,8 @@ Outer frame that positions Topbar, Sidebar, MainChat, and WorkPanel. Owns resize
 
 ### 1.6 MVP constraints
 
-- Sidebar width is fixed at 275px and remains independent from the collapsed
-  icon-rail state; the work panel remains adjustable from its own divider
+- Sidebar width is user-resizable from 240px to 520px (default 275px) and
+  remains independent from the collapsed icon-rail state; the work panel remains adjustable from its own divider
 - The main pane renders one active transcript and one selected workspace while
   the sidebar may retain several project tabs/groups
 - Sidebar and work-panel dock transitions animate their flex allocation as well
@@ -402,7 +402,7 @@ visually distinct from list content.
 | State | Behavior |
 |---|---|
 | Expanded | Full session titles visible |
-| Sidebar width | Fixed at 275px; collapse/open changes only column presence |
+| Sidebar width | 240–520px (default 275px); drag below 160px collapses |
 | Collapsed | Icon rail — hover shows tooltip with session title |
 | Active session | Accent-blue outlined status ring plus active row background |
 | Selecting session | Destination row receives the active treatment immediately while transcript/workspace resolution continues |
@@ -1014,8 +1014,14 @@ entirely inside the plugin's isolated page:
 - Trigger: file/URL references and BrowserPreview create/activate their
   resource tab in the originating session's runtime context. BrowserPreview
   events carry `sessionId`, and the renderer retains that session's preview
-  path/URL as its Browser resource. Successful workspace Write/Edit artifacts
-  create/activate Review in the originating session.
+  path/URL as its Browser resource. Review is never triggered by a tool
+  result: it opens only from the `+` launcher row or from the retained panel
+  context the viewport-fixed toggle and `Cmd/Ctrl + J` reveal, so a successful
+  workspace Write/Edit cannot open, activate, or resize the panel in any
+  session.
+  The plan/goal approval artifact still creates or activates a tab in its
+  originating session, but the host picks its surface: the bundled file view when
+  that view is launchable, otherwise the host file tab (D452).
   The viewport-fixed toggle and `Cmd/Ctrl + J` both toggle the active session's
   retained panel context: they reveal the panel without creating a resource and
   collapse the visible panel without deleting one. With no active session the
@@ -1876,7 +1882,9 @@ Renderer: `apps/desktop/src/components/Markdown.tsx` + `apps/desktop/src/lib/shi
   observed inside the scroller with the same near-top threshold the scroll handler
   uses. An underfilled tail page, a page whose fetched rows all land outside the
   mounted window, and a window transition can leave `scrollTop` untouched, so a
-  scroll-only trigger could never fire again.
+  scroll-only trigger could never fire again. A collapsed scroller and a pinned
+  overflowing transcript whose `scrollTop` has been reset to 0 are not treated as
+  "at the top", so opening or revealing a session cannot page back to the start.
 - **Minimap hover cost**: dash magnification is applied by writing a custom
   property per dash, and dash centers are measured in a separate read-only pass.
   Reading a dash's geometry inside the same loop that writes to it forces one
@@ -2381,10 +2389,17 @@ execution permission mode, not an individual tool call.
 ### 10A.2 Content
 
 The card renders the structured title and an opener for the exact
-`.pi/<kind>/*.md` path. Opening the artifact reads the host-written file;
-renderer edits do not change the approved bytes. The submitted question/
-description, status, validity/deadline, inline Markdown, SHA-256, byte size,
-and revision/feedback controls are not rendered card content.
+`.pi/<kind>/*.md` path; the opener prefers the bundled file view and falls back
+to the host file tab when that view is not launchable (D452). Opening the
+artifact reads the host-written file; renderer edits do not change the approved
+bytes. The submitted question/description, status, validity/deadline, inline
+Markdown, SHA-256, byte size, and revision/feedback controls are not rendered
+card content.
+
+Because the bundled file view can edit and save the file it opened (ADR 0241),
+an artifact changed before Approve no longer matches the recorded hash: the host
+fails that approval closed with `PLAN_ARTIFACT_HASH_MISMATCH` until the proposal
+is rejected and resubmitted.
 
 ### 10A.3 Actions and states
 

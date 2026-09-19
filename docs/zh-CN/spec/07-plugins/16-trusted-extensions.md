@@ -2,7 +2,7 @@
 
 > **翻译说明：** 本页是与 [英文源规格](/spec/07-plugins/16-trusted-extensions) 一一对应的机器辅助翻译。代码、协议字段和标识符保持原文；如翻译与英文源事实有歧义，以英文版本为准。
 
-> 状态：v1.1 已实现（D387 / D388、ADR 0214 / ADR 0215 / ADR 0244）；实现说明标注为“v1 说明”。§2A 记录受信任渲染器宿主（issue #528、ADR 0287）。
+> 状态：v1.1 已实现（D387 / D388、ADR 0214 / ADR 0215 / ADR 0244）；实现说明标注为“v1 说明”。§2A 记录受信任渲染器宿主（issue #528、ADR 0291）。
 > 范围：v1.1 加上受信任渲染器宿主。v2 与 v3 事项列于 §12，不构成承诺。
 
 ## 1. 目的与术语
@@ -49,7 +49,7 @@ agent 循环上注册工具、命令和事件处理器。`ExtensionAPI` 契约�
 
 在 agent sidecar 旁边，还有第二个受信任执行宿主：`manifest.renderer`，一个插件相对的
 ES 模块，由宿主渲染器在应用自己的窗口内获取并求值，在那里把 React 组件注册进宿主
-持有的槽位。决定记录在 ADR 0287；本节就是契约。
+持有的槽位。决定记录在 ADR 0291；本节就是契约。
 
 ### 2A.1 信任层级与权限
 
@@ -118,7 +118,7 @@ realm 本身不是边界，全局桥句柄始终可达：`contextBridge` 把 `wi
 - 每个槽位都位于一个 React 错误边界之后：抛错的槽位塌缩为空白，邻居不受影响，
   宿主会上报这次崩溃。若宿主在该位置有自己的默认渲染，则回退到默认值。
 - 渲染器宿主的崩溃半径是被接受的：无限循环、内存泄漏或全局污染不会被错误边界兜住，
-  卸载也不保证回滚全局改动（ADR 0287）。
+  卸载也不保证回滚全局改动（ADR 0291）。
 - 拒绝：自带 React 的插件在加载时被拒绝并记录诊断；声明的 `renderer` 文件缺失会报
   `PLUGIN_LOAD_FAILED: renderer entry missing`；不导出 `onLoad` 的模块报
   `PLUGIN_INVALID: renderer entry must export onLoad`；缺少权限则是 manifest 校验
@@ -161,7 +161,7 @@ realm 本身不是边界，全局桥句柄始终可达：`contextBridge` 把 `wi
 不是权限、不出现在权限列表中、不改变授权；只声明它们而不声明 `renderer` 的清单
 依然通过校验。
 
-在派发时消费这些名字的中继随受信任渲染器宿主一并交付（ADR 0290）。挂载的槽位组件以
+在派发时消费这些名字的中继随受信任渲染器宿主一并交付（ADR 0294）。挂载的槽位组件以
 props 拿到它的宿主数据和一个方法 `dispatch(action, payload)`；没有任何东西是隐式的。
 宿主会拒绝插件没有声明的操作，而声明了、宿主却还没有处理器的操作会以带错误码的
 拒绝而不是解析为 `undefined` —— 每次拒绝同时也会作为诊断记在插件的行上。
@@ -172,7 +172,7 @@ props 拿到它的宿主数据和一个方法 `dispatch(action, payload)`；没�
   入口，该入口通过 SDK 钩子 `onRendererCall(method, args)` 作答，答案原样返回给
   调用方：只接受 JSON 可序列化的值，缺失的答案以 `null` 到达。Electron main 会
   用自己已加载的清单复查这次调用，渲染层只提供 id 与参数。这是正常情形下的正确性
-  措施，不是安全边界（ADR 0287）。
+  措施，不是安全边界（ADR 0291）。
 - `ui.toast { message: string, variant?: "info" | "success" | "error" }` 触发外壳
   已有的 toast。
 - `composer.replaceDraft { text: string }` 写入当前会话的整份草稿，并且只在某个已
@@ -207,7 +207,7 @@ props 拿到它的宿主数据和一个方法 `dispatch(action, payload)`；没�
 有些位置需要插件在宿主渲染时给出答案 —— 一个转录必须在布局前就知道其高度的逐消息
 块、一个代码块装饰、一个在计算 composer 控件时读取的值。异步往返无法服务这些位置，
 否则界面会在之后闪烁或重排，因此模块还会注册宿主可在渲染层内调用的纯同步函数
-（ADR 0290 决策 6）。
+（ADR 0294 决策 6）。
 
 - `pi.functions.register(name, fn)` 返回 `{ name, remove() }`。名字按插件划分、不是
   全局的，且必须匹配 `^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$` 并不超过 64 个字符。
@@ -261,9 +261,14 @@ props 拿到它的宿主数据和一个方法 `dispatch(action, payload)`；没�
 
 插件页 →“导入 pi 扩展”打开原生选择器（main 拥有路径，D344），由用户明确选择本地
 文件或目录。main 把所选源码复制到 `<dataDir>/plugins/imported/<slug>/src/`，生成空操作
-`main.js` 和 id 为 `imported.<slug>` 的 manifest（重复导入时追加唯一后缀），再通过
+CommonJS `main.cjs` 和 id 为 `imported.<slug>` 的 manifest（重复导入时追加唯一后缀），再通过
 既有本地插件流程注册。选择器之前的确认仍是信任决定；生成的 manifest 只声明实际贡献
-所需的权限。
+所需的权限。无论源包的 `type` 为何，manifest 的 `main` 都指向 `main.cjs`；
+两份复制的包声明保留原有模块语义。加载时若导入插件的 `main` 仍是生成的 CommonJS
+`main.js` 空包装器，则就地改写为 `main.cjs` 并更新 manifest；复制的包文件、授权和
+激活范围保持不变。只匹配生成的空操作（含最初的注释文本）。自定义过的 `main.js`
+不会改动。不删除就重新导入仍会创建带唯一后缀的独立插件，不会从旧副本复制授权或
+激活范围。
 
 扩展文件及未声明 `pi.skills` 的包保持既有 `pi-coding-agent` 入口发现规则：先取
 `package.json` 的 `pi.extensions`，否则取 `index.ts` / `index.js`，再否则取一层深度内
@@ -380,18 +385,18 @@ main、渲染层或插件宿主进程中。
 | `turn_start`、`turn_end` | 回合边界 | 否 |
 | `turn_closing` | `shouldStopAfterTurn`（运行时槽 7，issue #561；由 `runtime.turn.closing` 门禁 —— 规格 13 §2C） | 是：`{ continue: true, message? }` 让本回合继续，按运行次数上限约束 |
 | `message_start`、`message_update`、`message_end` | Agent 消息事件 | v1 说明：否，pi-agent-core 不提供事后替换 |
-| `tool_call` | `beforeToolCall` | 是，可带理由阻止。修改该调用的参数不可用，且已被永久排除（ADR 0291 规则 4） |
+| `tool_call` | `beforeToolCall` | 是，可带理由阻止。修改该调用的参数不可用，且已被永久排除（ADR 0295 规则 4） |
 | `tool_execution_start`、`tool_execution_update`、`tool_execution_end` | 工具执行流 | 否 |
 | `tool_result` | `afterToolCall` | 是，替换结果 |
 | `model_select`、`thinking_level_select` | v1 说明：不触发；绑定变更会重建运行时 | 否 |
 | `session_before_compact`、`session_compact`、`session_compact_failed` | 压缩流水线 | `session_before_compact` 为是 |
-| `input` | Electron main 持久化消息之后、进入模型队列之前（运行时槽 1，issue #561；由 `runtime.send.before` 门禁 —— 规格 13 §2C） | 是：`{ action: "continue" \| "transform" \| "handled", text?, reason? }`；`transform` 替换模型读到的内容，并按差异级别记录（ADR 0291 规则 5） |
-| `session_before_switch` | 会话切换：被离开的会话，在新会话打开之前通告（运行时槽 11，仅告知 —— ADR 0291 规则 11） | 否 |
+| `input` | Electron main 持久化消息之后、进入模型队列之前（运行时槽 1，issue #561；由 `runtime.send.before` 门禁 —— 规格 13 §2C） | 是：`{ action: "continue" \| "transform" \| "handled", text?, reason? }`；`transform` 替换模型读到的内容，并按差异级别记录（ADR 0295 规则 5） |
+| `session_before_switch` | 会话切换：被离开的会话，在新会话打开之前通告（运行时槽 11，仅告知 —— ADR 0295 规则 11） | 否 |
 | `session_before_fork` | 会话 fork：源会话，在子会话存在之前通告（运行时槽 11，仅告知） | 否 |
 | `session_lifecycle` | 会话创建/删除 —— 内核没有 hook 的两个时刻，由宿主通告（运行时槽 11，仅告知） | 否 |
 | `user_bash`、`session_before_tree`、`session_tree`、`ui_prompt_start`、`ui_prompt_end` | v1 不触发 | 不适用 |
 
-处理器只有在扩展所属插件持有其事件背后的槽位权限时才会运行（ADR 0291 规则 2）：
+处理器只有在扩展所属插件持有其事件背后的槽位权限时才会运行（ADR 0295 规则 2）：
 `turn_closing` 需要 `runtime.turn.closing`，`tool_call` 与 `tool_result` 需要
 `runtime.tool.gate`，上表中其他写明槽位的事件同理。该映射覆盖每一个会改变轮次的已接线
 事件；`session_start`、`session_shutdown` 与 `session_info_changed` 没有槽位。所有槽位
@@ -400,7 +405,7 @@ main、渲染层或插件宿主进程中。
 `resources_discover`、`model_select`、`thinking_level_select`）按映射保留门禁，
 因此不会从不触发的钩子点运行任何处理器。生命周期通告均为仅告知：
 `session_before_switch`、`session_before_fork` 与 `session_lifecycle` 会被发出且从不等待，
-因此插件无法拖延切换、fork 或删除（ADR 0291 规则 11）。
+因此插件无法拖延切换、fork 或删除（ADR 0295 规则 11）。
 
 runner 会拿到该插件被授予的权限清单 —— 没有记录授权的扩展不持有任何权限 —— 对无权运行的
 处理器直接跳过，并把跳过作为插件行上 kind 为 `permission_denied`、写明权限名的扩展诊断
@@ -424,7 +429,7 @@ runner 会拿到该插件被授予的权限清单 —— 没有记录授权的�
 
 `pi-agent-core` 还暴露两个上下文钩子 —— `transformContext` 与 `prepareNextTurn`
 —— 插件目前都无法触及：桌面只设置了 `prepareNextTurnWithContext`，上表的
-`context` 事件就走这条路径。面向插件的入口是 ADR 0291 的 Phasing 第 3 步；那里的
+`context` 事件就走这条路径。面向插件的入口是 ADR 0295 的 Phasing 第 3 步；那里的
 规则 3 让它面向普通插件，而不只是高信任层级。
 
 抛出异常的处理器记为诊断并视为返回 `undefined`。带返回结果的事件若处理器超过

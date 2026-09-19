@@ -1,7 +1,7 @@
 /**
- * The renderer-side loader for trusted plugin modules (ADR 0287).
+ * The renderer-side loader for trusted plugin modules (ADR 0291).
  *
- * Loading is lazy (D6 + ADR 0287 decision 5): nothing is fetched until a slot a
+ * Loading is lazy (D6 + ADR 0291 decision 5): nothing is fetched until a slot a
  * plugin might fill is actually rendered. That keeps a plugin that never draws
  * anything from costing an evaluation, and it keeps the application start free
  * of plugin code.
@@ -94,7 +94,7 @@ export function rendererEntryUrl(pluginId: string, entry: string): string {
  * there is no `pi` global — and it carries only the plugin's own identity, the
  * slots it may fill, the styles it may inject and the functions the host may
  * call, which is what keeps the API per-plugin. It is a contract, not a
- * boundary: the module shares this realm (ADR 0287), so it can also reach
+ * boundary: the module shares this realm (ADR 0291), so it can also reach
  * `window.piDesktop`.
  */
 function buildApi(pluginId: string, version: string): PiRendererApi {

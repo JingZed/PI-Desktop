@@ -1,5 +1,5 @@
 /**
- * The plugin-provided functions the host may call while it renders (ADR 0290
+ * The plugin-provided functions the host may call while it renders (ADR 0294
  * decision 6).
  *
  * Some positions sit inside rendering — a per-message block whose height the
@@ -26,7 +26,7 @@
  * `PLUGIN_FUNCTION_DISABLED` report names the failure that tripped it.
  *
  * This is a contract for plugins that behave, not a security boundary: the
- * module shares the host's realm (ADR 0287 decision 6), so a plugin that wants
+ * module shares the host's realm (ADR 0291 decision 6), so a plugin that wants
  * to do I/O does not need this API to.
  */
 import type {

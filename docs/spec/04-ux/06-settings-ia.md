@@ -152,6 +152,26 @@ Settings is a **full-window page** that replaces the app sidebar + main chrome (
   is remaining. The threshold controls when a text-only paste becomes a
   temporary session-scratch file; it defaults to 600 characters and accepts
   integer values from 1 through 1,000,000.
+- **Prompt enhancement** is a card controlling the Composer's Enhance prompt
+  action (ADR 0121). It carries a `Use a custom template` switch and the settings
+  icon button the subagent rows use for editing, which opens an editor sheet
+  (the subagent editor's pattern). The switch gates whether a stored template
+  applies, is disabled until one is saved, and turns on when a template is
+  saved; turning it off keeps the stored text. The sheet holds the user-template
+  editor, which shows the built-in default text when no override is stored and
+  offers an insert action for the draft variable; a save that would leave the
+  template without that variable is refused. The system prompt is built in and
+  exposes no field. Settings search indexes the card, its switch, and the
+  template row.
+- **Enhancement prompt** is its own card on the Models tab, below Defaults,
+  because both fields are model decisions and the model picker needs the
+  title/value/control shape the Defaults rows do not have. Its `Default model`
+  row uses the same anchored, searchable menu as the Defaults card's row; empty
+  means "follow the Composer's current model". Two rows therefore read `Default
+  model`, distinguished by their card headings. The reasoning row is a menu
+  select listing the levels the selected model actually supports (the row is
+  disabled when it supports none), defaults to Off, and has no
+  follow-the-session entry. Settings search indexes the card and both rows.
 - **Thinking display mode** uses a menu select with Detailed (default) and
   Compact. Detailed retains reasoning text; Compact shows only an active
   thinking indicator and hides finished thought rows. The global preference
@@ -651,7 +671,11 @@ system while preserving their different data ownership:
 6. General shows the host-backed Appearance card; the AI destination shows
    Permissions and Defaults, including the Command shell row; the
    Shortcuts destination shows the Keyboard shortcuts card; Info shows the
-   Developer card. No additional settings destinations are rendered. Token
+   Developer card. Plugin-contributed destinations, when present, appear after
+   every core group under Extensions. Each destination is a renderer-composited
+   sandboxed surface: it preserves the existing Settings rail, titlebar,
+   Windows/Linux minimize/maximize controls, native drag/resize regions, and
+   content geometry. Token
    usage lives in plugin `pi.token-insights`, not Settings.
 7. Provider secrets never display raw key values
 8. Model configuration shows compact Defaults, separate vendor accounts, the

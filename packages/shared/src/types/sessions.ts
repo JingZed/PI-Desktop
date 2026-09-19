@@ -39,8 +39,6 @@ export type SessionSummary = {
   providerId?: string;
   mode: Mode;
   thinkingLevel: ThinkingLevel;
-  /** Composer-native web search for this session; absent means follow settings. */
-  nativeWebSearch?: boolean;
   /** Per-session permission mode; `inherit` follows the global default (D115). */
   permissionMode: PermissionMode;
   /** Effective capability for this session's exact provider/model pair. */

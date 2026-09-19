@@ -15,7 +15,7 @@ import { PLUGIN_RENDERER_SCHEME } from "@pi-desktop/plugin-sdk";
  *
  * This is why the scheme is separate from `plugin-asset`: that allowlist is
  * images and webfonts on purpose, and adding `js` to it would turn every theme
- * asset URL into a script URL (ADR 0287).
+ * asset URL into a script URL (ADR 0291).
  */
 export type PluginRendererSourceResolver = (
   pluginId: string,

@@ -1,7 +1,6 @@
 /** Shared public types grouped by the owning application domain. */
 import type { SessionMessageOrigin } from "../session-collaboration.js";
 import type { AppError } from "../errors.js";
-import type { HostedSearch } from "../native-web-search.js";
 
 export type UiMessageRole = "user" | "assistant" | "system" | "tool";
 
@@ -50,7 +49,7 @@ export function addUsage(
 /**
  * A completed turn's usage as the host records it: the model's own totals plus
  * the components that belong to someone else. `pluginToolUsage` is spend
- * plugin tools reported through their result (ADR 0291 slot 5); it is kept
+ * plugin tools reported through their result (ADR 0295 slot 5); it is kept
  * beside `inputTokens` / `outputTokens` instead of summed into them, so a cost
  * surface can show it as its own line rather than as model tokens.
  */
@@ -87,8 +86,6 @@ export type UiMessage = {
   steering?: boolean;
   /** Model reasoning kept separate from the answer text. */
   thinking?: string;
-  /** Provider-native web search captured for this assistant turn. */
-  hostedSearch?: HostedSearch;
   createdAt: string;
   status?: "streaming" | "complete" | "error" | "aborted";
   /** Provider/model that produced this assistant turn, when known. */

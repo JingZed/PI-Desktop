@@ -256,6 +256,8 @@ export const de = {
     "speakSaved": "Gesprochene Audio gespeichert unter {{path}}",
     "undoEnhancement": "Verbesserung rückgängig machen",
     "enhancementFailed": "Eingabeaufforderung zur Verbesserung fehlgeschlagen",
+    "enhancementTimeout":
+      "Die Umschreibung hat zu lange gedauert. Erneut versuchen oder in den Einstellungen ein schnelleres Modell wählen.",
     "dismissEnhancementError": "Verbesserungsfehler verwerfen",
     sendWhileRunning: "Folgenachricht senden · {{shortcut}} zum Lenken",
     steeringUnavailable: "Diese Runde nimmt keine weiteren Eingaben an. Dein Entwurf wurde behalten.",
@@ -464,21 +466,6 @@ export const de = {
     "thinking": "Denken",
     "thinkingShow": "Denken anzeigen",
     "thinkingHide": "Denken ausblenden",
-    webSearch: "Web search",
-    webSearchOn: "Web search on",
-    webSearchOff: "Web search off",
-    webSearchUnsupported: "Current API style does not support native web search",
-    webSearchRunning: "Searching the web…",
-    webSearchSources: "{{count}} source",
-    webSearchSources_other: "{{count}} sources",
-    webSearchQuery: "Searched {{query}}",
-    webSearchShow: "Show web search",
-    webSearchHide: "Hide web search",
-    webSearchEmpty: "No sources were returned for this search.",
-    webSearchSummary: "Searched {{searchCount}} times · {{sourceCount}} sources",
-    webSearchMore: "View {{count}} more sources",
-    webSearchCitationPrev: "Previous citation",
-    webSearchCitationNext: "Next citation",
     "untitledTask": "Neue Aufgabe"
   },
   "session": {
@@ -638,6 +625,7 @@ sklm: {
       "subagents": "Subagenten",
       "import": "Importieren Sie",
       "projects": "Projekte",
+      "remoteHosts": "Remote-Hosts",
       "info": "Informationen"
     },
     "general": "Allgemein",
@@ -836,6 +824,34 @@ sklm: {
     "subagentSaved": "Gespeichert {{name}}",
     "import": "Importieren",
     "projectArchive": "Projektarchiv",
+    "remoteHosts": {
+      "title": "Remote-Hosts",
+      "overview": "Gekoppelte pi-host-Rechner, die Sie von diesem Desktop steuern können. Sitzungen auf einem gekoppelten Host werden wie lokale angezeigt; die Verbindung bleibt im Hauptprozess, und kein Gerätetoken erreicht diese Seite.",
+      "listTitle": "Gekoppelte Remote-Hosts",
+      "listError": "Hosts konnten nicht geladen werden",
+      "loading": "Wird geladen…",
+      "emptyTitle": "Noch keine Hosts gekoppelt",
+      "emptyBody": "Koppeln Sie unten einen Rechner, um dort eine Sitzung zu starten.",
+      "statusOnline": "Online",
+      "statusOffline": "Offline",
+      "remove": "Entfernen",
+      "removing": "Wird entfernt…",
+      "removed": "{{label}} entfernt.",
+      "removeFailed": "Entfernen fehlgeschlagen: {{message}}",
+      "pairTitle": "Neuen Host koppeln",
+      "pair": "Koppeln",
+      "pairing": "Koppelt…",
+      "pairAction": "Hinzufügen",
+      "pairSucceeded": "{{label}} gekoppelt.",
+      "pairFailed": "Kopplung fehlgeschlagen: {{message}}",
+      "fieldLabel": "Bezeichnung",
+      "fieldLabelDesc": "Wird in der Liste angezeigt und auf dem gekoppelten Host gespeichert.",
+      "fieldLabelPlaceholder": "Heim-Linux",
+      "fieldUrl": "RACP-URL",
+      "fieldUrlDesc": "Der Loopback-Endpunkt von pi-host, z. B. ws://127.0.0.1:9443/racp (über SSH weitergeleitet).",
+      "fieldPairingToken": "Kopplungstoken",
+      "fieldPairingTokenDesc": "Einmaliger ppt1.*-Token aus der pi-host-Bootstrap-Ausgabe. Wird beim Koppeln verbraucht."
+    },
     "importTitle": "Import aus anderen Tools",
     "importScan": "Scannen",
     "importScanning": "Scannen…",
@@ -1165,6 +1181,33 @@ sklm: {
     "fontSizeXl": "Trenta",
     "fontSizeScale": "Textgrößenskala",
     "fontSizePercent": "{{value}}%",
+    "promptEnhancementTitle": "Prompt-Verbesserung",
+    "promptEnhancementDesc":
+      "Gilt für die Aktion „Prompt verbessern“ im Composer. Der System-Prompt ist eingebaut; Nutzervorlage und Modell sind anpassbar.",
+    "promptEnhancementCustomTemplate": "Eigene Vorlage verwenden",
+    "promptEnhancementCustomTemplateDesc":
+      "Ersetzt die eingebaute Nutzervorlage durch Ihre eigene. Der System-Prompt bleibt eingebaut.",
+    "promptEnhancementCustomTemplateNeedsTemplate":
+      "Speichern Sie zuerst eine eigene Vorlage; der Schalter wählt dann zwischen ihr und der eingebauten Vorlage.",
+    "promptEnhancementEdit": "Bearbeiten",
+    "promptEnhancementModelTitle": "Prompt-Verbesserung",
+    "promptEnhancementModel": "Standardmodell",
+    "promptEnhancementThinking": "Denkaufwand",
+    "promptEnhancementThinkingDesc":
+      "Denkaufwand für die Umschreibung. Standard ist Aus und am schnellsten.",
+    "promptEnhancementThinkingOff": "Aus (kein Denken)",
+    "promptEnhancementModelFollow": "Aktuellem Modell folgen",
+    "promptEnhancementModelUnavailable":
+      "Nicht verfügbar — die Verbesserung fällt auf das aktuelle Modell zurück",
+    "promptEnhancementUserTemplate": "Benutzer-Vorlage",
+    "promptEnhancementUserTemplateDesc":
+      "Umschließt den Entwurf. Muss die Entwurfsvariable enthalten; fügen Sie sie über die Schaltfläche ein.",
+    "promptEnhancementInsertDraft": "Entwurfsvariable einfügen",
+    "promptEnhancementRestore": "Standard wiederherstellen",
+    "promptEnhancementMissingDraftVariable":
+      "Die Benutzer-Vorlage muss die Entwurfsvariable enthalten, sonst kann der Entwurf nicht gesendet werden.",
+    "promptEnhancementTooLong": "Die Nutzervorlage darf höchstens 8000 Zeichen haben.",
+    "promptEnhancementSaveError": "Die Prompt-Verbesserungseinstellungen konnten nicht gespeichert werden.",
   },
   "project": {
     "open": "Projekt öffnen",
@@ -1749,7 +1792,8 @@ sklm: {
       "net.websocket": "Echtzeitverbindungen öffnen",
       "bus.publish": "Nachrichten an andere Plugins senden",
       "bus.subscribe": "Nachrichten von anderen Plugins empfangen",
-      "browser.cdp": "Den Arbeitspanel-Browser steuern"
+      "browser.cdp": "Den Arbeitspanel-Browser steuern",
+      "usage.read": "Nutzungsstatistiken lesen"
     },
     "permissionHelp": {
       "ui.panel": "Lässt das Plugin sein eigenes Panel innerhalb der App anzeigen.",
@@ -1811,7 +1855,9 @@ sklm: {
       "net.websocket": "Öffnet bidirektionale Echtzeitverbindungen zu den Hosts, die das Plugin deklariert hat.",
       "bus.publish": "Kann Nachrichten zu den angegebenen Themen senden.",
       "bus.subscribe": "Kann Nachrichten zu den angegebenen Themen empfangen.",
-      "browser.cdp": "Kann im Arbeitsbereichsbrowser navigieren, die Seite lesen, JavaScript ausführen und auf der Zulassungsliste stehende Chrome DevTools-Befehle senden. Cookies und Speichermethoden sind blockiert."
+      "browser.cdp": "Kann im Arbeitsbereichsbrowser navigieren, die Seite lesen, JavaScript ausführen und auf der Zulassungsliste stehende Chrome DevTools-Befehle senden. Cookies und Speichermethoden sind blockiert.",
+      "usage.read":
+        "Listet Nutzungsdaten abgeschlossener Runden auf (Token-Zähler pro Runde, seitenweise). Nachrichteninhalte sind nicht enthalten.",
     }
   },
   "extensions": {

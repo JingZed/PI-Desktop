@@ -1,5 +1,5 @@
 //! One turn's facts: the authoritative structured numbers a plugin may read
-//! for a single turn (ADR 0291 rule 8, slot #9 `runtime.turn.facts`).
+//! for a single turn (ADR 0295 rule 8, slot #9 `runtime.turn.facts`).
 //!
 //! Facts are host-owned. "This turn" means exactly one thing here — the rows in
 //! host tables that carry the turn's id — so nothing is reconstructed from what
@@ -102,7 +102,7 @@ pub struct TurnFacts {
     pub usage: Option<Value>,
     /// The turn's plugin-tool spend: the `pluginToolUsage` member of the
     /// recorded usage, exposed on its own because it is spend a plugin
-    /// reported and never part of the model's tokens (ADR 0291 slot 5).
+    /// reported and never part of the model's tokens (ADR 0295 slot 5).
     pub plugin_tool_usage: Option<Value>,
     pub tool_calls: ToolCallFacts,
     /// The files the turn touched, oldest touch first.

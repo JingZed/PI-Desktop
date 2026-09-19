@@ -20,7 +20,7 @@ export type EventPersistenceDependencies = {
   persistenceOutbox: PersistenceOutbox;
   addActiveTurnUsage: (sessionId: string, usage: any) => void;
   /**
-   * Slot-5 spend plugin tools reported for the turn (ADR 0291). It is kept as
+   * Slot-5 spend plugin tools reported for the turn (ADR 0295). It is kept as
    * its own component of the turn's recorded usage.
    */
   addActiveTurnPluginUsage: (sessionId: string, usage: any) => void;

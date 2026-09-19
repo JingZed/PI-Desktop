@@ -1,5 +1,5 @@
 /**
- * The one React the host renderer and every trusted plugin share (ADR 0287).
+ * The one React the host renderer and every trusted plugin share (ADR 0291).
  *
  * A plugin that brought its own React would break hooks and context in the
  * first component that mixed the two, and the failure looks like a plugin bug

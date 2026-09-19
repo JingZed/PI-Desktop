@@ -43,7 +43,6 @@ export type ShutdownDependencies = {
   mcpOAuth?: Pick<McpOAuthManager, "disposeAll">;
   browserPane: Pick<BrowserPane, "dispose">;
   pluginViews: Pick<PluginViewHost, "dispose">;
-  pluginSettingsViews: Pick<PluginViewHost, "dispose">;
   updater: Pick<AppUpdaterController, "dispose" | "isInstallingUpdate">;
   logger: Pick<Logger, "app">;
   confirmQuitDialog: () => Promise<boolean>;
@@ -65,7 +64,6 @@ export function registerShutdownHandlers({
   mcpOAuth,
   browserPane,
   pluginViews,
-  pluginSettingsViews,
   updater,
   logger,
   confirmQuitDialog,
@@ -159,7 +157,6 @@ export function registerShutdownHandlers({
       mcpOAuth?.disposeAll();
       browserPane.dispose();
       pluginViews.dispose();
-      pluginSettingsViews.dispose();
       inflightCheckpointer.dispose();
       const sidecarShutdown = getSidecar()?.dispose();
 

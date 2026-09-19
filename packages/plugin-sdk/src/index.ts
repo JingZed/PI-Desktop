@@ -160,8 +160,8 @@ export type PluginManifest = {
     providers?: PluginProviderContrib[];
     settings?: PluginSettingContrib[];
     themes?: PluginThemeContrib[];
-    /** Sandboxed pages placed exclusively in Settings' host-owned Extensions group. */
-    settingsDestinations?: PluginSettingsDestinationContrib[];
+    /** A host-rendered, image-card theme selector in Settings → Extensions. */
+    scenicThemes?: PluginScenicThemesContrib;
     /** Native window background for this plugin's themes (ADR 0248). */
     windowAppearance?: PluginWindowAppearanceContrib;
     mcpServers?: PluginMcpServerContrib[];
@@ -314,6 +314,38 @@ export type PluginSessionGetResult = {
   updatedAt: string;
 };
 
+/**
+ * One completed turn as a flat fact row (`usage.read`). The host serves raw
+ * counters — per-turn tokens and identifiers only; no message body ever
+ * crosses the bridge, and every dashboard shape (streaks, heatmaps, shares)
+ * stays the plugin's own computation.
+ */
+export type PluginUsageTurn = {
+  turnId: string;
+  sessionId: string;
+  sessionTitle: string | null;
+  projectId: number | null;
+  providerId: string | null;
+  modelId: string | null;
+  startedAt: number;
+  endedAt: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  reasoningTokens: number;
+};
+
+/**
+ * A keyset-paginated page of completed turns, ordered by `endedAt`
+ * ascending. `nextCursor` is opaque: pass it back as `cursor` to fetch the
+ * next page; it is `null` when the window is exhausted.
+ */
+export type PluginUsageTurnPage = {
+  turns: PluginUsageTurn[];
+  nextCursor: string | null;
+};
+
 export type PluginSessionMessageResult = {
   id: string;
   role: "user" | "assistant" | "tool";
@@ -405,7 +437,7 @@ export type PluginThemeContrib = {
   /** Base palette the overrides are layered on. Defaults to `dark`. */
   base?: "light" | "dark";
   /**
-   * Relative paths (extension whitelist, 4 MB summed) this theme's CSS may
+   * Package-relative or absolute paths (extension whitelist, 4 MB summed) this theme's CSS may
    * reference with `url()`. The host rewrites each matching reference to its own
    * `plugin-asset://` scheme; anything not declared here is still refused.
    */
@@ -414,12 +446,24 @@ export type PluginThemeContrib = {
   variables?: PluginThemeVariableContrib[];
 };
 
-export type PluginSettingsDestinationContrib = {
+/**
+ * Data only: the host owns every DOM node, style, and interaction for this
+ * Settings destination so a scenic canvas never sits behind a plugin document.
+ */
+export type PluginScenicThemesContrib = {
   id: string;
-  label: PluginLocalizedString | string;
-  icon: "sliders" | "sparkles" | "palette" | "plug" | "settings";
-  keywords?: Array<PluginLocalizedString | string>;
-  entry: string;
+  label: PluginLocalizedString;
+  description: PluginLocalizedString;
+  keywords?: PluginLocalizedString[];
+  icon: "palette";
+  themes: PluginScenicThemeCardContrib[];
+};
+
+export type PluginScenicThemeCardContrib = {
+  themeId: string;
+  label: PluginLocalizedString;
+  description: PluginLocalizedString;
+  previewAsset: string;
 };
 
 /** Wire format a contributed provider may declare. Absent means `chat_completions`. */
@@ -677,7 +721,7 @@ export type PluginToolUsage = {
 };
 
 /**
- * A plugin tool's own result for the `runtime.tool.extend` slot (ADR 0291
+ * A plugin tool's own result for the `runtime.tool.extend` slot (ADR 0295
  * slot 5). A result that carries any of these fields is read as this shape, so
  * `content` reaches the model as content instead of a JSON blob; a result with
  * none of them keeps the previous behaviour and is rendered as before.
@@ -737,7 +781,7 @@ export type PluginToolExecContext = {
   modelKey?: string;
   thinkingLevel?: string;
   /**
-   * The turn's cancellation token (ADR 0291 slot 3): it aborts when the user
+   * The turn's cancellation token (ADR 0295 slot 3): it aborts when the user
    * stops the turn, when a plugin asks the host to stop it (`runtime.turn.abort`),
    * or when the host abandons the turn. Long-running work should pass it to
    * `fetch` or watch it and stop.
@@ -791,7 +835,7 @@ export type PluginTurnFile = {
 
 /**
  * The facts about one turn, exactly as the host assembled them — what
- * `pi.turnFacts()` answers (ADR 0291 slot 9, permission
+ * `pi.turnFacts()` answers (ADR 0295 slot 9, permission
  * `runtime.turn.facts`).
  *
  * Every number comes from the host's own tables for that turn. This is **not**
@@ -830,7 +874,7 @@ export type PluginTurnFacts = {
 };
 
 /**
- * What `pi.recap()` answered (ADR 0291 slot 8, permission
+ * What `pi.recap()` answered (ADR 0295 slot 8, permission
  * `runtime.turn.recap`; a whole-session read additionally needs
  * `runtime.session.read`, rule 7).
  *
@@ -866,7 +910,7 @@ export type PluginTurnRecap =
     };
 
 /**
- * What `pi.continueTurn()` did (ADR 0291 slot 10, permission
+ * What `pi.continueTurn()` did (ADR 0295 slot 10, permission
  * `runtime.turn.continue`).
  *
  * The continuation is a real, durable turn queued on the host — the same queue
@@ -888,7 +932,7 @@ export type PluginTurnContinuation = {
 export type PluginTurnContinueInput = string | { message?: string };
 
 /**
- * The three runtime-slot calls an agent extension makes for itself (ADR 0291).
+ * The three runtime-slot calls an agent extension makes for itself (ADR 0295).
  * They are declared here because the upstream `ExtensionAPI` type has no member
  * for them; the agent sidecar's `pi` object implements them, and each one is
  * separately granted.
@@ -958,7 +1002,7 @@ export type PluginTurnApi = {
 };
 
 /**
- * The `input` event's payload (ADR 0291 slot 1, permission
+ * The `input` event's payload (ADR 0295 slot 1, permission
  * `runtime.send.before`).
  *
  * It fires once per prompt, after the desktop has accepted and stored the
@@ -995,7 +1039,7 @@ export type PluginInputEvent = {
 };
 
 /**
- * What an `input` handler answers (ADR 0291 slot 1), using the kernel's three
+ * What an `input` handler answers (ADR 0295 slot 1), using the kernel's three
  * actions:
  *
  * - `continue` — pass the message through unchanged; returning nothing does
@@ -1017,7 +1061,7 @@ export type PluginInputResult = {
 };
 
 /**
- * A session lifecycle notice the kernel has no hook for (ADR 0291 slot 11,
+ * A session lifecycle notice the kernel has no hook for (ADR 0295 slot 11,
  * permission `runtime.session.lifecycle`): the desktop created or deleted a
  * session. Informed-only — nothing can be vetoed, and the delete or create
  * never waits for a handler.
@@ -1029,7 +1073,7 @@ export type PluginSessionLifecycleEvent = {
 };
 
 /**
- * The kernel's `session_before_switch` (ADR 0291 slot 11), emitted by the
+ * The kernel's `session_before_switch` (ADR 0295 slot 11), emitted by the
  * desktop when the user leaves a session for a new one or for another session.
  * Informed-only here even though the kernel lets a handler cancel the switch.
  */
@@ -1041,7 +1085,7 @@ export type PluginSessionBeforeSwitchEvent = {
 };
 
 /**
- * The kernel's `session_before_fork` (ADR 0291 slot 11), emitted by the
+ * The kernel's `session_before_fork` (ADR 0295 slot 11), emitted by the
  * desktop before it forks the session. Informed-only.
  */
 export type PluginSessionBeforeForkEvent = {
@@ -1051,7 +1095,7 @@ export type PluginSessionBeforeForkEvent = {
   position: "before" | "at";
 };
 
-/** The conversation a compaction is about to replace (ADR 0291 rule 7). */
+/** The conversation a compaction is about to replace (ADR 0295 rule 7). */
 export type PluginCompactionSegment = {
   messages: ReadonlyArray<unknown>;
   messageCount: number;
@@ -1059,7 +1103,7 @@ export type PluginCompactionSegment = {
   retained: ReadonlyArray<unknown>;
 };
 
-/** Payload of `session_before_compact` (ADR 0291 slot 11). */
+/** Payload of `session_before_compact` (ADR 0295 slot 11). */
 export type PluginSessionBeforeCompactEvent = {
   type: "session_before_compact";
   reason: "manual" | "threshold" | "overflow";
@@ -1508,6 +1552,28 @@ export type PluginHostApi = {
       mode?: "trash" | "purge";
     }) => Promise<{ deleted: boolean }>;
   };
+  /**
+   * Read-only completed-turn facts served by the host (`usage.read`). Flat
+   * counters and identifiers only — no message body, no write path, and no
+   * dashboard shape: streaks, heatmaps, and rankings stay the plugin's own
+   * computation on top of these rows.
+   */
+  usage: {
+    listTurns: (input?: {
+      /** Inclusive window start in epoch ms. Default: `toMs` minus 30 days. */
+      fromMs?: number;
+      /** Inclusive window end in epoch ms. Default: now. Window span ≤ 365 days. */
+      toMs?: number;
+      /** Limit rows to one durable project id. */
+      projectId?: number | null;
+      /** Limit rows to one session id. */
+      sessionId?: string;
+      /** Opaque page cursor from the previous `nextCursor`. */
+      cursor?: string;
+      /** 1..=500 rows per page; default 200. */
+      limit?: number;
+    }) => Promise<PluginUsageTurnPage>;
+  };
   services: {
     /**
      * Register a resident service declared in `contributes.services`. Local
@@ -1584,7 +1650,7 @@ export type PluginModule = {
   onPanelInvoke?: (channel: string, payload: unknown) => Promise<unknown> | unknown;
   /**
    * Optional method host for a renderer slot component's forwarded calls
-   * (`plugin.call`, ADR 0290 decision 4). A component that dispatches
+   * (`plugin.call`, ADR 0294 decision 4). A component that dispatches
    * `plugin.call { method, args }` runs this hook inside its own headless entry
    * — this process — and the renderer receives the return value unchanged.
    *
@@ -1633,6 +1699,9 @@ export const PLUGIN_PERMISSIONS = [
   "session.read.own",
   "session.update.own",
   "session.delete.own",
+  // Read-only usage facts (pi.usage.listTurns):
+  // completed-turn counters and session titles, never message bodies.
+  "usage.read",
   "net.fetch",
   "shell.openExternal",
   "mcp.server.local",
@@ -1650,7 +1719,7 @@ export const PLUGIN_PERMISSIONS = [
   "net.websocket",
   // Runtime slots (#561). Each one is consulted while a turn is running and can
   // change what the agent does, so they are separate, individually reviewed
-  // grants rather than one bundled switch. Every slot ADR 0291 builds is
+  // grants rather than one bundled switch. Every slot ADR 0295 builds is
   // registered here; the twelfth (`runtime.approval.before`) is not built.
   "runtime.request.before",
   "runtime.send.before",
@@ -1852,7 +1921,7 @@ export type PluginManifestEntryFlags = {
   main: boolean;
   /** `manifest.renderer`: trusted component slots inside the app window. */
   renderer: boolean;
-  /** A plugin-owned page: `ui.panel`, a view, or a settings destination. */
+  /** A plugin-owned page: `ui.panel` or a view. */
   page: boolean;
   /** `contributes.agentExtensions`: modules in the agent process. */
   agent: boolean;
@@ -1873,8 +1942,7 @@ export function manifestEntries(
     renderer: hasText(manifest.renderer),
     page:
       hasText(manifest.ui?.panel) ||
-      (manifest.contributes?.views?.length ?? 0) > 0 ||
-      (manifest.contributes?.settingsDestinations?.length ?? 0) > 0,
+      (manifest.contributes?.views?.length ?? 0) > 0,
     agent: (manifest.contributes?.agentExtensions?.length ?? 0) > 0,
   };
 }
@@ -2155,7 +2223,7 @@ export function validateContributions(
       const assetPaths = new Set<string>();
       for (const asset of theme.assets) {
         if (typeof asset !== "string" || !isThemeAssetPath(asset)) {
-          return `theme "${theme.id}" asset must be an absolute ${THEME_ASSET_EXTENSIONS.join(
+          return `theme "${theme.id}" asset must be a package-relative or absolute ${THEME_ASSET_EXTENSIONS.join(
             "/",
           )} path`;
         }
@@ -2180,17 +2248,26 @@ export function validateContributions(
     }
   }
 
-  const settingsDestinationIds = new Set<string>();
-  for (const destination of contributes.settingsDestinations ?? []) {
-    if (!destination || typeof destination !== "object") return "contributes.settingsDestinations entries must be objects";
-    if (typeof destination.id !== "string" || !/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/.test(destination.id)) return "contributes.settingsDestinations id must match [a-zA-Z][a-zA-Z0-9_-]{0,63}";
-    if (settingsDestinationIds.has(destination.id)) return `duplicate settings destination id "${destination.id}"`;
-    settingsDestinationIds.add(destination.id);
-    if (typeof destination.entry !== "string" || !destination.entry.endsWith(".html")) return `settings destination "${destination.id}" entry must be an .html file`;
-    const pathError = relativePathError(destination.entry, `settings destination "${destination.id}" entry`);
-    if (pathError) return pathError;
-    if (!destination.label || (typeof destination.label !== "string" && typeof destination.label !== "object")) return `settings destination "${destination.id}" requires a label`;
-    if (!["sliders", "sparkles", "palette", "plug", "settings"].includes(destination.icon)) return `settings destination "${destination.id}" has an unsupported icon`;
+  const scenicThemes = contributes.scenicThemes;
+  if (scenicThemes !== undefined) {
+    if (!scenicThemes || typeof scenicThemes !== "object" || Array.isArray(scenicThemes)) return "contributes.scenicThemes must be an object";
+    if (typeof scenicThemes.id !== "string" || !/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/.test(scenicThemes.id)) return "contributes.scenicThemes id must match [a-zA-Z][a-zA-Z0-9_-]{0,63}";
+    const localized = (value: unknown) => Boolean(value && typeof value === "object" && typeof (value as PluginLocalizedString).en === "string" && typeof (value as PluginLocalizedString)["zh-CN"] === "string");
+    if (!localized(scenicThemes.label)) return "contributes.scenicThemes requires a localized label";
+    if (!localized(scenicThemes.description)) return "contributes.scenicThemes requires a localized description";
+    if (scenicThemes.keywords !== undefined && (!Array.isArray(scenicThemes.keywords) || !scenicThemes.keywords.every(localized))) return "contributes.scenicThemes keywords must be localized";
+    if (scenicThemes.icon !== "palette") return "contributes.scenicThemes has an unsupported icon";
+    if (!Array.isArray(scenicThemes.themes) || scenicThemes.themes.length < 1 || scenicThemes.themes.length > 12) return "contributes.scenicThemes themes must contain 1 to 12 cards";
+    const themeIds = new Set<string>();
+    for (const card of scenicThemes.themes) {
+      if (!card || typeof card !== "object") return "contributes.scenicThemes theme cards must be objects";
+      if (typeof card.themeId !== "string" || !/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/.test(card.themeId)) return "contributes.scenicThemes card themeId must be valid";
+      if (themeIds.has(card.themeId)) return `contributes.scenicThemes duplicates themeId "${card.themeId}"`;
+      themeIds.add(card.themeId);
+      if (!localized(card.label)) return "contributes.scenicThemes card requires a localized label";
+      if (!localized(card.description)) return "contributes.scenicThemes card requires a localized description";
+      if (typeof card.previewAsset !== "string" || !isThemeAssetPath(card.previewAsset)) return "contributes.scenicThemes card previewAsset must be an image path";
+    }
   }
 
   const windowAppearance = contributes.windowAppearance;

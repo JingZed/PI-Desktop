@@ -1,5 +1,5 @@
 /**
- * Unit tests for the host-callable plugin functions (ADR 0290 decision 6).
+ * Unit tests for the host-callable plugin functions (ADR 0294 decision 6).
  *
  * These functions are the one part of the renderer interface the host calls
  * itself, while it renders: a position that needed an async round trip would

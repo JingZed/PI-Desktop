@@ -442,6 +442,9 @@ Electron main after plugin permission and manifest-source checks:
 - `plugin.session.rename` — rename an owned active imported session
 - `plugin.session.delete` — `trash` hides and retains the transcript; `purge`
   removes it and permits re-import
+- `plugin.usage.listTurns` — keyset page of completed-turn facts (identifiers
+  and token counters, never a message body) for non-deleted sessions. Gated
+  in Electron main by `usage.read`. Additive; no protocol version bump.
 - Successful plugin session mutations cause Electron main to emit one
   `sessionsChanged` renderer event; the renderer refreshes the session list,
   and plugins do not emit this UI synchronization event.
@@ -682,10 +685,10 @@ activation-scope filtering (`CAPABILITY_INVALID` for an unknown scope).
   `turnId`, and `updatedAt`; a path touched in several turns appears once per
   touch, newest first for a session and in touch order for a turn. A `turnId`
   without a `sessionId` returns `INVALID_ARGUMENT`. Additive RPC; no protocol
-  version bump (ADR 0291 rule 8).
+  version bump (ADR 0295 rule 8).
 - `plugin.rewrites.list({ sessionId, turnId?, kind?, limit? }) -> { rewrites }` —
   the diff-level audit of what a plugin changed in what the model receives
-  (ADR 0291 rule 5). With `turnId` it returns one turn's records oldest first —
+  (ADR 0295 rule 5). With `turnId` it returns one turn's records oldest first —
   the order the rewrites happened, which is what the slot #1 / #6 surfaces read
   — and without it the session's records newest first, including any record
   written outside a turn. `kind` filters to `outgoing_message | system_prompt |
@@ -699,7 +702,7 @@ activation-scope filtering (`CAPABILITY_INVALID` for an unknown scope).
   the list stays empty until they are.
 - `turn.facts({ sessionId, turnId, limit? }) -> { facts }` — one turn's
   **authoritative structured numbers**, assembled by the host from its own
-  tables (ADR 0291 rule 8, slot #9 `runtime.turn.facts`). Nothing here is
+  tables (ADR 0295 rule 8, slot #9 `runtime.turn.facts`). Nothing here is
   reconstructed from plugin-observed events, and no conversation text is
   returned. `facts` carries `sessionId`, `turnId`, `status`
   (`running | completed | aborted | error`), `providerId`, `modelId`,

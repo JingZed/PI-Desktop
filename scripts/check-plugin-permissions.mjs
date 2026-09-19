@@ -21,7 +21,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
 
-/** The 38 names that shipped before the renderer host (ADR 0287). Add-only. */
+/** The 38 names that shipped before the renderer host (ADR 0291). Add-only. */
 const LEGACY_PERMISSIONS = [
   "ui.panel",
   "ui.view",

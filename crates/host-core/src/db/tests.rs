@@ -1448,7 +1448,7 @@ fn a_v16_file_gains_the_provider_owner_column() {
 }
 
 /// Schema v19 turns `artifacts` from one row per `(session, path)` into one row
-/// per recorded touch (ADR 0291 rule 8). Build a v18 file with real rows —
+/// per recorded touch (ADR 0295 rule 8). Build a v18 file with real rows —
 /// including a row without a turn — then reopen it: every row keeps its path,
 /// op, turn, and timestamp, the per-touch shape is in place, the path can be
 /// touched again, and the pre-migration copy exists.
@@ -1572,7 +1572,7 @@ fn a_v18_file_keeps_its_artifact_rows_when_they_become_one_row_per_touch() {
 }
 
 /// Schema v20 adds `plugin_rewrites`, the diff-level audit of what a plugin
-/// changed in what the model receives (ADR 0291 rule 5). Build a v19 file with
+/// changed in what the model receives (ADR 0295 rule 5). Build a v19 file with
 /// real rows in the tables that must survive, then reopen it: the audit table
 /// arrives in its current shape, every existing row keeps its value, and the
 /// upgraded file accepts a record.
@@ -1685,7 +1685,7 @@ fn a_v19_file_gains_the_rewrite_audit_and_keeps_its_rows() {
     assert!(listed[0].turn_id.is_none());
 }
 
-/// Schema v21 makes a turn's audit records attributable (ADR 0291 rule 8, slot
+/// Schema v21 makes a turn's audit records attributable (ADR 0295 rule 8, slot
 /// #9): `audit_log` gains the nullable `turn_id` column and `idx_audit_turn`.
 /// Build a v20 file that already holds audit rows, reopen it, and check the
 /// column arrived last — the position `ALTER TABLE` appends, which the fresh

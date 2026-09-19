@@ -41,3 +41,12 @@ Previous MCP implementations in PI-Desktop supported only static HTTP headers. U
 - Remote HTTP MCP servers requiring OAuth 2.1 PKCE can be authorized securely from the Settings UI.
 - Long-running browser interactions do not block IPC channels or leave orphan HTTP listeners upon window reload or quit.
 - Token material is kept out of the renderer process and ordinary logs.
+
+## Amendment (2026-09-18) — landing hardening
+
+- Authorization-server endpoints (`authorization_endpoint`, `token_endpoint`, `registration_endpoint`, discovered `authorization_servers`, and `resource_metadata`) must be HTTPS. Loopback `http://127.0.0.1` / `localhost` / `::1` remains allowed so local mock and LAN-loopback AS still work. The MCP resource URL itself may still be `http://` (ADR 0142).
+- Dynamic client registration prefers RFC 8252 portless `http://127.0.0.1/callback` plus the current exact URI. Stored clients are reused only when that portless URI is on file, or the exact current redirect matches. Otherwise a new client is registered. Login also tries to rebind the previously used loopback port so strict AS that require an exact URI keep working.
+- Loopback `/callback` validates `state` before looking at `error` or `code`. A mismatched `state` is a stray request and does not abort the login. A matching callback is consumed once (replay returns 409).
+- `invalid_grant` on refresh deletes the stored secret; transient 5xx keeps the existing access token.
+- `mcp/oauth/start` passes the listed `McpServerRecord` through to `onAuthorized` so a project-level server that is not in the current workspace runtime can still handshake after login.
+- Scope selection remains an MVP heuristic (`default` if advertised, else `scopes_supported[0]`). There is no per-server scope picker, device-code flow, or DPoP.

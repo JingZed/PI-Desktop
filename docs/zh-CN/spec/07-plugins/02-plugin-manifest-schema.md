@@ -328,6 +328,7 @@ type PluginPermission =
  | "session.read.own"
  | "session.update.own"
  | "session.delete.own"
+ | "usage.read"
  | "audio.capture.background"
  | "audio.playback.background"
  | "speech.adapter.register"
@@ -505,7 +506,7 @@ MVP 只能实现：
    `renderer.extension`；声明了 `renderer` 却没有该权限的清单会以
    `manifest.renderer requires the renderer.extension permission` 失败
    （host-core：`PLUGIN_INVALID: renderer requires the renderer.extension permission`）。
-   一个权限覆盖全部组件槽位：槽位按层级授权，绝不逐个授权（ADR 0287）
+   一个权限覆盖全部组件槽位：槽位按层级授权，绝不逐个授权（ADR 0291）
 21. `rendererData` 与 `rendererActions` 是可选列表，取值来自两份宿主持有的词表；
    插件只能从它们里面挑选，绝不自己造名字。`rendererData` 接受 `entry`、`session`、
    `code`、`theme`、`selection`、`draft`、`attachments`、`locale`；

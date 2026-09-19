@@ -278,6 +278,18 @@ export class RuntimeService implements RuntimePort {
     }
   }
 
+  /** True when the effective per-turn mode narrows or otherwise differs from
+   * the session's stored `permissionMode`; used to decide whether to forward a
+   * per-turn override to the sidecar. A widening request has already been
+   * refused by the agent-host bridge before reaching here. */
+  private sessionModeDiffers(
+    session: Record<string, unknown> | null | undefined,
+    effective: string,
+  ): boolean {
+    const stored = session && typeof session.permissionMode === "string" ? session.permissionMode : undefined;
+    return stored !== undefined && stored !== effective;
+  }
+
   private async startTurn(sessionId: string, request: TurnStartRequest): Promise<{ turnId: string }> {
     const host = this.requireHost();
     const sidecar = this.requireSidecar();
@@ -345,6 +357,13 @@ export class RuntimeService implements RuntimePort {
         ...(sessionMessage ? { sessionMessage: sessionMessage.origin } : {}),
         attachments: [],
         userMessageId: userMessage.id,
+        // Per-turn permission ceiling override (R1 leftover; spec §7.3). Only
+        // forwarded when the effective mode differs from the session's stored
+        // mode — a widening request has already been refused upstream so any
+        // override that reaches here is narrower than or equal to session.
+        ...(request.effectivePermissionMode && this.sessionModeDiffers(session, request.effectivePermissionMode)
+          ? { permissionMode: request.effectivePermissionMode }
+          : {}),
       });
     } catch (error) {
       await this.finishTurn(sessionId, "error", errorCodeOf(error), { turnId });

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   GLOBAL_SCOPE,
@@ -116,6 +116,14 @@ export function AgentMcpPage() {
   const [saving, setSaving] = useState(false);
   const [testingId, setTestingId] = useState<string | null>(null);
   const [authorizingId, setAuthorizingId] = useState<string | null>(null);
+  const pendingOAuthRef = useRef<{ unsubscribe: () => void } | null>(null);
+
+  useEffect(() => {
+    return () => {
+      pendingOAuthRef.current?.unsubscribe();
+      pendingOAuthRef.current = null;
+    };
+  }, []);
   const [view, setView] = useState<"servers" | "market">("servers");
   const { armed, setArmed } = useArmedDelete();
 
@@ -250,16 +258,23 @@ export function AgentMcpPage() {
   };
 
   const authorizeServer = async (server: McpServerRecord, level: AgentCapabilityLevel) => {
-    if (authorizingId) return;
+    if (authorizingId || pendingOAuthRef.current) return;
     setAuthorizingId(server.id);
     let activeLoginId: string | null = null;
     let unsubscribed = false;
     let unsubscribe = () => {};
 
-    const cleanup = () => {
+    const finish = () => {
       if (unsubscribed) return;
       unsubscribed = true;
       unsubscribe();
+      if (pendingOAuthRef.current?.unsubscribe === unsubscribe) {
+        pendingOAuthRef.current = null;
+      }
+    };
+
+    const cleanup = () => {
+      finish();
       setAuthorizingId(null);
     };
 
@@ -283,6 +298,7 @@ export function AgentMcpPage() {
         cleanup();
       }
     });
+    pendingOAuthRef.current = { unsubscribe };
 
     try {
       showToast(t("extensions.mcp.authorizing"), { variant: "info" });

@@ -9,7 +9,6 @@ import { useOpenChatFileRef } from "../../../hooks/use-preview-target";
 import { splitChatText } from "../../../lib/chat-links";
 import { useAppStore } from "../../../stores/app-store";
 import { Markdown } from "../../../components/Markdown";
-import { rewriteInlineCitationMarkup } from "../../../lib/hosted-search-ui";
 import {
   IconChevronLeft,
   IconChevronRight,
@@ -97,7 +96,7 @@ export const MessageRow = memo(function MessageRow({
     );
     return attachments.filter((attachment) => !inline.has(attachment.ref));
   }, [message.attachments, message.content, workspaceRoot]);
-  // Slot #1 (ADR 0291 rule 5): a plugin may rewrite the outgoing message on the
+  // Slot #1 (ADR 0295 rule 5): a plugin may rewrite the outgoing message on the
   // way to the model. The row keeps the text the user typed; the record marks it
   // and its changed span is what the expansion shows. No record, no badge.
   const sessionPluginRewrites = useAppStore((state) =>
@@ -216,7 +215,7 @@ export const MessageRow = memo(function MessageRow({
                   </div>
                 ) : null}
                 {rewrite ? (
-                  // Slot #1 (ADR 0291 rule 5): the user's own words stay on the
+                  // Slot #1 (ADR 0295 rule 5): the user's own words stay on the
                   // row, and this is where the plugin that changed what the
                   // model read is named — expanded to the text the model
                   // received, or to the changed spans when the record was
@@ -278,7 +277,7 @@ export const MessageRow = memo(function MessageRow({
               </>
             ) : (
               <div className="prose-chat">
-                <Markdown source={rewriteInlineCitationMarkup(displayed, message.hostedSearch?.sources ?? [])} />
+                <Markdown source={displayed} />
               </div>
             )}
           </div>
@@ -350,7 +349,7 @@ export const MessageRow = memo(function MessageRow({
         ) : null}
         {/* Slot 13: appended below everything the host itself renders. This
           * area only adds to the entry — slot 1 owns replacing it — so the
-          * boundary's fallback is nothing (ADR 0287). */}
+          * boundary's fallback is nothing (ADR 0291). */}
         {sessionId ? (
           <PluginSlot
             slot="entryExtra"

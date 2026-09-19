@@ -109,7 +109,7 @@ const NOT_EMITTED_EVENTS = new Set([
  * Events whose handler result is honored, and therefore time-limited.
  *
  * The session lifecycle notices are in here for the budget rather than for a
- * result: they are informed-only (ADR 0291 rule 11), so the caller ignores
+ * result: they are informed-only (ADR 0295 rule 11), so the caller ignores
  * what they return, but a handler that stalls is still cut off after the
  * budget instead of holding the notification loop forever.
  */
@@ -184,7 +184,7 @@ export type ExtensionExecResult = {
 /**
  * One row of the tool catalogue an extension reads through `getAllTools()`.
  * `introducedBy: "plugin"` marks a tool another plugin brought in at runtime
- * through a tool result (ADR 0291 slot 5), so the catalogue never presents it
+ * through a tool result (ADR 0295 slot 5), so the catalogue never presents it
  * as a host tool.
  */
 export type ExtensionToolInfo = {
@@ -236,7 +236,7 @@ export interface TrustedExtensionBridge {
   isIdle(): boolean;
   /**
    * The running turn's cancellation token, or `undefined` when no turn is
-   * running. Plugin work observes the abort through this (ADR 0291 slot 3);
+   * running. Plugin work observes the abort through this (ADR 0295 slot 3);
    * `abort()` is the same turn being stopped.
    */
   getAbortSignal(): AbortSignal | undefined;
@@ -258,7 +258,7 @@ export interface TrustedExtensionBridge {
   newSession(): Promise<{ cancelled: boolean }>;
   fork(entryId: string): Promise<{ cancelled: boolean }>;
   /**
-   * Slot 9: the host's own facts for one turn (`turn.facts`, ADR 0291 rule 8).
+   * Slot 9: the host's own facts for one turn (`turn.facts`, ADR 0295 rule 8).
    * `turnId` absent means the turn running now. `undefined` means the host
    * holds no such turn — a turn it never recorded is never answered with
    * zeroes, and the caller reports the failure rather than inventing one.
@@ -278,9 +278,9 @@ export interface TrustedExtensionBridge {
   }>;
   /**
    * Slot 10: queue a real, durable turn for this plugin's continuation (ADR
-   * 0291 rule 9). `undefined` means the host refused or could not queue it.
+   * 0295 rule 9). `undefined` means the host refused or could not queue it.
    * The request carries the plugin's identity, because only the caller knows
-   * which plugin asked for the continuation (ADR 0289).
+   * which plugin asked for the continuation (ADR 0293).
    */
   continueTurn(
     input: TrustedExtensionContinuationRequest,
@@ -638,7 +638,7 @@ export class TrustedExtensionRunner {
 
   /**
    * Emit one event to every handler in load order, after the runtime slot gate
-   * (ADR 0291 rule 2). For result events the results are folded by the
+   * (ADR 0295 rule 2). For result events the results are folded by the
    * caller-supplied reducer; a throwing or stalled handler counts as
    * `undefined` (spec §6). The reducer also receives the id and the label of
    * the extension that produced `next`, so a hook that changes control flow can
@@ -665,7 +665,7 @@ export class TrustedExtensionRunner {
       const refused = this.refusedSlot(extension, event);
       if (refused) {
         // A skip is never silent: the plugin author and the user both need to
-        // know why the hook did nothing (ADR 0291 rule 2).
+        // know why the hook did nothing (ADR 0295 rule 2).
         this.report(
           extension.spec.id,
           "permission_denied",
@@ -697,7 +697,7 @@ export class TrustedExtensionRunner {
 
   /**
    * The slot permission that refuses `event` for this extension, or `undefined`
-   * when its handlers may run (ADR 0291 rule 2).
+   * when its handlers may run (ADR 0295 rule 2).
    */
   private refusedSlot(extension: LoadedExtension, event: string): string | undefined {
     return this.refusedPermission(extension, trustedExtensionEventPermission(event));
@@ -705,7 +705,7 @@ export class TrustedExtensionRunner {
 
   /**
    * The slot permission that refuses the non-event call `apiCall` for this
-   * extension, or `undefined` when the call may run (ADR 0291 rule 2). An API
+   * extension, or `undefined` when the call may run (ADR 0295 rule 2). An API
    * call has no event name, so its slot comes from the named contract in
    * `@pi-desktop/shared` rather than from the payload.
    */
@@ -720,7 +720,7 @@ export class TrustedExtensionRunner {
    * Report and refuse `apiCall` for `extension` when the plugin does not hold
    * its slot permission; `true` means the call may proceed. Every refusal is
    * reported, never swallowed: the author and the user both need to know why
-   * the call did nothing (ADR 0291 rule 2).
+   * the call did nothing (ADR 0295 rule 2).
    */
   private refuseApi(
     extension: LoadedExtension,
@@ -744,7 +744,7 @@ export class TrustedExtensionRunner {
    * proceed. Only one scope needs a second right, and it is a property of the
    * scope rather than of the call: a whole-session recap reads conversation
    * content, so it needs `runtime.session.read` on top of the slot's own name
-   * (ADR 0291 rule 7). The refusal is reported like every other one.
+   * (ADR 0295 rule 7). The refusal is reported like every other one.
    */
   private refuseApiScope(
     extension: LoadedExtension,
@@ -861,8 +861,8 @@ export class TrustedExtensionRunner {
    *
    * The host owns the queue, so the continuation is a real, durable turn that
    * survives a restart and is drained at the next turn boundary — the same
-   * mechanism a user message uses. There is no numeric quota (ADR 0291 rule
-   * 9): what replaces it is the visible row ADR 0289 asks for, which is why the
+   * mechanism a user message uses. There is no numeric quota (ADR 0295 rule
+   * 9): what replaces it is the visible row ADR 0293 asks for, which is why the
    * request carries the plugin's id and label. The queued row is real and
    * visible today; it does not yet *name* the plugin, because host-core's queue
    * and transcript rows carry no plugin provenance — a host gap this call
@@ -896,7 +896,7 @@ export class TrustedExtensionRunner {
 
   /**
    * The slot permission that refuses this extension, or `undefined` when it
-   * holds the permission and may proceed (ADR 0291 rule 2).
+   * holds the permission and may proceed (ADR 0295 rule 2).
    *
    * Every mapped slot name is registered, so there is no exception: the gate
    * applies to every plugin, and the high-trust tier is no different —
@@ -913,7 +913,7 @@ export class TrustedExtensionRunner {
   }
 
   /**
-   * Slot-5 gate for one tool result (ADR 0291 rule 2): may the extension that
+   * Slot-5 gate for one tool result (ADR 0295 rule 2): may the extension that
    * registered `toolName` introduce tools, report spend, and request early
    * termination with its result? A refusal is reported as `permission_denied`
    * on the plugin row. `undefined` means the tool belongs to no extension, so
@@ -1077,7 +1077,7 @@ export class TrustedExtensionRunner {
         return bridge.getModel();
       },
       isIdle: () => bridge.isIdle(),
-      // The live cancellation token of the running turn (ADR 0291 slot 3): a
+      // The live cancellation token of the running turn (ADR 0295 slot 3): a
       // long-running plugin keeps the signal and stops when the turn aborts.
       signal: bridge.getAbortSignal(),
       abort: () => bridge.abort(),
@@ -1291,7 +1291,7 @@ export class TrustedExtensionRunner {
       },
       getSessionName: () => bridge.getSessionName(),
       /**
-       * Slot 3: ask the host to stop the current turn (ADR 0291 rule 2). The
+       * Slot 3: ask the host to stop the current turn (ADR 0295 rule 2). The
        * plugin's own long-running work learns about it through
        * `ctx.signal` / the tool execution context's `signal`. Returns whether
        * the request was accepted: a plugin that does not hold
@@ -1316,7 +1316,7 @@ export class TrustedExtensionRunner {
       /**
        * Slot 8: read what a turn contained (`runtime.turn.recap`). The default
        * scope is one turn; `scope: "session"` reads the whole session and
-       * needs `runtime.session.read` as well (ADR 0291 rule 7). Reads are not
+       * needs `runtime.session.read` as well (ADR 0295 rule 7). Reads are not
        * logged one by one.
        */
       recap: (input?: { scope?: "turn" | "session"; turnId?: string; limit?: number }) =>
@@ -1325,7 +1325,7 @@ export class TrustedExtensionRunner {
        * Slot 10: start another turn after this one ends
        * (`runtime.turn.continue`). The host owns the queue, so the
        * continuation is a real durable turn and there is no numeric quota
-       * (ADR 0291 rule 9). Without the grant the plugin gets `undefined` and a
+       * (ADR 0295 rule 9). Without the grant the plugin gets `undefined` and a
        * `permission_denied` diagnostic.
        */
       continueTurn: (input: string | { message?: string }) =>

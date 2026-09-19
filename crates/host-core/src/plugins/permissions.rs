@@ -68,7 +68,7 @@ pub(crate) fn derive_capabilities(manifest: &PluginManifest) -> Vec<String> {
         out.push("renderer".into());
     }
     // No badge for `rendererData`/`rendererActions`: those lists are
-    // declarations, they name no capability and grant nothing (ADR 0290 §3).
+    // declarations, they name no capability and grant nothing (ADR 0294 §3).
     let map = manifest.contributes.as_ref().and_then(Value::as_object);
     let has = |key: &str| -> bool {
         map.and_then(|m| m.get(key))

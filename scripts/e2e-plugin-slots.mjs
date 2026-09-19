@@ -1041,7 +1041,7 @@ export const protocol = {
 
   // ── E2E-PLUGIN-renderer-bridge-global-reachable-recorded ────────────────
   // ── E2E-PLUGIN-renderer-one-react-via-import-map ────────────────────────
-  // Records what same-realm execution really ships (ADR 0287), and only a real
+  // Records what same-realm execution really ships (ADR 0291), and only a real
   // window can answer either half. The import map is the mitigation: the
   // plugin-facing bare specifiers `react`, `react-dom` and `react-dom/client`
   // resolve to the host's single React. The preload global is a recorded
@@ -1192,7 +1192,7 @@ export const protocol = {
   }
 
   // ── E2E-PLUGIN-renderer-slot-component-receives-dispatch ────────────────
-  // Protects: the one way out of a slot component (ADR 0290 decision 1). The
+  // Protects: the one way out of a slot component (ADR 0294 decision 1). The
   // prop is recorded by the plugin's own component, not read off the host's
   // copy of the same fact, because only the component can say what it was
   // handed — and a data-only `slotProps` object is exactly the shape this
@@ -1224,7 +1224,7 @@ export const protocol = {
   // declare. The fixture declares `ui.toast` and calls `composer.replaceDraft`,
   // so an implementation that routed an action before reading the declaration
   // could not answer with this code, and neither could one that dropped the
-  // call silently (ADR 0290 decisions 4 and 5).
+  // call silently (ADR 0294 decisions 4 and 5).
   try {
     assert(journey, missingJourney());
     const recorded = journey.pluginDispatch;
@@ -1299,7 +1299,7 @@ export const protocol = {
   }
 
   // ── E2E-PLUGIN-renderer-call-round-trip ─────────────────────────────────
-  // Protects: the forwarded half of the interface (ADR 0290 decision 4). A
+  // Protects: the forwarded half of the interface (ADR 0294 decision 4). A
   // slot component dispatches `plugin.call { method, args }` and the promise
   // resolves with what the plugin's own headless entry returned — a marker that
   // exists nowhere in the renderer, the method it was asked for, and the
@@ -1355,7 +1355,7 @@ export const protocol = {
   }
 
   // ── E2E-PLUGIN-renderer-call-runs-in-the-plugin-entry ───────────────────
-  // Protects: "its own entry" (ADR 0290 decision 4). The fixture's headless
+  // Protects: "its own entry" (ADR 0294 decision 4). The fixture's headless
   // entry answers with a counter it increments per call and with its own pid, so
   // two clicks have to come back 1 then 2 from one and the same process. The
   // counter is state the renderer has no way to advance, and the pid must not be

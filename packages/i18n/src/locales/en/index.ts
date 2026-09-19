@@ -268,6 +268,8 @@ export const en = {
     speakSaved: "Saved spoken audio to {{path}}",
     undoEnhancement: "Undo enhancement",
     enhancementFailed: "Prompt enhancement failed",
+    enhancementTimeout:
+      "The rewrite took too long. Try again, or pick a faster enhancement model in Settings.",
     dismissEnhancementError: "Dismiss enhancement error",
     sendWhileRunning: "Send follow-up · {{shortcut}} to steer",
     steeringUnavailable: "This turn can no longer accept steering. Your draft was kept.",
@@ -476,21 +478,6 @@ export const en = {
     thinking: "Thinking",
     thinkingShow: "Show thinking",
     thinkingHide: "Hide thinking",
-    webSearch: "Web search",
-    webSearchOn: "Web search on",
-    webSearchOff: "Web search off",
-    webSearchUnsupported: "Current API style does not support native web search",
-    webSearchRunning: "Searching the web…",
-    webSearchSources: "{{count}} source",
-    webSearchSources_other: "{{count}} sources",
-    webSearchQuery: "Searched {{query}}",
-    webSearchShow: "Show web search",
-    webSearchHide: "Hide web search",
-    webSearchEmpty: "No sources were returned for this search.",
-    webSearchSummary: "Searched {{searchCount}} times · {{sourceCount}} sources",
-    webSearchMore: "View {{count}} more sources",
-    webSearchCitationPrev: "Previous citation",
-    webSearchCitationNext: "Next citation",
     untitledTask: "New task",
   },
   session: {
@@ -650,6 +637,7 @@ sklm: {
       subagents: "Subagents",
       import: "Import",
       projects: "Projects",
+      remoteHosts: "Remote hosts",
       info: "Info",
     },
     general: "General",
@@ -848,6 +836,37 @@ sklm: {
     subagentSaved: "Saved {{name}}",
     import: "Import",
     projectArchive: "Project archive",
+    remoteHosts: {
+      title: "Remote hosts",
+      overview:
+        "Paired pi-host machines you can drive from this desktop. Sessions on a paired host render like local ones; the connection stays inside main and no device token reaches this page.",
+      listTitle: "Paired remote hosts",
+      listError: "Failed to load hosts",
+      loading: "Loading…",
+      emptyTitle: "No hosts paired yet",
+      emptyBody: "Pair a machine below to start a session on it.",
+      statusOnline: "Online",
+      statusOffline: "Offline",
+      remove: "Remove",
+      removing: "Removing…",
+      removed: "{{label}} removed.",
+      removeFailed: "Failed to remove: {{message}}",
+      pairTitle: "Pair a new host",
+      pair: "Pair",
+      pairing: "Pairing…",
+      pairAction: "Add",
+      pairSucceeded: "{{label}} paired.",
+      pairFailed: "Pairing failed: {{message}}",
+      fieldLabel: "Label",
+      fieldLabelDesc: "Shown in this list and recorded on the paired host.",
+      fieldLabelPlaceholder: "Home Linux",
+      fieldUrl: "RACP URL",
+      fieldUrlDesc:
+        "The pi-host loopback endpoint, e.g. ws://127.0.0.1:9443/racp (forwarded over SSH).",
+      fieldPairingToken: "Pairing token",
+      fieldPairingTokenDesc:
+        "Single-use ppt1.* token from the pi-host bootstrap output. Consumed on pair.",
+    },
     importTitle: "Import from other tools",
     importScan: "Scan",
     importScanning: "Scanning…",
@@ -1186,6 +1205,33 @@ sklm: {
     fontSizeXl: "Trenta",
     fontSizeScale: "Text size scale",
     fontSizePercent: "{{value}}%",
+    promptEnhancementTitle: "Prompt enhancement",
+    promptEnhancementDesc:
+      "Applies to the Composer's Enhance prompt action. The system prompt is built in; the user template and the enhancement model can be customized.",
+    promptEnhancementCustomTemplate: "Use a custom template",
+    promptEnhancementCustomTemplateDesc:
+      "Replaces the built-in user template with your own. The system prompt stays built in.",
+    promptEnhancementCustomTemplateNeedsTemplate:
+      "Save a custom template first; the switch then chooses between it and the built-in template.",
+    promptEnhancementEdit: "Edit",
+    promptEnhancementModelTitle: "Enhancement prompt",
+    promptEnhancementModel: "Default model",
+    promptEnhancementThinking: "Reasoning",
+    promptEnhancementThinkingDesc:
+      "Reasoning effort for the rewrite. Off is the default and the fastest.",
+    promptEnhancementThinkingOff: "Off (no reasoning)",
+    promptEnhancementModelFollow: "Follow the current model",
+    promptEnhancementModelUnavailable:
+      "Unavailable — enhance will fall back to the current model",
+    promptEnhancementUserTemplate: "User template",
+    promptEnhancementUserTemplateDesc:
+      "Wraps the draft. It must include the draft variable; use the insert button to place it.",
+    promptEnhancementInsertDraft: "Insert draft variable",
+    promptEnhancementRestore: "Restore default",
+    promptEnhancementMissingDraftVariable:
+      "The user template must contain the draft variable, or the draft cannot be sent.",
+    promptEnhancementTooLong: "The user template must be at most 8000 characters.",
+    promptEnhancementSaveError: "Couldn't save the prompt-enhancement settings.",
   },
   project: {
     open: "Open project",
@@ -1772,6 +1818,7 @@ importConfirm: "Imported extensions run inside the agent process with the same a
       "bus.publish": "Send messages to other plugins",
       "bus.subscribe": "Receive messages from other plugins",
       "browser.cdp": "Control the work-panel browser",
+      "usage.read": "Read usage statistics",
     },
     permissionHelp: {
       "ui.panel": "Lets the plugin show its own panel inside the app.",
@@ -1847,6 +1894,8 @@ importConfirm: "Imported extensions run inside the agent process with the same a
       "bus.subscribe": "Can receive messages on the topics it declared.",
       "browser.cdp":
         "Can navigate the work-panel browser, read the page, run JavaScript, and send allowlisted Chrome DevTools commands. Cookie and storage methods are blocked.",
+      "usage.read":
+        "Lists completed-turn usage facts (paginated token counters and session titles). No message content is included.",
     },
   },
   /**

@@ -1,5 +1,5 @@
 /**
- * Agent-side half of the runtime-slots demo (spec 07-plugins/16 §6, ADR 0291).
+ * Agent-side half of the runtime-slots demo (spec 07-plugins/16 §6, ADR 0295).
  *
  * This module runs inside the agent sidecar, which is the only plugin host that
  * sees a running turn. It uses two runtime slots, and declares exactly the two
@@ -15,7 +15,7 @@
  *     here, `signal` in a plugin tool's execution context).
  *
  * `agent.extension` is what lets this module run at all, and it grants neither
- * slot: ADR 0291 rule 2 says a tier permission never implies a slot grant, which
+ * slot: ADR 0295 rule 2 says a tier permission never implies a slot grant, which
  * is why the manifest lists all three names. A missing slot grant is not silent
  * either — the handler is skipped and the plugin row reports a
  * `permission_denied` diagnostic naming the permission.

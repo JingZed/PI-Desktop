@@ -107,16 +107,6 @@ import type {
 } from "@pi-desktop/shared";
 import {
   addUsage,
-  attachNativeWebSearchToPayload,
-  extractHostedSearchFromAssistantContent,
-  hostedSearchHasContent,
-  isHiddenNativeWebToolName,
-  mergeHostedSearch,
-  parseHostedSearchStreamEvent,
-  supportsNativeWebSearch,
-
-
-  type HostedSearch,
   checkpointGeneration,
   contextCompactionMark,
   cumulativeDelta,
@@ -225,8 +215,8 @@ import {
   providerRateLimitDelayMs,
   providerSetupRetryDelayMs,
 } from "./provider-retry.js";
-import { rebuildNodeNetworkTransport } from "./node-proxy.js";
 
+import { rebuildNodeNetworkTransport } from "./node-proxy.js";
 import {
   createProviderTransportHealth,
   explainsProviderFetchFailure,
@@ -781,7 +771,7 @@ function turnAbortedError(message: string): Error {
 }
 
 /**
- * Outcome of the slot-1 consultation (ADR 0291 slot 1, `input`), before the
+ * Outcome of the slot-1 consultation (ADR 0295 slot 1, `input`), before the
  * audit records are built.
  */
 type BeforeSendOutcome = {
@@ -794,7 +784,7 @@ type BeforeSendOutcome = {
 };
 
 /**
- * Fold one `input` handler's answer (ADR 0291 slot 1).
+ * Fold one `input` handler's answer (ADR 0295 slot 1).
  *
  * A transform writes the current text back into the shared payload, which is
  * how transforms chain: the next handler reads the text this one produced. An
@@ -840,7 +830,7 @@ function foldBeforeSend(
 }
 
 /**
- * The error a blocked prompt ends with (ADR 0291 slot 1). The message is what
+ * The error a blocked prompt ends with (ADR 0295 slot 1). The message is what
  * the user reads on the failed turn, so a plugin's own `reason` is preferred
  * over the generic sentence; the code is the one `classifyAgentError` keeps.
  */
@@ -943,8 +933,6 @@ export type AgentRuntimeOptions = {
   turnId?: string;
   provider: RuntimeProviderConfig;
   thinkingLevel: ThinkingLevel;
-  /** Attach vendor hosted-search tools for this session when the wire API allows. */
-  nativeWebSearch?: boolean;
   systemPrompt?: string;
   /** Session-bound workspace root used for path-scoped instruction requests. */
   projectPath?: string;
@@ -997,7 +985,6 @@ export type RuntimeMatchConfig = {
   mode: Mode;
   provider: RuntimeProviderConfig;
   thinkingLevel: ThinkingLevel;
-  nativeWebSearch?: boolean;
   pluginTools?: PluginToolDef[];
   pluginSkills?: PluginSkillDef[];
   trustedExtensions?: TrustedExtensionSpec[];
@@ -1014,7 +1001,7 @@ export type RuntimeMatchConfig = {
 /**
  * Trusted extensions and the grants they were loaded with, as one digest: the
  * set is part of the runtime match, and a revoked slot permission has to retire
- * the runtime with it so the next prompt reloads both (spec 16 §4.3, ADR 0291
+ * the runtime with it so the next prompt reloads both (spec 16 §4.3, ADR 0295
  * rule 2).
  */
 function trustedExtensionDigest(specs: TrustedExtensionSpec[]): string {
@@ -1129,7 +1116,7 @@ type CheckpointBuildFailure = {
   recoverable: boolean;
   /**
    * True when a plugin cancelled the compaction (`session_before_compact`,
-   * ADR 0291 slot 11). A cancel is not a failure: nothing was attempted, so
+   * ADR 0295 slot 11). A cancel is not a failure: nothing was attempted, so
    * the caller reports no `compaction_end` failure and runs no fallback.
    */
   cancelled?: boolean;
@@ -1653,8 +1640,6 @@ export class DesktopAgentRuntime {
   private mode: Mode;
   private provider: RuntimeProviderConfig;
   private thinkingLevel: ThinkingLevel;
-  private nativeWebSearch: boolean;
-
   private host: RuntimeHost;
   private onEvent: (envelope: AgentEventEnvelope) => void;
   private streamSink: StreamCoalescer;
@@ -1725,7 +1710,7 @@ export class DesktopAgentRuntime {
   /**
    * Tools a plugin introduced through a tool result's `addedToolNames` (slot
    * 5). Kept apart from the on-demand names so the catalogue can say where the
-   * tool came from (ADR 0291 slot 5).
+   * tool came from (ADR 0295 slot 5).
    */
   private pluginIntroducedToolNames = new Set<string>();
   private scratchDir?: string;
@@ -1851,7 +1836,7 @@ export class DesktopAgentRuntime {
   private compactionAborted = false;
   /** True once an un-auditable rewrite has been reported for this session. */
   private rewriteAuditWarned = false;
-  /** A plugin cancelled the in-flight compaction (ADR 0291 slot 11). */
+  /** A plugin cancelled the in-flight compaction (ADR 0295 slot 11). */
   private compactionCancelled = false;
   /** Set by the `new_context` tool, consumed at the next turn boundary. */
   private pendingModelCompaction = false;
@@ -1878,7 +1863,6 @@ export class DesktopAgentRuntime {
     this.planningState = proposalKindForMode(this.mode) ? "planning" : "inactive";
     this.provider = opts.provider;
     this.thinkingLevel = clampThinkingLevel(opts.provider, opts.thinkingLevel);
-    this.nativeWebSearch = opts.nativeWebSearch === true;
     this.host = opts.host;
     this.hostCloseUnsubscribe = this.host.onClose?.(() => {
       this.cleanupActiveToolProgress();
@@ -2000,42 +1984,26 @@ Delegation rules:
               ...options,
               maxRetries: PROVIDER_REQUEST_MAX_RETRIES,
               sessionId: this.sessionId,
-              onPayload: async (payload, payloadModel) => {
-                const rewritten = await options?.onPayload?.(payload, payloadModel);
-                const current = rewritten ?? payload;
-                if (!this.nativeWebSearch) return current;
-                return attachNativeWebSearchToPayload(current, {
-                  api: payloadModel.api,
-                  apiStyle: this.provider.apiStyle,
-                  vendorKey: this.provider.vendorKey,
-                  baseUrl: this.provider.baseUrl ?? payloadModel.baseUrl,
-                });
-
-
-              },
               // pi-ai only exposes onResponse after a request succeeds. Capture the
               // failed response separately so a 429 can honor Retry-After headers,
               // and capture the transport cause of a rejection while the original
               // Error still exists (issue #234).
-              fetch: async (input, init) => {
-                const captured = captureProviderResponse(
-                  options?.fetch,
-                  (response, requestBytes, failure) => {
-                    this.providerResponseStatus = response?.status;
-                    this.providerRequestBytes = requestBytes;
-                    this.providerFetchFailure = failure;
-                    if (failure) this.recoverProviderTransport(failure);
-                    this.providerRetryHeaders = carriesRetryDelayHeaders(
-                      response?.status,
-                    )
-                      ? response?.headers
-                      : undefined;
-                  },
-                );
-                const response = await captured(input, init);
-                this.ingestHostedSearchStream(response);
-                return response;
-              },
+              fetch: captureProviderResponse(
+                options?.fetch,
+                (response, requestBytes, failure) => {
+                  this.providerResponseStatus = response?.status;
+                  this.providerRequestBytes = requestBytes;
+                  this.providerFetchFailure = failure;
+                  if (failure) this.recoverProviderTransport(failure);
+                  // A gateway 502/503 can also state Retry-After, so keep headers
+                  // for every status whose delay is usable, not only for 429.
+                  this.providerRetryHeaders = carriesRetryDelayHeaders(
+                    response?.status,
+                  )
+                    ? response?.headers
+                    : undefined;
+                },
+              ),
               onResponse: async (response, responseModel) => {
                 this.providerResponseStatus = response.status;
                 await options?.onResponse?.(response, responseModel);
@@ -2249,7 +2217,7 @@ Delegation rules:
   }
 
   /**
-   * Slot 5 for extension tools (ADR 0291 rule 2): an extension tool's result
+   * Slot 5 for extension tools (ADR 0295 rule 2): an extension tool's result
    * may introduce tools, report its own spend, and request early termination
    * only when its plugin holds `runtime.tool.extend`. `plugin_*` tools are
    * gated in Electron main, which owns the plugin's grants, and host tools are
@@ -2529,7 +2497,6 @@ Delegation rules:
       this.mode === config.mode &&
       this.thinkingLevel ===
         clampThinkingLevel(config.provider, config.thinkingLevel) &&
-      this.nativeWebSearch === (config.nativeWebSearch === true) &&
       current === next &&
       safeJson(this.commandShell) === safeJson(config.commandShell) &&
       safeJson(this.baseProjectInstructions ?? null) ===
@@ -2549,7 +2516,7 @@ Delegation rules:
         safeJson([...new Set(config.subagentModelKeys ?? [])].sort()) &&
       // Enabling or disabling a trusted extension, and revoking a slot
       // permission, retire the runtime so the next prompt reloads both
-      // (spec 16 §4.3, ADR 0291 rule 2).
+      // (spec 16 §4.3, ADR 0295 rule 2).
       trustedExtensionDigest(this.trustedExtensionSpecs) ===
         trustedExtensionDigest(config.trustedExtensions ?? [])
     );
@@ -2724,7 +2691,7 @@ Delegation rules:
           description: tool.description,
           active: active.has(tool.name),
           // The catalogue names the provenance of a tool a plugin introduced
-          // at runtime (ADR 0291 slot 5) instead of leaving it anonymous.
+          // at runtime (ADR 0295 slot 5) instead of leaving it anonymous.
           ...(runtime.pluginIntroducedToolNames.has(tool.name)
             ? { introducedBy: "plugin" as const }
             : {}),
@@ -2792,7 +2759,7 @@ Delegation rules:
       },
       /**
        * Slot 9: the host's own facts for one turn, straight from `turn.facts`
-       * (ADR 0291 rule 8). The sidecar already reaches host-core through the
+       * (ADR 0295 rule 8). The sidecar already reaches host-core through the
        * same reverse proxy its other calls use — `turn.facts` is allowlisted
        * there like `session.get`, so no second path is invented. `turnId`
        * absent means the current turn; before any prompt there is none, so the
@@ -2825,8 +2792,8 @@ Delegation rules:
        * Slot 10: a plugin's continuation takes the host-owned queue, the same
        * path the desktop's own send uses (`session.queuePush`), so the turn is
        * real, durable and drained at the next turn boundary — there is no quota
-       * (ADR 0291 rule 9). The plugin identity travels with the request so the
-       * host can attribute the row ADR 0289 asks for.
+       * (ADR 0295 rule 9). The plugin identity travels with the request so the
+       * host can attribute the row ADR 0293 asks for.
        */
       continueTurn: async ({ message, pluginId, pluginLabel }) => {
         const pushed = await runtime.host.call<{ id?: string }>("session.queuePush", {
@@ -3725,7 +3692,7 @@ Delegation rules:
     );
     // A tool a plugin introduced disappears with its plugin: the catalog is
     // rebuilt from the loaded plugins, so a name it no longer holds is pruned
-    // here together with its provenance mark (ADR 0291 slot 5).
+    // here together with its provenance mark (ADR 0295 slot 5).
     for (const name of this.activeDeferredToolNames) {
       if (!this.deferredToolNames.has(name)) {
         this.activeDeferredToolNames.delete(name);
@@ -3820,7 +3787,7 @@ Delegation rules:
 
     const visibleEntries = entries.slice(0, MAX_ON_DEMAND_TOOL_PROMPT_ENTRIES);
     // The catalogue the model reads says where a tool came from: one a plugin
-    // introduced at runtime is marked as such (ADR 0291 slot 5).
+    // introduced at runtime is marked as such (ADR 0295 slot 5).
     const lines = visibleEntries.map((entry) => {
       const introduced = this.pluginIntroducedToolNames.has(entry.name)
         ? " (introduced by a plugin)"
@@ -3887,7 +3854,7 @@ Delegation rules:
         const availablePreview = available.slice(0, MAX_TOOL_SEARCH_RESULT_NAMES);
         const remaining = available.length - availablePreview.length;
         // The model's own answer says where a newly available tool came from:
-        // a name another plugin introduced is marked as such (ADR 0291 slot 5).
+        // a name another plugin introduced is marked as such (ADR 0295 slot 5).
         const pluginIntroduced = activated.filter((name) =>
           this.pluginIntroducedToolNames.has(name),
         );
@@ -5319,7 +5286,7 @@ Delegation rules:
   }
 
   /**
-   * Slot-5 gate (ADR 0291 rule 2): may the tool that produced this result
+   * Slot-5 gate (ADR 0295 rule 2): may the tool that produced this result
    * introduce tools, report spend, and request early termination?
    *
    * An extension tool is checked here, because the runner owns the plugin's
@@ -5336,7 +5303,7 @@ Delegation rules:
   }
 
   /**
-   * Slot-5 activation (ADR 0291): tools a plugin's result introduced become
+   * Slot-5 activation (ADR 0295): tools a plugin's result introduced become
    * available from the next provider request onward, and stay available for as
    * long as that result remains part of the context. Returns the names that
    * actually entered the catalog, which is what the tool-search answer and the
@@ -6424,7 +6391,7 @@ Delegation rules:
     try {
       const runner = this.extensionRunner;
       // `session_before_compact` is emitted from the compaction itself, once
-      // the segment about to be replaced is known (ADR 0291 slot 11, rule 7).
+      // the segment about to be replaced is known (ADR 0295 slot 11, rule 7).
       // A plugin that cancelled it is not a failure, so nothing is reported
       // and no fallback runs.
       this.compactionCancelled = false;
@@ -6876,7 +6843,7 @@ Delegation rules:
    * `session_before_compact` is asked here rather than at the top of the
    * compaction, because this is where the segment about to be replaced is
    * known: a plugin that cancels sees the conversation it is cancelling for
-   * (ADR 0291 slot 11, rule 7).
+   * (ADR 0295 slot 11, rule 7).
    */
   private async buildCheckpoint(
     signal: AbortSignal,
@@ -7124,80 +7091,6 @@ Delegation rules:
     }
   }
 
-
-  private nativeWebSearchActive(): boolean {
-    return (
-      this.nativeWebSearch &&
-      supportsNativeWebSearch({
-        api: this.model.api,
-        apiStyle: this.provider.apiStyle,
-        vendorKey: this.provider.vendorKey,
-        baseUrl: this.provider.baseUrl ?? this.model.baseUrl,
-      })
-    );
-  }
-
-
-  private applyHostedSearch(
-    next: Parameters<typeof mergeHostedSearch>[1],
-    emit = true,
-  ): void {
-    if (!this.currentAssistant) return;
-    if (!hostedSearchHasContent(next as HostedSearch | undefined) && !this.currentAssistant.hostedSearch) {
-      return;
-    }
-    const hostedSearch = mergeHostedSearch(this.currentAssistant.hostedSearch, next);
-    if (!hostedSearch) return;
-    this.currentAssistant = { ...this.currentAssistant, hostedSearch };
-    if (emit) this.emit({ type: "message_update", message: this.currentAssistant });
-  }
-
-
-
-
-  private ingestHostedSearchStream(response: Response): void {
-    if (!this.nativeWebSearchActive() || !response.body) return;
-    let clone: Response;
-    try {
-      clone = response.clone();
-    } catch {
-      return;
-    }
-    void this.readHostedSearchStream(clone);
-  }
-
-  private async readHostedSearchStream(response: Response): Promise<void> {
-    try {
-      const reader = response.body?.getReader();
-      if (!reader) return;
-      const decoder = new TextDecoder();
-      let buffer = "";
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split(/\r?\n/g);
-        buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          const trimmed = line.trim();
-          const payload = trimmed.startsWith("data:") ? trimmed.slice(5).trim() : trimmed;
-          if (!payload || payload === "[DONE]" || (!payload.startsWith("{") && !payload.startsWith("["))) {
-            continue;
-          }
-          try {
-            const parsed = JSON.parse(payload) as unknown;
-            const update = parseHostedSearchStreamEvent(parsed);
-            if (update) this.applyHostedSearch(update);
-          } catch {
-            // Ignore partial JSON from the clone parser.
-          }
-        }
-      }
-    } catch {
-      // Hosted-search metadata is best-effort and must not break the provider stream.
-    }
-  }
-
   private async handleAgentEvent(event: AgentEvent) {
     this.forwardAgentEventToExtensions(event);
     switch (event.type) {
@@ -7239,9 +7132,6 @@ Delegation rules:
               : this.progressTurnRerunInProgress
                 ? retryingAssistant?.content ?? ""
                 : content.text;
-          const initialSearch = extractHostedSearchFromAssistantContent(
-            (event.message as { content?: unknown }).content,
-          );
           this.currentAssistant = {
             id: retryingAssistant?.id ?? randomUUID(),
             role: "assistant",
@@ -7249,11 +7139,6 @@ Delegation rules:
             ...(content.hasThinking && content.thinking
               ? { thinking: content.thinking }
               : {}),
-            ...(initialSearch
-              ? { hostedSearch: mergeHostedSearch(retryingAssistant?.hostedSearch, initialSearch) }
-              : retryingAssistant?.hostedSearch
-                ? { hostedSearch: retryingAssistant.hostedSearch }
-                : {}),
             createdAt: nowIso(),
             status: "streaming",
             modelId: this.provider.modelId,
@@ -7292,9 +7177,6 @@ Delegation rules:
           const thinkingDelta = content.hasThinking
             ? cumulativeDelta(previousThinking, content.thinking)
             : { delta: "", reset: false };
-          const extractedSearch = extractHostedSearchFromAssistantContent(
-            (event.message as { content?: unknown }).content,
-          );
           this.currentAssistant = {
             ...this.currentAssistant,
             content: nextText,
@@ -7303,14 +7185,6 @@ Delegation rules:
               : content.hasThinking
                 ? { thinking: undefined }
                 : {}),
-            ...(extractedSearch
-              ? {
-                  hostedSearch: mergeHostedSearch(
-                    this.currentAssistant.hostedSearch,
-                    extractedSearch,
-                  ),
-                }
-              : {}),
             status: "streaming",
           };
           if (
@@ -7554,23 +7428,6 @@ Delegation rules:
                   thinking: nextThinking,
                 })
               : undefined;
-          const endedSearch = mergeHostedSearch(
-            this.currentAssistant.hostedSearch,
-            extractHostedSearchFromAssistantContent(
-              (event.message as { content?: unknown }).content,
-            ),
-          );
-          const hostedSearch = hostedSearchHasContent(endedSearch) && endedSearch
-            ? {
-                queries: endedSearch.queries,
-                sources: endedSearch.sources,
-                status: (failed || aborted
-                  ? endedSearch.sources.length > 0
-                    ? "completed" as const
-                    : "failed" as const
-                  : "completed" as const),
-              }
-            : undefined;
           this.currentAssistant = {
             ...this.currentAssistant,
             content: nextText,
@@ -7579,7 +7436,6 @@ Delegation rules:
               : content.hasThinking
                 ? { thinking: undefined }
                 : {}),
-            ...(hostedSearch ? { hostedSearch } : {}),
             status: failed || emptyResponse
               ? "error"
               : aborted
@@ -7600,7 +7456,6 @@ Delegation rules:
           this.activeProviderRetryAttempt = 0;
           this.streamStartedAt = undefined;
           this.currentAssistant = undefined;
-
           const canRecoverOverflow =
             this.compactionEnabled &&
             overflow &&
@@ -7632,22 +7487,6 @@ Delegation rules:
         break;
       }
       case "tool_execution_start": {
-        if (this.nativeWebSearchActive() && isHiddenNativeWebToolName(event.toolName)) {
-          const startedAt = Date.now();
-          this.activeToolCalls.set(event.toolCallId, {
-            toolName: event.toolName,
-            args: event.args,
-            startedAt,
-          });
-          this.applyHostedSearch(
-            mergeHostedSearch(undefined, extractHostedSearchFromAssistantContent({
-              type: "toolCall",
-              name: event.toolName,
-              arguments: event.args,
-            })) ?? { status: "searching", queries: [], sources: [] },
-          );
-          break;
-        }
         const startedAt = Date.now();
         this.clearAgentActivity();
         this.activeToolCalls.set(event.toolCallId, {
@@ -7674,19 +7513,6 @@ Delegation rules:
         // The agent issues the follow-up provider request as soon as the tool
         // results are in, so this is the anchor for the next providerWaitMs.
         {
-          if (this.nativeWebSearchActive() && isHiddenNativeWebToolName(
-            this.activeToolCalls.get(event.toolCallId)?.toolName ?? event.toolName,
-          )) {
-            this.activeToolCalls.delete(event.toolCallId);
-            this.applyHostedSearch(
-              mergeHostedSearch(undefined, extractHostedSearchFromAssistantContent(event.result)) ?? {
-                status: event.isError ? "failed" : "completed",
-                queries: [],
-                sources: [],
-              },
-            );
-            break;
-          }
           const endedAt = Date.now();
           const activeTool = this.activeToolCalls.get(event.toolCallId);
           this.activeToolCalls.delete(event.toolCallId);
@@ -7869,7 +7695,6 @@ Delegation rules:
     this.currentAssistant = undefined;
   }
 
-
   /** Keep a pre-flight user message in context so a reused runtime and the
    * next turn both see it, even though no provider request was made. */
   private keepPreflightUserMessage(incomingUserMessage: AgentMessage): void {
@@ -8021,7 +7846,7 @@ Delegation rules:
     this.requestStartedAt = Date.now();
     this.setAgentActivity({ phase: "starting", since: Date.now() });
     try {
-      // Slot 1 (ADR 0291 `runtime.send.before`): the desktop has accepted and
+      // Slot 1 (ADR 0295 `runtime.send.before`): the desktop has accepted and
       // persisted the user's message and echoed it to the transcript, and the
       // message has not reached the agent yet. This is the only point where the
       // runner can be consulted — Electron main owns the send path but holds no
@@ -8138,7 +7963,7 @@ Delegation rules:
   }
 
   /**
-   * `input` hook — slot 1 (ADR 0291). One consultation per prompt, after the
+   * `input` hook — slot 1 (ADR 0295). One consultation per prompt, after the
    * send and before the message is queued for the model.
    *
    * The kernel's three actions are honoured. `continue` (or no answer) passes
@@ -8212,7 +8037,7 @@ Delegation rules:
   }
 
   /**
-   * Hand one rewrite to the host that owns the audit store (ADR 0291 rule 5).
+   * Hand one rewrite to the host that owns the audit store (ADR 0295 rule 5).
    *
    * The record carries both full texts plus the transcript row it belongs to;
    * the character-level diff is computed by the owner of `plugin_rewrites`, so
@@ -8235,7 +8060,7 @@ Delegation rules:
   }
 
   /**
-   * Emit one session lifecycle notice (ADR 0291 slot 11, rule 11).
+   * Emit one session lifecycle notice (ADR 0295 slot 11, rule 11).
    *
    * The embedding host calls this at the moment it owns — creating, deleting,
    * switching away from or forking a session — because the kernel has a hook
@@ -8274,7 +8099,7 @@ Delegation rules:
   }
 
   /**
-   * `session_before_compact` hook with the segment (ADR 0291 slot 11, rule 7).
+   * `session_before_compact` hook with the segment (ADR 0295 slot 11, rule 7).
    *
    * The payload carries the conversation the checkpoint is about to replace,
    * which exists for exactly this moment: that is what a "rescue before

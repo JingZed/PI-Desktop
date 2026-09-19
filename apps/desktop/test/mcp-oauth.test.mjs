@@ -2,7 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { EventEmitter } from "node:events";
 
-import { McpOAuthManager, escapeHtml, parseExpiresIn } from "../electron/main/mcp-oauth.ts";
+import {
+  McpOAuthManager,
+  escapeHtml,
+  parseExpiresIn,
+  assertTlsProtectedUrl,
+  canReuseDcrClient,
+  isLoopbackHostname,
+  LOOPBACK_REDIRECT_PORTLESS,
+} from "../electron/main/mcp-oauth.ts";
 import { UserMcpRuntime } from "../electron/main/user-mcp.ts";
 
 function fakeHost() {
@@ -26,6 +34,15 @@ function fakeHost() {
     }
   };
   return { call, secrets, calls };
+}
+
+async function waitUntil(predicate, timeoutMs = 500) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (await predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error("timed out waiting for condition");
 }
 
 function createMockFetch(options = {}) {
@@ -120,6 +137,12 @@ function createMockFetch(options = {}) {
 
       if (grantType === "refresh_token") {
         refreshCount++;
+        if (options.refreshStatus) {
+          return new Response(JSON.stringify({ error: "unavailable" }), {
+            status: options.refreshStatus,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
         const refreshToken = params.get("refresh_token");
         if (refreshToken === "mock-refresh-token-456") {
           return new Response(JSON.stringify({
@@ -145,20 +168,35 @@ function createMockFetch(options = {}) {
   return { mockFetch, registeredClients, tokenRequests, getRefreshCount: () => refreshCount };
 }
 
-function createMockServerFactory() {
+function createMockServerFactory(options = {}) {
   let activeRequestListener = null;
   let closed = false;
+  let assignedPort = options.port ?? 54321;
+  const listenPorts = [];
+  let failPreferred = options.failPreferred === true;
 
   const mockCreateServer = (requestListener) => {
     activeRequestListener = requestListener;
     closed = false;
     const emitter = new EventEmitter();
-    emitter.listen = (_port, _host, callback) => {
+    emitter.listen = (port, _host, callback) => {
+      listenPorts.push(port);
+      if (port && port !== 0 && failPreferred) {
+        failPreferred = false;
+        queueMicrotask(() => {
+          emitter.emit(
+            "error",
+            Object.assign(new Error("listen EADDRINUSE"), { code: "EADDRINUSE" }),
+          );
+        });
+        return emitter;
+      }
+      assignedPort = !port || port === 0 ? (options.port ?? 54321) : port;
       if (callback) queueMicrotask(callback);
       return emitter;
     };
     emitter.address = () => ({
-      port: 54321,
+      port: assignedPort,
       family: "IPv4",
       address: "127.0.0.1",
     });
@@ -177,7 +215,7 @@ function createMockServerFactory() {
     }
     const req = new EventEmitter();
     req.url = pathWithQuery;
-    req.headers = { host: "127.0.0.1:54321" };
+    req.headers = { host: `127.0.0.1:${assignedPort}` };
 
     let statusCode = 200;
     const headers = {};
@@ -197,7 +235,13 @@ function createMockServerFactory() {
     return { statusCode, headers, body };
   };
 
-  return { mockCreateServer, simulateCallback, isClosed: () => closed };
+  return {
+    mockCreateServer,
+    simulateCallback,
+    isClosed: () => closed,
+    listenPorts,
+    getPort: () => assignedPort,
+  };
 }
 
 test("McpOAuthManager: discovers metadata through RFC 9728 and RFC 8414", async (t) => {
@@ -268,7 +312,10 @@ test("McpOAuthManager: executes full authorization flow with DCR, PKCE, 127.0.0.
   // Verify redirect_uri is on 127.0.0.1, not localhost (RFC 8252)
   assert.equal(parsedUrl.searchParams.get("redirect_uri"), "http://127.0.0.1:54321/callback");
   assert.equal(registeredClients.length, 1);
-  assert.equal(registeredClients[0].redirect_uris[0], "http://127.0.0.1:54321/callback");
+  assert.deepEqual(registeredClients[0].redirect_uris, [
+    LOOPBACK_REDIRECT_PORTLESS,
+    "http://127.0.0.1:54321/callback",
+  ]);
 
   const state = parsedUrl.searchParams.get("state");
   assert.ok(state);
@@ -315,22 +362,24 @@ test("McpOAuthManager: escapes HTML on error callback to prevent reflected XSS",
   t.after(() => manager.disposeAll());
 
   await manager.start("xss-test", "https://notion.test/mcp");
-  for (let i = 0; i < 50; i++) {
-    if (openedUrl) break;
-    await new Promise((r) => setTimeout(r, 10));
-  }
+  await waitUntil(() => openedUrl);
 
-  // Simulate error with XSS payload
   const xssPayload = '<script>alert("xss")</script>';
-  const callbackRes = await simulateCallback(`/callback?error=access_denied&error_description=${encodeURIComponent(xssPayload)}`);
+  const unmatched = await simulateCallback(
+    `/callback?error=access_denied&error_description=${encodeURIComponent(xssPayload)}`,
+  );
+  assert.equal(unmatched.statusCode, 400);
+  assert.equal(unmatched.body.includes("<script>"), false);
+  assert.equal(events.some((event) => event.kind === "error"), false);
 
-  assert.equal(callbackRes.statusCode, 400);
-  // Must NOT include raw script tag
-  assert.equal(callbackRes.body.includes("<script>"), false);
-  // Must include HTML-escaped content
-  assert.ok(callbackRes.body.includes("&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;"));
-
-  const errEvent = events.find((e) => e.kind === "error");
+  const state = new URL(openedUrl).searchParams.get("state");
+  const matched = await simulateCallback(
+    `/callback?error=access_denied&error_description=${encodeURIComponent(xssPayload)}&state=${encodeURIComponent(state)}`,
+  );
+  assert.equal(matched.statusCode, 400);
+  assert.equal(matched.body.includes("<script>"), false);
+  assert.ok(matched.body.includes("&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;"));
+  const errEvent = events.find((event) => event.kind === "error");
   assert.ok(errEvent);
   assert.ok(errEvent.message.includes("access_denied"));
 });
@@ -436,6 +485,7 @@ test("McpOAuthManager: reuses stored DCR client credentials on subsequent logins
       registrationEndpoint: "https://notion.test/register",
       tokenEndpoint: "https://notion.test/token",
       accessToken: "mock-token",
+      redirectUris: [LOOPBACK_REDIRECT_PORTLESS],
     }),
   });
 
@@ -606,5 +656,227 @@ test("UserMcpRuntime: maps 401 in callTool to authRequired", async (t) => {
 
 test("HTML escaping helper prevents script and attribute injection", () => {
   assert.equal(escapeHtml('<script>alert("xss")</script>'), '&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;');
-  assert.equal(escapeHtml("Tom & Jerry 'cat'"), 'Tom &amp; Jerry &#39;cat&#39;');
+  assert.equal(escapeHtml("Tom & Jerry 'cat'"), "Tom &amp; Jerry &#39;cat&#39;");
+});
+
+test("TLS helpers allow HTTPS and loopback HTTP only", () => {
+  assert.equal(isLoopbackHostname("127.0.0.1"), true);
+  assert.equal(isLoopbackHostname("localhost"), true);
+  assert.equal(isLoopbackHostname("evil.test"), false);
+  assert.equal(assertTlsProtectedUrl("https://auth.example/x", "authorization_endpoint").protocol, "https:");
+  assert.equal(assertTlsProtectedUrl("http://127.0.0.1:9/x", "token_endpoint").hostname, "127.0.0.1");
+  assert.throws(
+    () => assertTlsProtectedUrl("http://evil.test/token", "token_endpoint"),
+    /must use HTTPS/,
+  );
+  assert.equal(
+    canReuseDcrClient(
+      {
+        clientId: "abc",
+        registrationEndpoint: "https://auth.example/register",
+        tokenEndpoint: "https://auth.example/token",
+        accessToken: "t",
+        redirectUris: [LOOPBACK_REDIRECT_PORTLESS],
+      },
+      "https://auth.example/register",
+      "http://127.0.0.1:9/callback",
+    ),
+    true,
+  );
+  assert.equal(
+    canReuseDcrClient(
+      {
+        clientId: "abc",
+        registrationEndpoint: "https://auth.example/register",
+        tokenEndpoint: "https://auth.example/token",
+        accessToken: "t",
+        redirectUris: ["http://127.0.0.1:11111/callback"],
+      },
+      "https://auth.example/register",
+      "http://127.0.0.1:54321/callback",
+    ),
+    false,
+  );
+});
+
+test("McpOAuthManager: rejects non-loopback HTTP authorization servers", async (t) => {
+  const host = fakeHost();
+  const mockFetch = async (input) => {
+    const url = new URL(typeof input === "string" ? input : input.url);
+    if (url.pathname === "/.well-known/oauth-protected-resource") {
+      return new Response(JSON.stringify({
+        resource: "http://insecure.test/mcp",
+        authorization_servers: ["http://insecure.test"],
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    return new Response(null, { status: 404 });
+  };
+  const manager = new McpOAuthManager({
+    call: host.call,
+    fetchImpl: mockFetch,
+    openExternal: async () => {},
+  });
+  t.after(() => manager.disposeAll());
+  await assert.rejects(
+    () => manager.discoverMetadata("http://insecure.test/mcp"),
+    /authorization_server must use HTTPS/,
+  );
+});
+
+test("McpOAuthManager: unmatched state does not abort login; replay is rejected", async (t) => {
+  const host = fakeHost();
+  const { mockFetch, tokenRequests } = createMockFetch();
+  const { mockCreateServer, simulateCallback } = createMockServerFactory();
+  const events = [];
+  let openedUrl = null;
+  const manager = new McpOAuthManager({
+    call: host.call,
+    fetchImpl: mockFetch,
+    createServer: mockCreateServer,
+    emit: (event) => events.push(event),
+    openExternal: async (url) => {
+      openedUrl = url;
+    },
+  });
+  t.after(() => manager.disposeAll());
+
+  await manager.start("csrf-test", "https://notion.test/mcp");
+  await waitUntil(() => openedUrl);
+  const state = new URL(openedUrl).searchParams.get("state");
+
+  const mismatch = await simulateCallback(`/callback?code=valid-code&state=deadbeef`);
+  assert.equal(mismatch.statusCode, 400);
+  assert.equal(events.some((event) => event.kind === "error" || event.kind === "done"), false);
+
+  const [first, second] = await Promise.all([
+    simulateCallback(`/callback?code=valid-code&state=${encodeURIComponent(state)}`),
+    simulateCallback(`/callback?code=valid-code&state=${encodeURIComponent(state)}`),
+  ]);
+  assert.deepEqual([first.statusCode, second.statusCode].sort((a, b) => a - b), [200, 409]);
+  assert.equal(tokenRequests.filter((req) => req.grant_type === "authorization_code").length, 1);
+  await waitUntil(() => events.some((event) => event.kind === "done"));
+});
+
+test("McpOAuthManager: re-registers when stored redirect is a different exact port", async (t) => {
+  const host = fakeHost();
+  const { mockFetch, registeredClients } = createMockFetch();
+  const { mockCreateServer } = createMockServerFactory({ failPreferred: true });
+  const manager = new McpOAuthManager({
+    call: host.call,
+    fetchImpl: mockFetch,
+    createServer: mockCreateServer,
+    openExternal: async () => {},
+  });
+  t.after(() => manager.disposeAll());
+
+  await host.call("secrets.set", {
+    secretRef: "secret:mcp:port-lock:oauth",
+    value: JSON.stringify({
+      clientId: "old-client",
+      registrationEndpoint: "https://notion.test/register",
+      tokenEndpoint: "https://notion.test/token",
+      accessToken: "mock-token",
+      redirectUris: ["http://127.0.0.1:11111/callback"],
+    }),
+  });
+
+  await manager.start("port-lock", "https://notion.test/mcp");
+  await waitUntil(() => registeredClients.length === 1);
+  assert.equal(registeredClients[0].client_id, "registered-client-1");
+  assert.ok(registeredClients[0].redirect_uris.includes("http://127.0.0.1:54321/callback"));
+});
+
+test("McpOAuthManager: invalid_grant refresh deletes the stored token", async (t) => {
+  const host = fakeHost();
+  const { mockFetch } = createMockFetch();
+  const manager = new McpOAuthManager({
+    call: host.call,
+    fetchImpl: mockFetch,
+    openExternal: async () => {},
+  });
+  t.after(() => manager.disposeAll());
+
+  await host.call("secrets.set", {
+    secretRef: "secret:mcp:dead-refresh:oauth",
+    value: JSON.stringify({
+      clientId: "test-client-id",
+      tokenEndpoint: "https://notion.test/token",
+      accessToken: "old-token",
+      refreshToken: "revoked-refresh",
+      expiresAt: Date.now() + 5_000,
+    }),
+  });
+
+  const token = await manager.getValidAccessToken("dead-refresh");
+  assert.equal(token, null);
+  assert.equal(await manager.hasOAuth("dead-refresh"), false);
+});
+
+test("McpOAuthManager: 5xx refresh keeps the existing access token", async (t) => {
+  const host = fakeHost();
+  const { mockFetch } = createMockFetch({ refreshStatus: 503 });
+  const manager = new McpOAuthManager({
+    call: host.call,
+    fetchImpl: mockFetch,
+    openExternal: async () => {},
+  });
+  t.after(() => manager.disposeAll());
+
+  await host.call("secrets.set", {
+    secretRef: "secret:mcp:refresh-5xx:oauth",
+    value: JSON.stringify({
+      clientId: "test-client-id",
+      tokenEndpoint: "https://notion.test/token",
+      accessToken: "old-token",
+      refreshToken: "mock-refresh-token-456",
+      expiresAt: Date.now() + 5_000,
+    }),
+  });
+
+  const token = await manager.getValidAccessToken("refresh-5xx");
+  assert.equal(token, "old-token");
+  assert.equal(await manager.hasOAuth("refresh-5xx"), true);
+});
+
+test("McpOAuthManager: onAuthorized receives the server record", async (t) => {
+  const host = fakeHost();
+  const { mockFetch } = createMockFetch();
+  const { mockCreateServer, simulateCallback } = createMockServerFactory();
+  let authorized = null;
+  let openedUrl = null;
+  const manager = new McpOAuthManager({
+    call: host.call,
+    fetchImpl: mockFetch,
+    createServer: mockCreateServer,
+    openExternal: async (url) => {
+      openedUrl = url;
+    },
+    onAuthorized: async (serverId, record) => {
+      authorized = { serverId, record };
+      return {
+        serverId,
+        state: "ready",
+        toolCount: 3,
+        updatedAt: Date.now(),
+      };
+    },
+  });
+  t.after(() => manager.disposeAll());
+
+  const record = {
+    id: "proj-mcp",
+    label: "Project MCP",
+    transport: "http",
+    url: "https://notion.test/mcp",
+  };
+  await manager.start(record.id, record.url, record);
+  await waitUntil(() => openedUrl);
+  const state = new URL(openedUrl).searchParams.get("state");
+  const callbackRes = await simulateCallback(
+    `/callback?code=valid-code&state=${encodeURIComponent(state)}`,
+  );
+  assert.equal(callbackRes.statusCode, 200);
+  await waitUntil(() => authorized);
+  assert.equal(authorized.serverId, record.id);
+  assert.equal(authorized.record, record);
 });

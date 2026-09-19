@@ -1,10 +1,10 @@
-# ADR 0289: Plugin-authored transcript rows
+# ADR 0293: Plugin-authored transcript rows
 
 - Status: Accepted for implementation
 - Date: 2026-09-18
 - Related: issue #528 (sub-issue #561 item 7) ·
-  [ADR 0287](0287-trusted-renderer-execution-host.md) ·
-  [ADR 0288](0288-runtime-hooks-for-plugin-host-processes.md) ·
+  [ADR 0291](0291-trusted-renderer-execution-host.md) ·
+  [ADR 0292](0292-runtime-hooks-for-plugin-host-processes.md) ·
   [ADR 0239](0239-session-collaboration-messages.md) ·
   [13-plugin-permissions-matrix](../spec/07-plugins/13-plugin-permissions-matrix.md) ·
   [16-trusted-extensions](../spec/07-plugins/16-trusted-extensions.md)

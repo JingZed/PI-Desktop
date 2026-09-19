@@ -380,7 +380,7 @@ export function createSidecarRuntime({
       return { ok: Boolean(result.session), session: result.session ?? null };
     },
     /**
-     * Slot 10 (ADR 0291 rule 9): a plugin's continuation is queued as a real,
+     * Slot 10 (ADR 0295 rule 9): a plugin's continuation is queued as a real,
      * durable turn through the same host-owned queue a desktop send uses. The
      * request names the plugin that asked, because only the sidecar knows it —
      * but host-core's `turn_queue` and `messages` rows carry no plugin
@@ -414,7 +414,7 @@ export function createSidecarRuntime({
       return { ok: true };
     },
     /**
-     * Slot 3 (ADR 0291): a plugin asked to stop the turn. The user Stop path
+     * Slot 3 (ADR 0295): a plugin asked to stop the turn. The user Stop path
      * cancels this session's plugin tool invocations so the plugin's own
      * long-running work learns it was cancelled; a plugin-initiated abort takes
      * the same path. The runtime's own side already aborts the kernel run and

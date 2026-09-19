@@ -26,7 +26,7 @@ ADR 记录那些不应被静默改变的架构选择。中文入口与英文索�
 | [ADR 0128：瞬时 provider 故障的有界重试](/adr/0128-bounded-transient-provider-retry) | 为瞬时 provider 故障共享一个有界重试预算，跨请求设置和流式传输阶段共用四次重试 |
 | [ADR 0131：大段 Composer 粘贴写入会话临时目录](/adr/0131-large-text-paste-session-reference) | 超过可配置阈值的纯文本粘贴保存为会话临时文件，并在原位置插入内联 `@` 引用 |
 | [ADR 0137：保留的会话面板](/adr/0137-retained-session-panes) | 最近访问的会话各自保留一个已挂载的面板（上限三个），切换是可见性交换而不是重建转录 |
-| [ADR 0141：展开侧边栏宽度可调整](/adr/0141-sidebar-width-resize) | 展开侧边栏通过右边缘手柄调整 240–520px 宽度，并持久化首选值 |
+| [ADR 0141：展开侧边栏宽度可调整](/adr/0141-sidebar-width-resize) | 展开侧边栏通过右边缘手柄调整 240–520px 宽度；拖过 160px 会收起（ADR 0290） |
 | [ADR 0142：允许非回环 HTTP MCP 端点](/adr/0142-allow-non-loopback-http-mcp) | 支持局域网 MCP，并明确提示明文连接风险，插件仍受网络白名单约束 |
 | [ADR 0145：发布本机 macOS Intel 工件](/adr/0145-native-macos-intel-release-lane) | 通过匹配的 macOS 原生运行器发布 arm64 与 Intel x64 DMG/ZIP，两个架构工件均带有明确后缀，并合并更新源 |
 | [ADR 0148：明确禁用应用快捷键](/adr/0148-explicitly-disable-keyboard-shortcuts) | 缺少覆盖使用默认值，`null` 表示未绑定并关闭渲染器、菜单和启动器分发 |
@@ -294,8 +294,10 @@ ADR 记录那些不应被静默改变的架构选择。中文入口与英文索�
 | 0283 | [远程 MCP 服务端 OAuth 2.1 认证](/adr/0283-remote-mcp-oauth) | 已接受 |
 | 0284 | [`packages/host-runtime` 的无头运行时边界](/adr/0284-headless-runtime-boundary) | 已接受（实施中）（D447；ADR 0205 R2 前置） |
 | 0285 | [`packages/racp` 的 `RACP-WS` 传输](/adr/0285-racp-ws-transport) | 已接受（实施中）（D448；ADR 0205 R2） |
+| 0289 | [签名的 macOS GitHub Release 与应用内更新](/adr/0289-signed-macos-github-releases) | 已接受（D450；修订 ADR 0022 / 0145 / 0191 / 0204 / D078） |
+| 0290 | [恢复可拖拽侧边栏宽度，过窄时收起](/adr/0290-resizable-sidebar-collapse-threshold) | 已接受（D451；修订 ADR 0141 / ADR 0238） |
+| 0291 | [可信渲染器执行宿主](/adr/0291-trusted-renderer-execution-host) | 已接受待实现（issue #528） |
 | turn-process-and-thinking-display | [回合过程与思考展示](/adr/turn-process-and-thinking-display) | 已接受 |
-| 0287 | [可信渲染器执行宿主](/adr/0287-trusted-renderer-execution-host) | 已接受待实现（issue #528） |
 
 ## 什么时候看 ADR
 

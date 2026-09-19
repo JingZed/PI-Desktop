@@ -61,7 +61,7 @@ import type {
   PluginSettingDefinition,
   PluginServiceStatus,
   PluginViewMeta,
-  PluginSettingsDestinationMeta,
+  PluginScenicThemesDestinationMeta,
   PluginTheme,
   MarketPluginSummary,
   MarketPluginDetail,
@@ -101,6 +101,9 @@ import type {
   PlanResolutionResult,
   PlanningStateEvent,
   PlansPendingResult,
+  RemoteHostPairRequest,
+  RemoteHostPairResult,
+  RemoteHostSummary,
   UpdateState,
   WindowControlAction,
   CloseBehavior,
@@ -455,7 +458,7 @@ function normalizePlansChangedEvent(value: unknown): PlanningStateEvent {
 }
 
 /**
- * One forwarded renderer action (`plugin.call`, ADR 0290 decision 4): the main
+ * One forwarded renderer action (`plugin.call`, ADR 0294 decision 4): the main
  * process re-checks the plugin id against the manifest it loaded and relays the
  * call to that plugin's own headless entry; this returns the entry's answer
  * unchanged.
@@ -848,7 +851,7 @@ export const api = {
     invoke<{ entry: string | null }>(IPC.invoke.pluginRendererEntry, id),
   /**
    * Runs one method inside the plugin's own headless entry and resolves with
-   * its answer (ADR 0290 decision 4, the `plugin.call` action). `id` is the
+   * its answer (ADR 0294 decision 4, the `plugin.call` action). `id` is the
    * plugin the component was rendered for, chosen by the host rather than by
    * the caller, and the main process re-checks that plugin's declaration before
    * anything is forwarded.
@@ -1109,7 +1112,8 @@ export const api = {
   togglePluginLauncher: () => invoke(IPC.invoke.pluginLauncherToggle),
   dismissPluginLauncher: () => invoke(IPC.invoke.pluginLauncherDismiss),
   listPluginThemes: () => invoke<PluginTheme[]>(IPC.invoke.pluginThemes),
-  listPluginSettingsDestinations: () => invoke<PluginSettingsDestinationMeta[]>(IPC.invoke.pluginSettingsDestinations),
+  listPluginScenicThemesDestinations: () => invoke<PluginScenicThemesDestinationMeta[]>(IPC.invoke.pluginScenicThemesDestinations),
+  setPluginScenicThemeBlur: (pluginId: string, themeId: string, blur: number) => invoke(IPC.invoke.pluginScenicThemesSetBlur, { pluginId, themeId, blur }),
   listPluginServices: () => invoke<PluginServiceStatus[]>(IPC.invoke.pluginServices),
   /**
    * Work panel views, already filtered by permission, activation scope, and
@@ -1142,12 +1146,6 @@ export const api = {
       visible,
       sessionId,
     }),
-  pluginSettingsViewOpen: (pluginId: string, destinationId: string) =>
-    invoke(IPC.invoke.pluginSettingsViewOpen, { pluginId, destinationId }),
-  pluginSettingsViewSetBounds: (bounds: { x: number; y: number; width: number; height: number }) =>
-    invoke(IPC.invoke.pluginSettingsViewSetBounds, bounds),
-  pluginSettingsViewSetVisible: (pluginId: string, destinationId: string, visible: boolean) =>
-    invoke(IPC.invoke.pluginSettingsViewSetVisible, { pluginId, destinationId, visible }),
   marketRefresh: (force = true) =>
     invoke<{
       providerId: string;
@@ -1411,6 +1409,17 @@ export const api = {
       listener((payload as { notification: AppNotification }).notification),
     );
   },
+
+  // --- Remote hosts (R2b pairing UX) -----------------------------------------
+  /** Paired remote `pi-host` list, redacted so no device token reaches here. */
+  listRemoteHosts: () =>
+    invoke<{ hosts: RemoteHostSummary[] }>(IPC.invoke.remoteHostList),
+  /** Exchange `ppt1.` pairing token for a durable device token and connect. */
+  pairRemoteHost: (request: RemoteHostPairRequest) =>
+    invoke<RemoteHostPairResult>(IPC.invoke.remoteHostPair, request),
+  /** Close and drop a paired host by its stable routing key. */
+  removeRemoteHost: (hostKey: string) =>
+    invoke<{ ok: true }>(IPC.invoke.remoteHostRemove, { hostKey }),
   onSessionsChanged: (
     listener: (event: {
       reason?: string;

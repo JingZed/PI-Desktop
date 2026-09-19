@@ -136,7 +136,7 @@ export default function (pi: any) {
 `);
 
 /**
- * Slot grants each fixture's hooks need (ADR 0291 rule 2). `agent.extension`
+ * Slot grants each fixture's hooks need (ADR 0295 rule 2). `agent.extension`
  * says where the code runs; a wired event is skipped with a `permission_denied`
  * diagnostic unless the plugin also holds the slot its event maps to. `fx`
  * exercises every gated event the driver asserts on:

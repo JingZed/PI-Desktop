@@ -142,7 +142,7 @@ Each ADR includes:
 | 0118 | Keep queued prompts renderer-owned and stop runs at turn boundaries | Accepted |
 | 0119 | Event-Driven Subagent Timeouts | Accepted for implementation (killing policy amended by 0166; `maxTurns` clauses withdrawn by 0253) |
 | 0120 | Bounded Session History Windows | Accepted |
-| 0121 | Keep Composer prompt enhancement one-shot and main-owned | Accepted |
+| 0121 | Keep Composer prompt enhancement one-shot and main-owned | Accepted (D447; issue #14 / #562) |
 | 0122 | Reserve native width while the work panel is visible | Superseded by 0151 |
 | 0123 | Use native taskbar minimize for Windows/Linux window controls | Accepted |
 | 0124 | Bind Temporary Sessions to Their Own Scratch Workspace | Accepted |
@@ -313,9 +313,13 @@ Each ADR includes:
 | 0284 | [Headless runtime boundary in `packages/host-runtime`](0284-headless-runtime-boundary.md) | Accepted for implementation (D447; ADR 0205 R2 prerequisite) |
 | 0285 | [`RACP-WS` transport in `packages/racp`](0285-racp-ws-transport.md) | Accepted for implementation (D448; ADR 0205 R2) |
 | 0286 | [Remote-host desktop kernel](0286-remote-host-desktop-kernel.md) | Accepted for implementation (D449; ADR 0205 R2) |
+| 0287 | [Host-rendered plugin scenic Settings surfaces](0287-host-rendered-plugin-scenic-settings-surfaces.md) | Accepted for implementation |
+| 0288 | [Package-local theme assets remain available](0288-package-local-theme-assets.md) | Accepted for implementation (amends ADR 0255) |
+| 0289 | [Signed macOS GitHub Releases and in-app update delivery](0289-signed-macos-github-releases.md) | Accepted (D450; amends ADR 0022 / 0145 / 0191 / 0204 / D078) |
+| 0290 | [Restore resizable sidebar width with collapse-below-threshold](0290-resizable-sidebar-collapse-threshold.md) | Accepted (D451; amends ADR 0141 / ADR 0238) |
+| 0291 | [Trusted renderer execution host](0291-trusted-renderer-execution-host.md) | Accepted for implementation (issue #528) |
+| 0292 | [Runtime hooks for plugin-host processes](0292-runtime-hooks-for-plugin-host-processes.md) | Accepted for implementation (issue #561; G14) |
+| 0293 | [Plugin-authored transcript rows](0293-plugin-authored-transcript-rows.md) | Accepted for implementation (issue #561 item 7) |
+| 0294 | [The renderer plugin interface and its host relay](0294-renderer-plugin-interface-and-host-relay.md) | Accepted for implementation (issue #528; sub-issue #545) |
+| 0295 | [Runtime slots, their permissions, and the rules that hold across them](0295-runtime-slots-and-their-permissions.md) | Accepted for implementation (issue #528; sub-issue #561) |
 | turn-process-and-thinking-display | [Turn process and thinking presentation](turn-process-and-thinking-display.md) | Accepted |
-| 0287 | [Trusted renderer execution host](0287-trusted-renderer-execution-host.md) | Accepted for implementation (issue #528) |
-| 0288 | [Runtime hooks for plugin-host processes](0288-runtime-hooks-for-plugin-host-processes.md) | Accepted for implementation (issue #561; G14) |
-| 0289 | [Plugin-authored transcript rows](0289-plugin-authored-transcript-rows.md) | Accepted for implementation (issue #561 item 7) |
-| 0290 | [The renderer plugin interface and its host relay](0290-renderer-plugin-interface-and-host-relay.md) | Accepted for implementation (issue #528; sub-issue #545) |
-| 0291 | [Runtime slots, their permissions, and the rules that hold across them](0291-runtime-slots-and-their-permissions.md) | Accepted for implementation (issue #528; sub-issue #561) |

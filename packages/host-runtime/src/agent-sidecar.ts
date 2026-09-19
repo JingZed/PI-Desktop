@@ -64,7 +64,7 @@ const HOST_PROXY_ALLOWED = new Set([
   "provider.resolveAuth",
   "provider.resolveSubagentModel",
   "app.health",
-  // Slot 9 (ADR 0291 rule 8): one turn's authoritative facts, answered by
+  // Slot 9 (ADR 0295 rule 8): one turn's authoritative facts, answered by
   // host-core from its own tables. A read of host data the session is already
   // part of — no path, no secret, no write.
   "turn.facts",
@@ -73,7 +73,7 @@ const HOST_PROXY_ALLOWED = new Set([
   "extensions.commands.publish",
   "extensions.ui.request",
   "extensions.diagnostics.publish",
-  // Slot 3 (ADR 0291): a plugin asked to stop the turn. The embedding host
+  // Slot 3 (ADR 0295): a plugin asked to stop the turn. The embedding host
   // cancels the session's plugin tool work, which the sidecar cannot reach.
   "extensions.turnAbort",
   "extensions.model.configure",

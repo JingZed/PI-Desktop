@@ -5,7 +5,7 @@
  * process with the host-injected `pi` global, and `renderer/index.mjs` runs
  * inside the app window (spec 07-plugins/16 §2A.1 — the tiers are orthogonal).
  * The command below is registered here, and so is the method the badge's button
- * forwards to (`onRendererCall`, ADR 0290 decision 4) — the one thing the
+ * forwards to (`onRendererCall`, ADR 0294 decision 4) — the one thing the
  * window cannot answer for itself, because only this process runs it.
  */
 

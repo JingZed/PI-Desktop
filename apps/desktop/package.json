@@ -1,6 +1,6 @@
 {
   "name": "@pi-desktop/desktop",
-  "version": "0.15.0",
+  "version": "0.15.1-beta.5",
   "desktopName": "pi-desktop.desktop",
   "private": true,
   "description": "PI-Desktop Electron application",
@@ -149,6 +149,7 @@
       "entitlementsInherit": "build/entitlements.mac.plist",
       "extendInfo": {
         "NSLocalNetworkUsageDescription": "PI-Desktop needs local network access so agents can reach OpenAI-compatible providers, Ollama, and other AI endpoints running on your LAN. / PI-Desktop 需要本地网络访问权限，以便助手请求同一局域网中的 OpenAI 兼容服务、Ollama 等本地 AI 端点。",
+        "NSMicrophoneUsageDescription": "PI-Desktop plugins may use the microphone after you grant them audio access. / 在你授权后，PI-Desktop 插件可以使用麦克风。",
         "NSBonjourServices": [
           "_http._tcp",
           "_https._tcp"

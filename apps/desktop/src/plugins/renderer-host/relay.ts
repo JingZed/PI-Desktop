@@ -1,5 +1,5 @@
 /**
- * The host relay for renderer slot actions (ADR 0290).
+ * The host relay for renderer slot actions (ADR 0294).
  *
  * A slot component acts through exactly one method, `dispatch(action, payload)`,
  * which the outlet hands it as a prop and which is bound to the plugin the
@@ -13,7 +13,7 @@
  * The vocabulary is host-owned, so a plugin states intent instead of inventing
  * verbs, and the declaration is what a review reads. This is a contract for
  * plugins that behave, not a security boundary: the module shares the host's
- * realm and can reach the preload bridge directly (ADR 0287 decision 6).
+ * realm and can reach the preload bridge directly (ADR 0291 decision 6).
  */
 import {
   PLUGIN_RENDERER_ACTIONS,

@@ -6,7 +6,7 @@ does. It ships one small, honest behaviour — a shell guard that refuses unsafe
 commands and, if the model keeps trying, asks the host to stop the turn — and it
 declares exactly the slot permissions it uses, one per slot. It is the copy-me
 shape for `contributes.agentExtensions` plus `runtime.*` grants (spec
-`07-plugins/16-trusted-extensions.md` §6, ADR 0291).
+`07-plugins/16-trusted-extensions.md` §6, ADR 0295).
 
 ## What it demonstrates
 
@@ -32,7 +32,7 @@ shape for `contributes.agentExtensions` plus `runtime.*` grants (spec
   `signal` in a plugin tool's execution context); this demo has no long-running
   work to cancel, which is why it never reads that signal.
 - **One permission per slot, declared explicitly.** `agent.extension` says where
-  the module runs; it grants neither slot (ADR 0291 rule 2). A manifest that
+  the module runs; it grants neither slot (ADR 0295 rule 2). A manifest that
   lists `agentExtensions` without `agent.extension` is refused at install, and a
   slot the plugin does not hold is not a silent no-op: the handler is skipped and
   the plugin row reports a `permission_denied` diagnostic naming the permission.
@@ -107,7 +107,7 @@ patterns match literal `--force`, and the lease variant is the safe form. A
   spec 16 §7.6.
 - **No argument rewriting.** A `tool_call` handler may block a call and give a
   reason — nothing else. Rewriting the call's arguments is permanently excluded
-  (ADR 0291 rule 4), so no plugin should build on it.
+  (ADR 0295 rule 4), so no plugin should build on it.
 - **Not a security control.** The three patterns are shallow and easy to evade
   (quoting, variables, another language). They demonstrate the slot, not a
   policy. A real guard belongs in the host's approval rules.
@@ -119,5 +119,5 @@ patterns match literal `--force`, and the lease variant is the safe form. A
 
 - Spec: `docs/spec/07-plugins/16-trusted-extensions.md` §6, §6.1, §7.6
 - Permissions: `docs/spec/07-plugins/13-plugin-permissions-matrix.md` §2, §2C
-- Decision: `docs/adr/0291-runtime-slots-and-their-permissions.md`
+- Decision: `docs/adr/0295-runtime-slots-and-their-permissions.md`
 - Other examples: `examples/plugins/README.md`

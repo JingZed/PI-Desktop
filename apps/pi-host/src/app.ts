@@ -178,7 +178,7 @@ export async function startPiHost(config: PiHostConfig, options: { log?: HostLog
       requestUi: async (params) => {
         // One reverse-proxy call is not a UI request: slot #1's audit write
         // (`extensions.rewrites.record`) rides the same channel, and a headless
-        // Host still owns a `plugin_rewrites` store (ADR 0291 rule 5). A
+        // Host still owns a `plugin_rewrites` store (ADR 0295 rule 5). A
         // malformed record is refused by host-core with a coded error rather
         // than dropped; everything else has no window to prompt in.
         if (isRewriteRecordPayload(params)) {
@@ -248,7 +248,7 @@ export async function startPiHost(config: PiHostConfig, options: { log?: HostLog
       getHost,
       runtime,
       browseRoot: config.browseRoot,
-      // Slot 11 (ADR 0291 rule 11): announce the moment when it happens. The
+      // Slot 11 (ADR 0295 rule 11): announce the moment when it happens. The
       // notice is fire-and-forget — a session operation never waits on a
       // plugin — and a failed delivery is logged, not thrown.
       notifyLifecycle: (notice) => {

@@ -256,6 +256,8 @@ export const es = {
     "speakSaved": "Audio guardado en {{path}}",
     "undoEnhancement": "Deshacer mejora",
     "enhancementFailed": "Error en la mejora de solicitud",
+    "enhancementTimeout":
+      "La reescritura tardó demasiado. Vuelve a intentarlo o elige un modelo más rápido en Ajustes.",
     "dismissEnhancementError": "Descartar error de mejora",
     sendWhileRunning: "Enviar seguimiento · {{shortcut}} para orientar",
     steeringUnavailable: "Este turno ya no acepta indicaciones. Se conservó el borrador.",
@@ -464,21 +466,6 @@ export const es = {
     "thinking": "Pensamiento",
     "thinkingShow": "Mostrar pensamiento",
     "thinkingHide": "Ocultar pensamiento",
-    webSearch: "Web search",
-    webSearchOn: "Web search on",
-    webSearchOff: "Web search off",
-    webSearchUnsupported: "Current API style does not support native web search",
-    webSearchRunning: "Searching the web…",
-    webSearchSources: "{{count}} source",
-    webSearchSources_other: "{{count}} sources",
-    webSearchQuery: "Searched {{query}}",
-    webSearchShow: "Show web search",
-    webSearchHide: "Hide web search",
-    webSearchEmpty: "No sources were returned for this search.",
-    webSearchSummary: "Searched {{searchCount}} times · {{sourceCount}} sources",
-    webSearchMore: "View {{count}} more sources",
-    webSearchCitationPrev: "Previous citation",
-    webSearchCitationNext: "Next citation",
     "untitledTask": "Nueva tarea"
   },
   "session": {
@@ -638,6 +625,7 @@ sklm: {
       "subagents": "Subagentes",
       "import": "Importar",
       "projects": "Proyectos",
+      "remoteHosts": "Hosts remotos",
       "info": "Información"
     },
     "general": "General",
@@ -836,6 +824,34 @@ sklm: {
     "subagentSaved": "Guardado {{name}}",
     "import": "Importar",
     "projectArchive": "Archivo de proyecto",
+    "remoteHosts": {
+      "title": "Hosts remotos",
+      "overview": "Máquinas pi-host emparejadas que puede controlar desde este escritorio. Las sesiones en un host emparejado se muestran como locales; la conexión permanece en el proceso principal y ningún token de dispositivo llega a esta página.",
+      "listTitle": "Hosts remotos emparejados",
+      "listError": "No se pudieron cargar los hosts",
+      "loading": "Cargando…",
+      "emptyTitle": "Aún no hay hosts emparejados",
+      "emptyBody": "Empareje una máquina a continuación para iniciar una sesión en ella.",
+      "statusOnline": "En línea",
+      "statusOffline": "Desconectado",
+      "remove": "Eliminar",
+      "removing": "Eliminando…",
+      "removed": "{{label}} eliminado.",
+      "removeFailed": "Error al eliminar: {{message}}",
+      "pairTitle": "Emparejar un nuevo host",
+      "pair": "Emparejar",
+      "pairing": "Emparejando…",
+      "pairAction": "Añadir",
+      "pairSucceeded": "{{label}} emparejado.",
+      "pairFailed": "Error de emparejamiento: {{message}}",
+      "fieldLabel": "Etiqueta",
+      "fieldLabelDesc": "Se muestra en la lista y se registra en el host emparejado.",
+      "fieldLabelPlaceholder": "Linux de casa",
+      "fieldUrl": "URL de RACP",
+      "fieldUrlDesc": "Punto final de bucle de retorno de pi-host, p. ej. ws://127.0.0.1:9443/racp (reenviado por SSH).",
+      "fieldPairingToken": "Token de emparejamiento",
+      "fieldPairingTokenDesc": "Token ppt1.* de un solo uso del inicio de pi-host. Se consume al emparejar."
+    },
     "importTitle": "Importar desde otras herramientas",
     "importScan": "Escanear",
     "importScanning": "Escaneando...",
@@ -1165,6 +1181,33 @@ sklm: {
     "fontSizeXl": "Trenta",
     "fontSizeScale": "Escala de tamaño de texto",
     "fontSizePercent": "{{value}}%",
+    "promptEnhancementTitle": "Mejora de prompts",
+    "promptEnhancementDesc":
+      "Se aplica a la acción «Mejorar prompt» del compositor. El prompt del sistema es integrado; la plantilla y el modelo se pueden personalizar.",
+    "promptEnhancementCustomTemplate": "Usar una plantilla propia",
+    "promptEnhancementCustomTemplateDesc":
+      "Reemplaza la plantilla de usuario integrada por la suya. El prompt del sistema sigue integrado.",
+    "promptEnhancementCustomTemplateNeedsTemplate":
+      "Guarde primero una plantilla propia; el interruptor elegirá entonces entre ella y la plantilla integrada.",
+    "promptEnhancementEdit": "Editar",
+    "promptEnhancementModelTitle": "Mejora de prompts",
+    "promptEnhancementModel": "Modelo predeterminado",
+    "promptEnhancementThinking": "Esfuerzo de razonamiento",
+    "promptEnhancementThinkingDesc":
+      "Esfuerzo de razonamiento para la reescritura. Desactivado es el valor predeterminado y el más rápido.",
+    "promptEnhancementThinkingOff": "Desactivado",
+    "promptEnhancementModelFollow": "Seguir el modelo actual",
+    "promptEnhancementModelUnavailable":
+      "No disponible: la mejora usará el modelo actual",
+    "promptEnhancementUserTemplate": "Plantilla de usuario",
+    "promptEnhancementUserTemplateDesc":
+      "Envuelve el borrador. Debe incluir la variable del borrador; use el botón de inserción.",
+    "promptEnhancementInsertDraft": "Insertar variable del borrador",
+    "promptEnhancementRestore": "Restaurar predeterminado",
+    "promptEnhancementMissingDraftVariable":
+      "La plantilla de usuario debe contener la variable del borrador; de lo contrario el borrador no puede enviarse.",
+    "promptEnhancementTooLong": "La plantilla de usuario no puede superar los 8000 caracteres.",
+    "promptEnhancementSaveError": "No se pudo guardar la configuración de mejora de prompts.",
   },
   "project": {
     "open": "Abrir proyecto",
@@ -1749,7 +1792,8 @@ sklm: {
       "net.websocket": "Abrir conexiones en tiempo real",
       "bus.publish": "Enviar mensajes a otros complementos",
       "bus.subscribe": "Recibir mensajes de otros complementos",
-      "browser.cdp": "Controlar el navegador del panel de trabajo"
+      "browser.cdp": "Controlar el navegador del panel de trabajo",
+      "usage.read": "Leer estadísticas de uso"
     },
     "permissionHelp": {
       "ui.panel": "Permite que el complemento muestre su propio panel dentro de la aplicación.",
@@ -1811,7 +1855,9 @@ sklm: {
       "net.websocket": "Abre conexiones bidireccionales en tiempo real con los hosts que declara el complemento.",
       "bus.publish": "Puede enviar mensajes sobre los temas que declaró.",
       "bus.subscribe": "Puede recibir mensajes sobre los temas que declaró.",
-      "browser.cdp": "Puede navegar por el navegador del panel de trabajo, leer la página, ejecutar JavaScript y enviar comandos de Chrome DevTools incluidos en la lista permitida. Las cookies y los métodos de almacenamiento están bloqueados."
+      "browser.cdp": "Puede navegar por el navegador del panel de trabajo, leer la página, ejecutar JavaScript y enviar comandos de Chrome DevTools incluidos en la lista permitida. Las cookies y los métodos de almacenamiento están bloqueados.",
+      "usage.read":
+        "Enumera los datos de uso de los turnos completados (contadores de tokens por turno, paginados). No incluye el contenido de los mensajes.",
     }
   },
   "extensions": {

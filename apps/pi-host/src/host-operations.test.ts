@@ -126,7 +126,7 @@ describe("pi-host operations over host-core", () => {
 
     // A headless Host has create / fork / delete moments; a switch is not one
     // of them, because RACP has no "open session" operation to observe
-    // (ADR 0291 rule 11).
+    // (ADR 0295 rule 11).
     expect(notices).toEqual([
       { change: "created", sessionId: "s2" },
       { change: "fork", sessionId: "s1", entryId: "m-9", position: "before" },

@@ -1,5 +1,5 @@
 /**
- * The host-side mounting point for component slots (ADR 0287).
+ * The host-side mounting point for component slots (ADR 0291).
  *
  * A plugin registers a component; this is where the host puts it. Four rules
  * are enforced here rather than trusted to plugin authors:
@@ -12,7 +12,7 @@
  * - Loading is triggered by the first real render of the slot, never at startup.
  * - Every plugin component is handed `dispatch`, bound to the plugin whose
  *   registration it is, so a slot never has to know which plugin is drawing
- *   (ADR 0290). The function is stable per plugin, not rebuilt per render.
+ *   (ADR 0294). The function is stable per plugin, not rebuilt per render.
  */
 import { Component, useEffect, useMemo, useRef, useSyncExternalStore, type ReactNode } from "react";
 import type { PluginRendererSlot } from "@pi-desktop/plugin-sdk";

@@ -1,5 +1,5 @@
 /**
- * Which installed plugins may fill a component slot (ADR 0287).
+ * Which installed plugins may fill a component slot (ADR 0291).
  *
  * The capability is derived by the host from the manifest, so the renderer never
  * has to read one: a plugin shows up here exactly when it declared `renderer`

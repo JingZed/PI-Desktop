@@ -9,10 +9,13 @@ exactly one type: `length` (`unit: "px"`, numeric `min`, `max`, and `default`),
 (fixed safe `values` and default). Host-reserved prefixes are refused. Values
 are not CSS fragments.
 
-`contributes.settingsDestinations` declares sandboxed Settings entries with a
-stable `id`, localized `label`, closed icon token, optional localized keywords,
-and a plugin-relative `.html` `entry`. An entry requires `ui.settings`; it is
-rendered only in the host-owned Extensions group.
+`contributes.scenicThemes` declares a data-only host-rendered Settings entry:
+a stable `id`, localized label and description, `palette` icon token, localized
+keywords, and one to twelve ordered cards. Every card names a same-plugin
+theme, localized name/description, and a relative image asset declared by that
+theme. It requires both `ui.settings` and `ui.theme`. Plugins provide neither
+Settings HTML nor CSS or JavaScript: the host renders the Extensions entry,
+cards, range control, and Apply action in its normal React tree.
 
 ## 1. Purpose
 
@@ -193,6 +196,7 @@ type PluginContributes = {
  providers?: PluginProviderContrib[]; // Host-owned provider rows; needs `provider.register` (spec 13)
  settings?: PluginSettingContrib[];
  themes?: PluginThemeContrib[];
+ scenicThemes?: PluginScenicThemesContrib;
  windowAppearance?: PluginWindowAppearanceContrib; // native window background; needs `ui.window.appearance`
  mcpServers?: PluginMcpServerContrib[];
   services?: PluginServiceContrib[];
@@ -261,6 +265,20 @@ type PluginThemeContrib = {
  base?: "light" | "dark"; // palette the overrides layer on, default `dark`
  assets?: string[]; // absolute png/jpg/jpeg/webp/avif/svg/woff2, 4 MB summed;
                     // each matching `url()` is rewritten to `plugin-asset://`
+};
+
+type PluginScenicThemesContrib = {
+ id: string;
+ label: { en: string; "zh-CN": string };
+ description: { en: string; "zh-CN": string };
+ keywords?: Array<{ en: string; "zh-CN": string }>;
+ icon: "palette";
+ themes: Array<{
+   themeId: string;
+   label: { en: string; "zh-CN": string };
+   description: { en: string; "zh-CN": string };
+   previewAsset: string;
+ }>;
 };
 
 type PluginWindowAppearanceContrib = {
@@ -359,6 +377,7 @@ type PluginPermission =
  | "session.read.own"
  | "session.update.own"
  | "session.delete.own"
+ | "usage.read"
  | "audio.capture.background"
  | "audio.playback.background"
  | "speech.adapter.register"
@@ -552,7 +571,7 @@ MVP may implement only:
    fails with `manifest.renderer requires the renderer.extension permission`
    (host-core: `PLUGIN_INVALID: renderer requires the renderer.extension
    permission`). One permission covers every component slot: slots are
-   authorized by tier, never one at a time (ADR 0287)
+   authorized by tier, never one at a time (ADR 0291)
 21. `rendererData` and `rendererActions` are optional lists drawn from two
    host-owned vocabularies; a plugin picks from them and never invents a name
    of its own. `rendererData` accepts `entry`, `session`, `code`, `theme`,

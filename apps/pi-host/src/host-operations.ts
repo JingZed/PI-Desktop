@@ -46,7 +46,7 @@ export type HostOperationsDeps = {
   /** Root the folder picker may not leave; defaults to the user's home directory. */
   browseRoot?: string;
   /**
-   * Slot 11 (ADR 0291 rule 11): tell a session's plugins about a moment only
+   * Slot 11 (ADR 0295 rule 11): tell a session's plugins about a moment only
    * the Host observes. Notices are informed-only and fire-and-forget — a
    * session operation never waits on a plugin — and a headless Host has the
    * create / fork / delete moments but no switch moment: RACP has no
@@ -118,7 +118,7 @@ export function createSessionCatalog(deps: HostOperationsDeps): RacpSessionCatal
         .catch(hostError);
       if (!result.session) throw new RacpError("INTERNAL", "session.create returned no session");
       // The created session has no runtime yet, so the sessions loaded right
-      // now are the ones that hear about it (ADR 0291 rule 11).
+      // now are the ones that hear about it (ADR 0295 rule 11).
       deps.notifyLifecycle?.({ change: "created", sessionId: result.session.id });
       if (input.permissionMode) {
         await host
@@ -147,7 +147,7 @@ export function createSessionCatalog(deps: HostOperationsDeps): RacpSessionCatal
       const host = requireHost(getHost);
       // The source session is told before the child exists, which is what
       // `session_before_fork` means here. Informed-only: a plugin cannot
-      // cancel or delay the fork (ADR 0291 rule 11).
+      // cancel or delay the fork (ADR 0295 rule 11).
       deps.notifyLifecycle?.({
         change: "fork",
         sessionId,
@@ -171,7 +171,7 @@ export function createSessionCatalog(deps: HostOperationsDeps): RacpSessionCatal
       if (deps.runtime.isBusy(sessionId)) throw new RacpError("CONFLICT", "the session has an active turn");
       await requireHost(getHost).call("session.delete", { id: sessionId }).catch(hostError);
       // The session's own plugin hears about the delete while its runtime is
-      // still there to answer (ADR 0291 rule 11).
+      // still there to answer (ADR 0295 rule 11).
       deps.notifyLifecycle?.({ change: "deleted", sessionId });
       await deps.disposeSession?.(sessionId).catch(() => undefined);
     },

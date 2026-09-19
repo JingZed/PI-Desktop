@@ -2,7 +2,7 @@
  * The `codeBlock` position end to end through the real Markdown pipeline.
  *
  * Every slot component is handed the plugin's own `dispatch` and every mount
- * hands the loader the row it renders for (ADR 0290). `entryExtra` always did
+ * hands the loader the row it renders for (ADR 0294). `entryExtra` always did
  * that through `PluginSlot`; `codeBlock` used to render its registration
  * directly, so a code-block plugin received no `dispatch` and the block never
  * carried its plugin's declared actions to the loader. These cases render

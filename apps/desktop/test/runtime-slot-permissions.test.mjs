@@ -1,6 +1,6 @@
 // The runtime slot gate refuses a handler for a slot permission the permission
-// registry holds (ADR 0291 rule 2). The end state these tests pin down is
-// strict: every slot ADR 0291 builds is registered, so every wired event's
+// registry holds (ADR 0295 rule 2). The end state these tests pin down is
+// strict: every slot ADR 0295 builds is registered, so every wired event's
 // handler is gated for every plugin, the high-trust tier included.
 // `packages/shared` cannot import the SDK, so it mirrors the registry's
 // `runtime.*` names; these tests keep the mirror and the contract honest
@@ -19,7 +19,7 @@ import {
 const registryRuntimeNames = PLUGIN_PERMISSIONS.filter((name) => name.startsWith("runtime."));
 
 /**
- * The twelve `runtime.*` names ADR 0291 makes real: the eleven built slots
+ * The twelve `runtime.*` names ADR 0295 makes real: the eleven built slots
  * plus `runtime.session.read` (rule 7). The twelfth slot,
  * `runtime.approval.before`, is deliberately unbuilt and stays reserved.
  */
@@ -38,7 +38,7 @@ const ADR_SLOT_NAMES = [
   "runtime.turn.watch",
 ];
 
-/** The one slot ADR 0291 deliberately does not build this cycle. */
+/** The one slot ADR 0295 deliberately does not build this cycle. */
 const UNBUILT_SLOT_NAME = "runtime.approval.before";
 
 /** Risk tier the install dialog and the devkit hint must agree on (spec 13 §2). */
@@ -81,7 +81,7 @@ test("every reserved slot name is registered, so the gate has no gaps", () => {
   assert.equal(PLUGIN_PERMISSIONS.includes(UNBUILT_SLOT_NAME), false);
 });
 
-test("the registry holds every built slot name of ADR 0291 §1", () => {
+test("the registry holds every built slot name of ADR 0295 §1", () => {
   assert.deepEqual([...registryRuntimeNames].sort(), [...ADR_SLOT_NAMES].sort());
   for (const name of ADR_SLOT_NAMES) {
     assert.equal(isRegisteredSlotPermission(name), true, name);

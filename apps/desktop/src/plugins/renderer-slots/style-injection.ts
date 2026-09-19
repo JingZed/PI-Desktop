@@ -1,5 +1,5 @@
 /**
- * Style isolation for trusted-renderer plugins (ADR 0287).
+ * Style isolation for trusted-renderer plugins (ADR 0291).
  *
  * Shadow DOM was rejected: the shell portals 41 call sites across 18 files, so
  * a shadow root would break host portals long before it contained a hostile

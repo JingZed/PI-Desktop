@@ -537,7 +537,7 @@ const agentExtensions = new AgentExtensionBridge({
   onToast: (message) => sendToRenderer(IPC.event.toast, { message }),
   onStatus: (event) => sendToRenderer(IPC.event.extensionsStatus, event),
   /**
-   * Slot #1 (ADR 0291 rule 5): the runtime hands over a rewrite it performed,
+   * Slot #1 (ADR 0295 rule 5): the runtime hands over a rewrite it performed,
    * host-core owns `plugin_rewrites` and computes the diff, and the renderer is
    * told afterwards so the rewritten row can show its badge without waiting for
    * the next session read. A write that fails rejects here, which the runtime
@@ -695,7 +695,6 @@ const {
   emitBrowserState,
   pluginPanels,
   pluginViews,
-  pluginSettingsViews,
   browserHost,
   browserPane,
   announceTurnEnded,
@@ -939,7 +938,6 @@ applicationLifecycle = createApplicationLifecycle({
   applyCloseBehavior: applyCloseBehaviorForLifecycle,
   browserPane,
   pluginViews,
-  pluginSettingsViews,
   plugins,
   logger,
   refreshReleaseNotes: () => updater.refreshReleaseNotes(),
@@ -1348,7 +1346,6 @@ function registerIpc() {
     activeUserSubagentDocuments,
     disabledBuiltinSubagents,
     pluginViews,
-    pluginSettingsViews,
     pluginScopes,
     rememberPluginScopes,
     pluginPanels,
@@ -1506,7 +1503,6 @@ registerShutdownHandlers({
   mcpOAuth,
   browserPane,
   pluginViews,
-  pluginSettingsViews,
   updater,
   logger,
   confirmQuitDialog,

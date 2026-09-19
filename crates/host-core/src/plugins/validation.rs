@@ -593,7 +593,7 @@ pub(crate) fn validate_contributions(root: &Path, manifest: &PluginManifest) -> 
     Ok(())
 }
 
-/// The `manifest.rendererData` keys the host renderer can supply (ADR 0290 §2).
+/// The `manifest.rendererData` keys the host renderer can supply (ADR 0294 §2).
 ///
 /// Mirrors `PLUGIN_RENDERER_DATA` in the plugin SDK
 /// (`packages/plugin-sdk/src/renderer.ts`), the list the manifest linter, the
@@ -610,7 +610,7 @@ pub(crate) const PLUGIN_RENDERER_DATA: [&str; 8] = [
 ];
 
 /// The `manifest.rendererActions` names a renderer module may dispatch
-/// (ADR 0290 §2): `plugin.call` is forwarded to the plugin's own entry, the
+/// (ADR 0294 §2): `plugin.call` is forwarded to the plugin's own entry, the
 /// rest are performed by the host renderer. Declaring one grants nothing.
 ///
 /// Mirrors `PLUGIN_RENDERER_ACTIONS` in `packages/plugin-sdk/src/renderer.ts`.
@@ -627,7 +627,7 @@ pub(crate) const PLUGIN_RENDERER_ACTIONS: [&str; 9] = [
 ];
 
 /// `rendererData` / `rendererActions` pick from a vocabulary the host owns, so
-/// a plugin cannot invent a key or an action (ADR 0290 §2).
+/// a plugin cannot invent a key or an action (ADR 0294 §2).
 ///
 /// The two lists are declarations and never permissions: they are not in the
 /// permission enum, they change no grant, and a manifest may declare them with

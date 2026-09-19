@@ -145,7 +145,7 @@ runbook 写明 feature flag、配对撤销路径、远端机器上的数据保�
   `turn_queue` 与其 RPC 方法（D386 / ADR 0213）。
 - R1 已交付：renderer 的内存 prompt 队列已退役；composer 经 `agent/queue/push` 推入，
   镜像 `agent/event/queueChanged`，“立即发送”即 `turn/prioritize` 加优雅停止。
-- R1 未完成：运行时级别的逐回合权限上限（当前被限制的回合在桥接层直接拒绝）。
+- R1 部分完成（2026-09-18）：运行时级别的逐回合权限上限已在 JS 端全链路串通（`AgentPromptRequest.permissionMode` → agent-ipc → `RuntimeService.startTurn` → sidecar `agent.prompt`），桥接层不再对每一处会话/生效模式不一致直接拒绝。生效模式比会话更宽的请求（提权）仍作为深度防御拒绝；更窄的上限透传并在 sidecar 侧作为文档化的占位收下。turn 级的真正执行还差 host-core 一步（`session.beginTurn` 接受覆盖参数），因此本地回合上的收紧目前尚未夹紧工具决策。
 - R2 已开始（2026-09-18，D447 / ADR 0284）：`packages/host-runtime` 承载与 Electron 无关的运行时层 —— host-core 与 sidecar 的 stdio 传输、重启监督器、`RuntimeService`（模块的 `RuntimePort`，含持久回合生命周期）、转录持久化、无头启动解析器与已批准 Plan/Goal 的派发 —— Electron main 通过薄适配层运行其上。
 - R2（2026-09-18，D448 / ADR 0285）：`packages/racp` 承载 `RACP-WS` 服务端与客户端核心、回环上的 `ws` 绑定与设备令牌配对；握手、鉴权、幂等、队列顺序、审批、游标重放、驱逐、epoch 变更、慢客户端与不重复执行的重连都是包内测试。`pi-host` 包、SSH 引导与桌面适配器尚未开始。
 

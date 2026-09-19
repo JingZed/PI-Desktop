@@ -91,15 +91,15 @@ Local plugins usable → developer-friendly → marketplace distribution → sig
 - Lazy fetch and evaluation over the `plugin-renderer` scheme, namespace style
   isolation, the React singleton rule, per-slot error boundaries, and a
   `renderer` capability chip on the plugin row ✅
-- Spec: [16-trusted-extensions.md](16-trusted-extensions.md) §2A; ADR 0287
+- Spec: [16-trusted-extensions.md](16-trusted-extensions.md) §2A; ADR 0291
 
 ### R9 — Runtime slots (issue #561)
-- The slot-permission model is shipped: every `runtime.*` name ADR 0291 builds is
+- The slot-permission model is shipped: every `runtime.*` name ADR 0295 builds is
   registered, and the sidecar resolves a wired event's slot permission before a
   handler runs, so a plugin that holds only `agent.extension` is refused with a
-  `permission_denied` diagnostic (spec 13 §2C, ADR 0291 rule 2). That retires
+  `permission_denied` diagnostic (spec 13 §2C, ADR 0295 rule 2). That retires
   the D1 deviation this section used to describe.
-- Batch A of ADR 0291's phasing is shipped: Abort Turn (3) has its entry point
+- Batch A of ADR 0295's phasing is shipped: Abort Turn (3) has its entry point
   (`requestTurnAbort`) plus the turn's cancellation signal that plugin work
   observes; Tool Extend (5) reaches the tool-result fold; and Turn Facts (9) is
   answered by host-core through the `turn.facts` RPC on schema v21
@@ -113,14 +113,14 @@ Local plugins usable → developer-friendly → marketplace distribution → sig
   persisted the user's message and before it is queued, honours all three kernel
   actions, and every rewrite a plugin performs is stored at diff level through
   the `plugin.rewrites.record` RPC (04-data-storage §4.15) and marked on the
-  message row (ADR 0291 rule 5) — and Session Lifecycle (11) — create, switch,
+  message row (ADR 0295 rule 5) — and Session Lifecycle (11) — create, switch,
   delete and fork are announced informed-only, with the compaction handover
   keeping its cancel.
 - Not shipped: Turn Recap (8) and Turn Continue (10) — a registered name with no
   hook or call behind it; Approval Before (12) — not built.
-- Before Request (6) stays out of this cycle in ADR 0291's phasing, and the slot
+- Before Request (6) stays out of this cycle in ADR 0295's phasing, and the slot
   set, the per-slot permissions and the order of work are all fixed in
-  [ADR 0291](../../adr/0291-runtime-slots-and-their-permissions.md).
+  [ADR 0295](../../adr/0295-runtime-slots-and-their-permissions.md).
 
 ## 3. Mapping to product milestones
 

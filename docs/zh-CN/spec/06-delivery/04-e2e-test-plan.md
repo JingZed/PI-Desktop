@@ -2086,7 +2086,8 @@ MainChat 弥补了缺口。 Maximized/fullscreen 调用保留最新的
   重复失败、拒绝和临时写入。
 - **预期**：每个成功的工作区 Write/Edit 都会创建一个消息拥有的
   查看记录和一张相邻的键盘可访问卡；该卡从来都不是
-  bottom/global 条目。每张评论卡，内联和评论选项卡中，都是
+  bottom/global 条目。完成时不打开任何东西：面板保持用户离开时的样子，
+  审阅只在用户打开后出现。每张评论卡，内联和评论选项卡中，都是
   默认折叠并按需扩展。 Review 选项卡列出了 A
   按时间顺序记录的更改，独立于 Git 状态、存储库
   存在、提交状态、焦点刷新、
@@ -2112,8 +2113,9 @@ MainChat 弥补了缺口。 Maximized/fullscreen 调用保留最新的
   已完成的 Bash 行仍显示命令、输出、状态和复制操作，并保留终端图标。
   4) 确认交互式 shell 由用户的外部终端承担，而不是由工作面板打开。
   5) 构建/打包桌面应用并检查依赖项和解压资源列表。
-- **预期**：工作面板只提供浏览器、当前范围内的插件视图以及对话打开的审阅/文件资源；
-  不创建 PTY，也无法打开终端选项卡。Agent Bash 仍是非交互式的，完整显示在对话中。
+- **预期**：工作面板提供审阅启动器行、浏览器和当前范围内的插件视图；审阅只在用户
+  主动打开时出现，文件资源由对话打开；不创建 PTY，也无法打开终端选项卡。
+  Agent Bash 仍是非交互式的，完整显示在对话中。
   打包结果不含 PTY/xterm 依赖、终端 IPC 或终端原生负载。
 - **链接规格**：`02-architecture/02-tech-stack.md`、`03-runtime/01-ipc-protocol.md`、
   `04-ux/08-component-spec.md` §5、ADR 0108
@@ -2996,7 +2998,7 @@ IPC 请求无法关闭。
   也在A中请求。 5）显式打开B，只解析B的请求，然后
   返回A并解决A的请求。 6) 会话时快速选择 A 然后 B
   详细信息以相反的完成顺序加载。 7) 当B加载时，解析A的
-  Write/Edit 请求，因此其工具完成创建 Review，然后让 B 发出
+  Write/Edit 请求，因此其工具完成时记录一张内联审阅卡，然后让 B 发出
   当 A 可见时，BrowserPreview 伪影。切换回每个会话。
 - **预期**：B的后台事件仅更新B的行和保留状态；
   他们不会更改 A 的活动 session/project/page、记录、草稿、卷轴、
@@ -3004,7 +3006,7 @@ IPC 请求无法关闭。
   内联卡及其原始倒计时。两个请求保持独立
   可操作，并且解决B并没有清除A。最终的快速选择保持不变
 即使 A 的较旧负载稍后完成，也会在 B 上执行。仅明确通知或
-  会话激活可以导航。 A 的批准后审查仅保留在
+  会话激活可以导航。 A 的批准后审阅卡仅保留在
   A 中 B 中没有瞬态 open/close 闪存； B 的 BrowserPreview 携带 B 的
   会话身份，仅更新 B 保留的浏览器资源，并且从不打开，
   导航、聚焦或调整 A 的面板大小。明确返回到任一
@@ -3469,21 +3471,15 @@ IPC 请求无法关闭。
 - **状态**：单位覆盖（`mermaid-rendering.test.mjs`）；提供安全性和
   视觉场景草稿
 
-#### E2E-196a：默认未签名的 macOS 发布通道
+#### E2E-196a：未签名的 macOS 调试通道
 
-- **先决条件**：`vX.Y.Z` 标签与 `apps/desktop/package.json` 匹配，或手动运行
-  Release 工作流时省略 `sign_macos` 或将其设为 false；Windows 和 Linux 的发布
-  凭据不受影响。
-- **步骤**：1) 运行标签工作流，或使用默认签名输入手动运行。2) 确认两个 macOS
-  架构都完成普通的 DMG/ZIP 打包，且没有使用证书密钥。3) 检查工件和工作流步骤。
-- **预期**：macOS DMG/ZIP 工件生成并上传，文件名分别带有 `-arm64` 和 `-x64`
-  架构标记，不包含 Developer ID 签名或公证；macOS 装订和 Gatekeeper 检查明确跳过。
-  Windows/Linux 工件和合并后的更新源仍正常发布。该例外必须在下一个稳定版本前移除，
-  且不满足 E2E-196c。
+- **先决条件**：手动运行 Release 工作流并设置 `sign_macos: false`；Windows 和 Linux 的发布凭据不受影响。该路径不得用于发布 GitHub Release 标签。
+- **步骤**：1) 以 `sign_macos: false` 手动运行 Release 工作流。2) 确认两个 macOS 架构都完成普通的 DMG/ZIP 打包，且没有使用证书密钥。3) 检查工件和工作流步骤。
+- **预期**：macOS DMG/ZIP 工件生成并上传，文件名分别带有 `-arm64` 和 `-x64` 架构标记，不包含 Developer ID 签名或公证；macOS 装订和 Gatekeeper 检查明确跳过。Windows/Linux 工件和合并后的更新源仍正常发布。该例外不满足 E2E-196c。
 - **关联规格**：`06-delivery/06-release-runbook.md`
-- **验收**：质量（默认发布打包）
+- **验收**：质量（调试打包）
 - **里程碑**：M6+
-- **状态**：当前默认行为；本场景不满足 E2E-196c。
+- **状态**：可选调试通道；标签发布必须满足 E2E-196c。
 
 #### E2E-196b：未签名的 macOS 软件包展示首次启动指引
 
@@ -3510,20 +3506,10 @@ IPC 请求无法关闭。
 
 #### E2E-196c：macOS 标签工件通过 Gatekeeper 且无需移除隔离属性
 
-- **先决条件**：针对 `vX.Y.Z` 标签手动运行 Release 工作流并设置
-  `sign_macos: true`；标签与 `apps/desktop/package.json` 匹配；GitHub Actions
-  已配置 `CSC_LINK`、`CSC_KEY_PASSWORD`、`APPLE_ID`、
-  `APPLE_APP_SPECIFIC_PASSWORD` 和 `APPLE_TEAM_ID` 密钥；两个本机 macOS
-  运行器均可用。
-- **步骤**：1) 运行明确启用签名的工作流。2) 对每个 macOS 架构检查解压后的应用，
-  使用 `codesign -dv --verbose=4` 确认 `Developer ID Application` 权限。3) 对应用运行
-  `codesign --verify --deep --strict`、`spctl -a -vv` 和 `xcrun stapler validate`。
-  4) 对对应的 DMG 运行 `xcrun stapler validate`。5) 在干净的 macOS 配置文件中下载
-  DMG，将应用移到 `/Applications` 后不清除 `com.apple.quarantine` 直接打开。
-- **预期**：每个 macOS 应用通过签名完整性检查，Gatekeeper 报告
-  `Notarized Developer ID`，应用和 DMG 都包含有效的装订票据；应用正常打开，无需
-  `xattr` 命令或“安全性与隐私”覆盖操作。
-- **关联规格**：`06-delivery/06-release-runbook.md`、`05-security/01-security.md`
+- **先决条件**：推送与 `apps/desktop/package.json` 匹配的 `vX.Y.Z` 标签，或手动运行 Release 工作流并保持 `sign_macos: true`（默认）；GitHub Actions 已配置 `CSC_LINK`、`CSC_KEY_PASSWORD`、`APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD` 和 `APPLE_TEAM_ID` 密钥；两个本机 macOS 运行器均可用。
+- **步骤**：1) 运行标签工作流。2) 对每个 macOS 架构检查解压后的应用，使用 `codesign -dv --verbose=4` 确认权限为 `Developer ID Application: XingYu Liu (DUV63RKYTW)`。3) 对应用运行 `codesign --verify --deep --strict --verbose=2`、`spctl --assess --type execute --verbose=4` 和 `xcrun stapler validate`，并检查 `Contents/Resources/bin/pi-desktop-host-core`。4) 确认工作流的 DMG 步骤报告 Apple 公证状态为 `Accepted`，然后对对应的 DMG 运行 `xcrun stapler validate`。5) 在干净的 macOS 配置文件中下载 DMG，将应用移到 `/Applications` 后不清除 `com.apple.quarantine` 直接打开。
+- **预期**：每个 macOS 应用通过签名完整性检查，Gatekeeper 报告 `source=Notarized Developer ID`，应用和 DMG 都包含有效的装订票据。DMG 有自己的提交：从未提交过的 DMG 没有票据，装订会以 error 65 失败，因此标签构建绝不能走到该状态。应用可正常打开，无需 `xattr` 命令或“安全性与隐私”覆盖。缺少密钥、提交被拒或装订重试耗尽都会让作业失败。
+- **关联规格**：`06-delivery/06-release-runbook.md`、`05-security/01-security.md`、ADR 0289
 - **验收**：质量、安全
 - **里程碑**：M6+
 - **状态**：工作流脚本/单元已覆盖；每次发布仍需在干净机器上验证（适用变更合入前需在具备条件的环境中运行 E2E）
@@ -3757,9 +3743,10 @@ IPC 请求无法关闭。
   创造。
 - **步骤**： 1) 让 Agent 使用固定标题、Markdown 和
   问题。 2) 逐字节检查新的 `.pi/plan/*.md` 文件和
-  `plan_approvals` 行。 3）检查卡牌的标题和神器开启者；确认
-  question/description、validity/deadline 和状态不存在且仅
-  提供批准和拒绝。 4) 打开审批模式菜单，选择自动，
+  `plan_approvals` 行。 3）检查卡牌的标题和神器开启者；确认开启者在内置文件
+  视图中打开（该视图不可启动时回退到宿主机文件标签，D452），且
+  question/description、validity/deadline 和状态不存在且仅提供批准和拒绝。
+  4) 打开审批模式菜单，选择自动，
   并验证下一个批准默认为自动。 5) 拒绝
   提案。 6) 确认持久模式为Plan，实时状态为可编辑`planning`，
   批准门已清除，并接受稍后的提示。 7）让
@@ -3769,7 +3756,8 @@ IPC 请求无法关闭。
   独特的神器，记录其相关的 path/hash/size 与结构化
   title/question，并且绝不让渲染器或 sidecar 写入或替换它。
   标题衍生的工件文件名可以从标题中识别出来，包括
-  非 ASCII 标题字符。卡牌显示标题，打开神器；
+  非 ASCII 标题字符。卡牌显示标题，并在内置文件视图中打开神器，
+  该视图不可启动时回退到宿主机文件标签（D452）；
   它不需要内联 question/Markdown/hash/size 或 validity/deadline
   指标。选择的审批方式会被本地记住，以便下次使用
   批准。
@@ -4466,7 +4454,7 @@ IPC 请求无法关闭。
   6. 设置界面状态更新为已连接及工具数量，弹出成功提示，并显示 OAuth 徽标。
   7. 访问令牌过期时，`UserMcpRuntime` 透明使用 refresh token 换取新令牌，无需用户重新交互。
   8. 通过 `mcp.transfer` 迁移服务器时，自动将 OAuth 令牌迁移至新 ID 下。
-- **链接规格**：`03-runtime/01-ipc-protocol.md`、ADR 0281、ADR 0142
+- **链接规格**：`03-runtime/01-ipc-protocol.md`、ADR 0283、ADR 0142
 - **验收**：E（工具和权限）、安全性
 - **里程碑**：M5
 - **状态**：单元覆盖（`apps/desktop/test/mcp-oauth.test.mjs`、`apps/desktop/test/user-mcp.test.mjs`）；完整 UI 之旅草案
@@ -4892,7 +4880,7 @@ IPC 请求无法关闭。
   项目组，其第二个文件夹已注册为另一个根（ADR 0249）。
 - **步骤**：
   1. 打开插件页，确认 **文件管理器** 作为内置插件列出、已启用、显示工作面板视图能力，且没有卸载操作。
-  2. 展开工作面板并打开标题菜单，确认它出现在“插件视图”分组，而不是宿主工具中；触发一次代理编辑，确认 Review 仍在“已打开项目”中作为产物面板打开。
+  2. 展开工作面板并打开标题菜单，确认它出现在“插件视图”分组，而不是宿主工具中；触发一次代理编辑，确认面板不会自行打开，Review 仅在用户选择其行后才出现在“已打开项目”中。
   3. 打开文件管理器，确认文件树按需加载目录，并忽略 `node_modules`、`.git` 和 `.env`。把视图左上角的文件夹控件切到项目的第二个文件夹，确认文件树跟着切换，而应用显示的可见工作区不变，然后切回项目的主文件夹。
   4. 右键一个文件，确认提供“用默认应用打开”和“在文件夹中显示”且可用；右键一个目录，确认不提供这两项，因为宿主会拒绝目录。
   5. 打开文本文件、编辑并保存，确认磁盘上的文件已改变且编辑器保留保存后的内容。在应用之外改动同一文件，再次编辑并保存，确认报告冲突而不是覆盖外部改动。点击二进制文件，确认显示不支持预览而不是打印替换字符；依次打开图片、CSV 和 Markdown，确认各自使用专属查看器。切换到简体中文，确认文件树、查看器和上下文菜单均已本地化。切换项目后确认文件树立即更新，不必等待轮询。
@@ -5054,7 +5042,7 @@ IPC 请求无法关闭。
 | E——工具和权限 | E2E-008a、E2E-014、E2E-015、E2E-016、E2E-017、E2E-018、E2E-019、E2E-024I、E2E-024K、E2E-040、E2E-049、E2E-074、E2E-093、E2E-097、 E2E-099、E2E-100、E2E-101、E2E-102、E2E-103、E2E-105、E2E-106、E2E-107、E2E-111、E2E-112、E2E-113、E2E-114、E2E-115、E2E-116、 E2E-119、E2E-121、E2E-122、E2E-123、E2E-142、E2E-145、E2E-147、E2E-PLUGIN-imported-pi-package-skills、E2E-166 |
 | F——坚持 | E2E-020、E2E-021、E2E-036、E2E-037、E2E-038、E2E-040、E2E-042、E2E-047、E2E-048、E2E-051、E2E-054、E2E-056、E2E-061、E2E-062、 E2E-064、E2E-066、E2E-068、E2E-071、E2E-072、E2E-073、E2E-082、E2E-084、E2E-096、E2E-098、E2E-102、E2E-102b、E2E-103、E2E-代理-001、 E2E-061a、E2E-073a、E2E-104、E2E-106、E2E-107、E2E-108、E2E-109、E2E-110、E2E-112、E2E-118、E2E-119、E2E-120、E2E-121、E2E-123、E2E-142、E2E-146、E2E-148、E2E-151、E2E-171、E2E-005J |
 | F——持久化（项目排序） | E2E-253 |
-| G——插件 | E2E-022、E2E-022A、E2E-022B、E2E-022C、E2E-023、E2E-024、E2E-024B、E2E-024C、E2E-024D、E2E-024AA、E2E-024E、E2E-024W、E2E-024F、E2E-024G、E2E-024H、 E2E-024I、E2E-024J、E2E-024K、E2E-024L、E2E-024M、E2E-024N、E2E-024O、E2E-024P、E2E-025、E2E-026、E2E-105、E2E-117、E2E-120、E2E-122、E2E-123、E2E-148、E2E-153、E2E-PLUGIN-imported-pi-package-skills、E2E-PLUGIN-import-extension-installs-dependencies、E2E-PLUGIN-import-extension-reports-missing-dependency、E2E-PLUGIN-global-shortcut-owns-only-its-own-command、E2E-PLUGIN-permission-gate-for-real-time-capabilities、E2E-PLUGIN-background-audio-and-realtime-connection |
+| G——插件 | E2E-022、E2E-022A、E2E-022B、E2E-022C、E2E-023、E2E-024、E2E-024B、E2E-024C、E2E-024D、E2E-024AA、E2E-024E、E2E-024W、E2E-024F、E2E-024G、E2E-024H、 E2E-024I、E2E-024J、E2E-024K、E2E-024L、E2E-024M、E2E-024N、E2E-024O、E2E-024P、E2E-025、E2E-026、E2E-105、E2E-117、E2E-120、E2E-122、E2E-123、E2E-148、E2E-153、E2E-PLUGIN-imported-pi-package-skills、E2E-PLUGIN-imported-pi-package-wrapper、E2E-PLUGIN-import-extension-installs-dependencies、E2E-PLUGIN-import-extension-reports-missing-dependency、E2E-PLUGIN-global-shortcut-owns-only-its-own-command、E2E-PLUGIN-permission-gate-for-real-time-capabilities、E2E-PLUGIN-background-audio-and-realtime-connection |
 | H——诊断 | E2E-027、E2E-031、E2E-034、E2E-042、E2E-096、E2E-098、E2E-104、E2E-107、E2E-108、E2E-109、E2E-110、E2E-113、E2E-115、E2E-116、 E2E-118、E2E-121、E2E-146、E2E-194、E2E-195 |
 | 安全性 | E2E-028、E2E-029、E2E-030、E2E-024J、E2E-024K、E2E-024M、E2E-049、E2E-068、E2E-086、E2E-105、E2E-106、E2E-107、E2E-108、E2E-109、 E2E-110、E2E-112、E2E-113、E2E-115、E2E-116、E2E-117、E2E-119、E2E-121、E2E-122、E2E-123、E2E-142、E2E-148、E2E-151、E2E-153 |
 | 品质 | E2E-032、E2E-033、E2E-039、E2E-043、E2E-044、E2E-045、E2E-046、E2E-047、E2E-048、E2E-048A、E2E-049、E2E-050、E2E-053、E2E-055、 E2E-056、E2E-057、E2E-058、E2E-059、E2E-060、E2E-061、E2E-062、E2E-063、E2E-064、E2E-065、E2E-066、E2E-067、E2E-068、E2E-069、 E2E-070、E2E-071、E2E-072、E2E-073、E2E-074、E2E-075、E2E-076、E2E-077、E2E-078、E2E-079、E2E-080、E2E-081、E2E-082、E2E-083、 E2E-084、E2E-085、E2E-086、E2E-092、E2E-093、E2E-094、E2E-095、E2E-096、E2E-097、E2E-098、E2E-099、E2E-100、E2E-101、E2E-102、 E2E-102a、E2E-102b、E2E-103、E2E-AGENTS-001、E2E-024N、E2E-024O、E2E-059a、E2E-060b、E2E-060c、E2E-060d、E2E-061a、E2E-073a、E2E-111、 E2E-114、E2E-117、E2E-118、E2E-119、E2E-120、E2E-122、E2E-123、E2E-142、E2E-143、E2E-144、E2E-145、E2E-146、E2E-147、E2E-148、E2E-150、E2E-151、E2E-153、E2E-194、E2E-195、E2E-199、E2E-200、E2E-201、E2E-202、E2E-203、E2E-204、E2E-209、E2E-210、E2E-250、E2E-PLUGIN-imported-pi-package-skills、E2E-SUBAGENT-resume-a-settled-delegation |
@@ -5847,8 +5835,8 @@ IPC 请求无法关闭。
 操作删除或更改另一张卡。
 - 解析A的Write/Edit权限，完成前切换到B。预计不会
   B 中的瞬态检查面板且无 panel/window 闪烁；返回A恢复
-  A 生成的“审阅”选项卡和之前的面板选择，而 B 的选项卡和浏览器
-  资源保持不变。
+  之前的面板选择，其转录中有内联审阅卡——这次编辑没有打开任何标签页——
+  而 B 的选项卡和浏览器资源保持不变。
 
 ### US-UI-69 侧边栏类型平衡 (D144/D161)
 - 在默认和最小值下打开浅色和深色主题的扩展侧边栏
@@ -6826,6 +6814,16 @@ IPC 请求无法关闭。
 - **里程碑**：M6+
 - **状态**：主机/RPC/单元已覆盖；完整 UI 路径草稿（适用变更合入前需在具备条件的环境中运行 E2E）
 
+#### E2E-PLUGIN-usage-listTurns：插件用量事实列举
+
+- **前置条件**：测试插件获得 `usage.read`；主机库中有未删除与软删会话的已完成 turn。
+- **步骤**：1）无权限调用 `pi.usage.listTurns`。2）有权限调用、按游标翻页、按会话/项目/时间窗过滤。3）传入倒置边界、超过 365 天的窗口、畸形游标。4）确认行含 token 计数与标题、无消息正文，软删会话不出现。
+- **预期**：缺权限返回 `PERMISSION_DENIED` 且不打到主机。合法调用返回已完成 turn 的 keyset 页。非法参数返回 `INVALID_PARAMS`。空标题为 `null`。
+- **关联规格**：`07-plugins/03-plugin-api.md`、`07-plugins/13-plugin-permissions-matrix.md`、`03-runtime/06-host-rpc-protocol.md`、ADR 0173、D335
+- **验收**：安全、质量
+- **里程碑**：M6+
+- **状态**：单元/RPC/连线已覆盖（`plugin-session-api.test.mjs`、host-core `plugin_usage`）；完整 UI 路径草稿
+
 #### E2E-216：插件显式绑定项目与宿主拥有的侧栏刷新
 
 - **前置条件**：测试插件获得 `project.create`、`session.import` 权限并声明会话来源；
@@ -6985,6 +6983,25 @@ runner 会在运行时的隔离临时目录中生成六个插件形态 fixture�
 - **里程碑**：MVP 后（R7 v1）
 - **状态**：部分自动化（`pnpm test:e2e:trusted-extensions`）；无头旅程覆盖插件发现/投影、项目范围、加载状态和诊断；原生选择器导入与显式启用仍需渲染器/平台验证
 
+#### E2E-PLUGIN-imported-pi-package-wrapper：导入包的模块类型不妨碍插件初始化
+
+- **前置条件**：隔离的本地 Pi 包分别声明 `type: module`、`type: commonjs` 或不声明
+  `type`，各自包含扩展和技能贡献。另一个夹具模拟旧版导入的 ESM 包，包含生成的
+  CommonJS `main.js` 及指向它的 manifest。
+- **步骤**：运行 `node --test apps/desktop/test/imported-package-skills-runtime.test.mjs`。
+  使用生产导入器生成各个插件，通过 `PluginRuntime` 与真实子进程插件宿主加载，
+  读取技能目录与正文，并检查声明的扩展。对旧版夹具重新导入且不加载旧副本，再加载旧副本。
+- **预期**：每份新 manifest 都指向实际存在的 `main.cjs`，三类包均初始化成功。
+  源包及两份复制的 `package.json` 字节保持一致。重新导入得到不同的路径和 id 并成功
+  加载；生成新副本时旧 manifest、包装器和包文件保持原样。加载旧副本会把生成的
+  `main.js` 就地改写为 `main.cjs`，复制的 `package.json` 字节不变，并初始化成功。
+  自定义过的 `main.js` 不会被改写。
+- **关联规范**：`07-plugins/16-trusted-extensions.md` §3.2；ADR 0215。
+- **验收**：质量
+- **状态**：已实现导入到插件宿主的自动化夹具。合入最新 `origin/main` 后，在已提交的
+  任务候选上执行，并在交付证据中记录候选、基线、结果和环境。本夹具不覆盖原生选择器、
+  npm 依赖安装、Windows 运行或模型回合中的第三方扩展执行。
+
 #### E2E-PLUGIN-imported-pi-package-skills：显式导入包后按插件权限提供技能
 
 - **前提条件**：一个本地夹具包位于 npm 风格的
@@ -7138,7 +7155,7 @@ runner 会在运行时的隔离临时目录中生成六个插件形态 fixture�
   与仍然有效的 `renderer.extension` 授权；该通道位于 preload 强制执行的派生白名单中。
   示例 manifest 校验通过、请求 `renderer.extension`，且 `main` 与 `renderer`
   文件都存在。
-- **链接规格**：`07-plugins/16-trusted-extensions.md` §2A.1、§2A.2、§2A.4、§2A.5；ADR 0287
+- **链接规格**：`07-plugins/16-trusted-extensions.md` §2A.1、§2A.2、§2A.4、§2A.5；ADR 0291
 - **验收**：安全、质量
 - **里程碑**：MVP 后（R7 v1）
 - **状态**：由 `pnpm test:e2e:plugin-slots` 针对真实模块（打桩的 Electron 只替换

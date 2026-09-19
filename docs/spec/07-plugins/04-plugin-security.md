@@ -46,6 +46,15 @@ Main risks:
    delivery ledger, permission ceiling, turn binding, callback, cancellation,
    and transcript provenance.
 
+### Host-rendered scenic Settings destinations
+
+`contributes.scenicThemes` is data only. The host validates both grants,
+same-plugin theme ownership, declared preview assets, and the exact bounded
+`--nexus-backdrop-blur` variable before it renders cards in Extensions. A plugin
+cannot supply Settings HTML, CSS, JavaScript, selectors, DOM, arbitrary actions,
+or direct renderer IPC. The host owns the transparent canvas, layout, focus,
+native controls, titlebar, Apply action, and lifecycle fallback to General.
+
 Clipboard history is host-owned and remains in the Electron main process only.
 It is never written to the plugin data directory or the host database. The host
 records explicit clipboard writes and user-initiated Composer paste events; it
@@ -138,7 +147,7 @@ the agent sidecar and is specified in
 The trusted UI tier puts plugin code **inside the app's own window**: the entry
 module shares the host renderer's JavaScript realm, its DOM, its module graph,
 and its React tree. There is no process isolation, no `iframe`, and no second
-sandbox (ADR 0287). The mitigations that do ship with it:
+sandbox (ADR 0291). The mitigations that do ship with it:
 
 - **React singleton.** The host injects its own React through the module's
   import map; a plugin that ships its own React is refused at load with a
@@ -165,7 +174,7 @@ What this tier gives up is recorded rather than implied: an infinite loop, a
 memory leak, or global pollution from the entry is not contained by the error
 boundary, and unloading is not guaranteed to roll back global mutations. The
 crash radius of the renderer host is an accepted cost of the same-realm design
-(ADR 0287). The entry contract itself is specified in
+(ADR 0291). The entry contract itself is specified in
 [16-trusted-extensions.md](16-trusted-extensions.md) §2A.
 
 ## 4. Permission-grant UX

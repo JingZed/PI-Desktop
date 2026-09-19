@@ -1,6 +1,6 @@
 # 16. Trusted Extensions
 
-> Status: Implemented v1.1 (D387 / D388, ADR 0214 / ADR 0215 / ADR 0244); implementation notes are marked "v1 note". §2A documents the trusted renderer host (issue #528, ADR 0287).
+> Status: Implemented v1.1 (D387 / D388, ADR 0214 / ADR 0215 / ADR 0244); implementation notes are marked "v1 note". §2A documents the trusted renderer host (issue #528, ADR 0291).
 > Scope: v1.1 plus the trusted renderer host. v2 and v3 items are listed in §12 and are not committed.
 
 ## 1. Purpose and terminology
@@ -64,7 +64,7 @@ so it is neither an `ExtensionAPI` member nor a row in the §5 support matrix.
 A second trusted execution host sits beside the agent sidecar:
 `manifest.renderer`, a plugin-relative ES module the host renderer fetches and
 evaluates inside the app's own window, where it registers React components into
-host-owned slots. ADR 0287 records the decision; this section is the contract.
+host-owned slots. ADR 0291 records the decision; this section is the contract.
 
 ### 2A.1 Trust tier and permission
 
@@ -149,7 +149,7 @@ Shadow DOM was rejected because portaled plugin UI would escape a shadow root
   the host has its own default rendering for that position, it falls back to it.
 - The crash radius of the renderer host is accepted: an infinite loop, a memory
   leak, or global pollution is not contained by the boundary, and unloading is
-  not guaranteed to roll back global mutations (ADR 0287).
+  not guaranteed to roll back global mutations (ADR 0291).
 - Refusals: a plugin that ships its own React is refused at load with a
   diagnostic; a declared `renderer` file that is missing reports
   `PLUGIN_LOAD_FAILED: renderer entry missing`; a module that does not export
@@ -201,7 +201,7 @@ list, they do not change grants, and a manifest that declares them without
 `renderer` still validates.
 
 The relay that consumes these names at dispatch time ships with the trusted
-renderer host (ADR 0290). A mounted slot component is handed its host data and
+renderer host (ADR 0294). A mounted slot component is handed its host data and
 one method, `dispatch(action, payload)`, as props; nothing is ambient. The host
 refuses an action the plugin did not declare, and a declared action it has no
 handler for is refused as a coded error rather than resolving `undefined` — and
@@ -215,7 +215,7 @@ nine names are implemented; a call to one of the other six rejects with a coded
   JSON-serializable values only, and an absent answer arrives as `null`. Electron
   main re-checks the call against the manifest it loaded, and the renderer
   supplies only ids and args. That is a correctness measure for the normal case,
-  not a security boundary (ADR 0287).
+  not a security boundary (ADR 0291).
 - `ui.toast { message: string, variant?: "info" | "success" | "error" }` raises
   the shell's existing toast.
 - `composer.replaceDraft { text: string }` writes the whole draft of the active
@@ -253,7 +253,7 @@ per-message block whose height the transcript must know before it lays out, a
 code-block decoration, a value read while a composer control is computed. An
 async round trip cannot serve them without the UI flickering or reflowing
 afterwards, so the module also registers pure, synchronous functions for the
-host to call in the renderer (ADR 0290 decision 6).
+host to call in the renderer (ADR 0294 decision 6).
 
 - `pi.functions.register(name, fn)` returns `{ name, remove() }`. Names are per
   plugin, not global, and must match `^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$` and
@@ -315,11 +315,19 @@ manifest that lists entries without the permission is invalid
 Plugins → "Import pi extension" opens a native picker (main owns the path,
 D344) for an explicit local file or directory. Main copies the selected
 source under `<dataDir>/plugins/imported/<slug>/src/`, writes a generated
-no-op `main.js` and a manifest with id `imported.<slug>` (a unique suffix is
+CommonJS no-op `main.cjs` and a manifest with id `imported.<slug>` (a unique suffix is
 added for repeated imports), and registers the directory through the existing
 local-plugin flow. The confirmation before the picker remains the trust
 decision; the generated manifest declares the permissions needed by its actual
-contributions.
+contributions. The manifest's `main` points to `main.cjs` regardless of the
+source package's `type`; both copied package declarations retain their module
+semantics. Loading an imported plugin whose `main` is the generated CommonJS
+`main.js` wrapper rewrites that file in place to `main.cjs` and updates the
+manifest; copied package files, grants, and activation scope stay as they are.
+The rewrite matches only the generated no-op (including the original comment
+text). A customized `main.js` is left untouched. Re-importing without removal
+creates a separate plugin with a unique suffix; it does not copy grants or
+activation scope from the older copy.
 
 For extension files and packages without `pi.skills`, entry discovery keeps
 the existing `pi-coding-agent` rules: `package.json` `pi.extensions`, otherwise
@@ -484,19 +492,19 @@ are honored where the event type defines a result.
 | `turn_start`, `turn_end` | Turn boundaries | No |
 | `turn_closing` | `shouldStopAfterTurn` (runtime slot 7, issue #561; gated by `runtime.turn.closing` — spec 13 §2C) | Yes: `{ continue: true, message? }` keeps the run going, bounded per run |
 | `message_start`, `message_update`, `message_end` | Agent message events | v1 note: no, pi-agent-core offers no post-hoc replacement |
-| `tool_call` | `beforeToolCall` | Yes, block with reason. Modifying the call's arguments is not available and is permanently excluded (ADR 0291 rule 4) |
+| `tool_call` | `beforeToolCall` | Yes, block with reason. Modifying the call's arguments is not available and is permanently excluded (ADR 0295 rule 4) |
 | `tool_execution_start`, `tool_execution_update`, `tool_execution_end` | Tool execution stream | No |
 | `tool_result` | `afterToolCall` | Yes, replacement result |
 | `model_select`, `thinking_level_select` | v1 note: not emitted; a binding change retires the runtime | No |
 | `session_before_compact`, `session_compact`, `session_compact_failed` | Compaction pipeline | Yes for `session_before_compact` |
-| `input` | After Electron main persisted the message, before it is queued for the model (runtime slot 1, issue #561; gated by `runtime.send.before` — spec 13 §2C) | Yes: `{ action: "continue" \| "transform" \| "handled", text?, reason? }`; `transform` replaces what the model reads and is recorded at diff level (ADR 0291 rule 5) |
-| `session_before_switch` | Session switch: the session being left, announced before the new one is opened (runtime slot 11, informed-only — ADR 0291 rule 11) | No |
+| `input` | After Electron main persisted the message, before it is queued for the model (runtime slot 1, issue #561; gated by `runtime.send.before` — spec 13 §2C) | Yes: `{ action: "continue" \| "transform" \| "handled", text?, reason? }`; `transform` replaces what the model reads and is recorded at diff level (ADR 0295 rule 5) |
+| `session_before_switch` | Session switch: the session being left, announced before the new one is opened (runtime slot 11, informed-only — ADR 0295 rule 11) | No |
 | `session_before_fork` | Session fork: the source session, announced before the child exists (runtime slot 11, informed-only) | No |
 | `session_lifecycle` | Session created / deleted — the two moments the kernel has no hook for, announced by the host (runtime slot 11, informed-only) | No |
 | `user_bash`, `session_before_tree`, `session_tree`, `ui_prompt_start`, `ui_prompt_end` | Not emitted in v1 | n/a |
 
 A handler runs only when the extension's plugin holds the slot permission behind
-its event (ADR 0291 rule 2): `turn_closing` needs `runtime.turn.closing`,
+its event (ADR 0295 rule 2): `turn_closing` needs `runtime.turn.closing`,
 `tool_call` and `tool_result` need `runtime.tool.gate`, and every other event in
 the table above that names a slot is gated the same way. The map covers every
 wired event that changes a turn; `session_start`, `session_shutdown` and
@@ -508,7 +516,7 @@ slot the desktop does not emit yet (`project_trust`, `resources_discover`,
 handler runs from a hook point that never fires. The lifecycle notices are
 informed-only: `session_before_switch`, `session_before_fork` and
 `session_lifecycle` are emitted and never awaited, so a plugin cannot delay a
-switch, a fork or a delete (ADR 0291 rule 11).
+switch, a fork or a delete (ADR 0295 rule 11).
 
 Two calls an extension makes for itself are not events, so the same contract
 names the call instead of an event name (`TRUSTED_EXTENSION_API_PERMISSIONS` in
@@ -541,7 +549,7 @@ The kernel exposes two more context hooks — `pi-agent-core`'s `transformContex
 and `prepareNextTurn` — that no plugin can reach yet: the desktop sets only
 `prepareNextTurnWithContext`, and the `context` event above rides that path. A
 plugin-facing entry point is the before-request slot, phasing step 3 in
-[ADR 0291](../../adr/0291-runtime-slots-and-their-permissions.md), which rule 3
+[ADR 0295](../../adr/0295-runtime-slots-and-their-permissions.md), which rule 3
 there opens to ordinary plugins rather than the high-trust tier alone.
 
 A handler that throws is logged as a diagnostic and treated as returning

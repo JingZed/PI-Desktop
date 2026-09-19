@@ -159,7 +159,7 @@ export type AppState = {
   /**
    * Diff-level rewrite records per session, as `plugin.rewrites.list` returns
    * them. They are what marks a rewritten outgoing row in the transcript
-   * (ADR 0291 rule 5); a session with no records has no entry.
+   * (ADR 0295 rule 5); a session with no records has no entry.
    */
   pluginRewrites: Record<string, PluginRewriteRecord[]>;
   /** Per-session permission queue, oldest first. */

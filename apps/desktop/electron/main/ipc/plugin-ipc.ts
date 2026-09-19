@@ -22,7 +22,6 @@ export type PluginIpcDependencies = {
   agentExtensions: AgentExtensionBridge;
   browserHost: BrowserHost;
   pluginViews: PluginViewHost;
-  pluginSettingsViews: PluginViewHost;
   pluginScopes: Map<string, ActivationScope>;
   rememberPluginScopes: (list: any[]) => void;
   sendToRenderer: (channel: string, payload?: unknown) => void;
@@ -37,7 +36,6 @@ export function registerPluginIpc({
   agentExtensions,
   browserHost,
   pluginViews,
-  pluginSettingsViews,
   pluginScopes,
   rememberPluginScopes,
   sendToRenderer,
@@ -150,7 +148,7 @@ export function registerPluginIpc({
   /**
    * The renderer entry a loaded plugin may run, or null. The renderer process
    * never reads a manifest, so this is how it learns the one path it may fetch
-   * (ADR 0287); the same gate decides whether the scheme answers at all.
+   * (ADR 0291); the same gate decides whether the scheme answers at all.
    */
   handle(IPC.invoke.pluginRendererEntry, async (id: string) => ({
     entry: plugins.rendererEntry(String(id ?? "")),
@@ -158,7 +156,7 @@ export function registerPluginIpc({
 
   /**
    * One forwarded renderer action: `dispatch("plugin.call", { method, args })`
-   * (ADR 0290 decision 4). The id is the calling plugin's own — the main window
+   * (ADR 0294 decision 4). The id is the calling plugin's own — the main window
    * is one sender for every plugin in it, so the id has to be an argument — and
    * nothing the renderer claims about it is trusted: the runtime looks the
    * plugin up in the registry this process loaded and re-checks the declaration
@@ -377,7 +375,6 @@ export function registerPluginIpc({
   handle(IPC.invoke.pluginDisable, async (id: string) => {
     if (!host) throw new Error("host unavailable");
     pluginViews.closePlugin(id);
-    pluginSettingsViews.closePlugin(id);
     if (id === BROWSER_PLUGIN_ID) browserHost.disposeGuest();
     await plugins.unload(id);
     logger.app("plugin", "info", "plugin disabled", { pluginId: id });
@@ -389,7 +386,6 @@ export function registerPluginIpc({
   handle(IPC.invoke.pluginUninstall, async (id: string) => {
     if (!host) throw new Error("host unavailable");
     pluginViews.closePlugin(id);
-    pluginSettingsViews.closePlugin(id);
     await plugins.unload(id);
     logger.app("plugin", "info", "plugin uninstalled", { pluginId: id });
     const res = await host.call("plugins.uninstall", { id });

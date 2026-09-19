@@ -574,7 +574,7 @@ pub(crate) fn migrate_v17_to_v18_tx(tx: &rusqlite::Transaction<'_>) -> Result<()
 }
 
 /// v19 makes `artifacts` one row per recorded touch instead of one row per
-/// `(session, path)` (ADR 0291 rule 8). A file changed in three turns becomes
+/// `(session, path)` (ADR 0295 rule 8). A file changed in three turns becomes
 /// three rows, so "which files did this turn change?" is an indexed per-turn
 /// query and no touch is hidden by deduplication. Existing rows keep their
 /// `path`, `op`, `turn_id`, and `updated_at` verbatim; the rebuild only adds
@@ -630,7 +630,7 @@ pub(crate) fn migrate_v18_to_v19_tx(tx: &rusqlite::Transaction<'_>) -> Result<()
 }
 
 /// v20 adds `plugin_rewrites`, the diff-level audit of what a plugin changed
-/// in what the model receives (ADR 0291 rule 5). Additive: no existing row
+/// in what the model receives (ADR 0295 rule 5). Additive: no existing row
 /// changes, and the table starts empty because its producers — slot #1
 /// (`runtime.send.before`) and slot #6 (`runtime.request.before`) — are not
 /// built yet. Executing the module's own DDL keeps the fresh-install shape and
@@ -641,7 +641,7 @@ pub(crate) fn migrate_v19_to_v20_tx(tx: &rusqlite::Transaction<'_>) -> Result<()
     Ok(())
 }
 
-/// v21 makes a turn's audit records attributable (ADR 0291 rule 8, slot #9):
+/// v21 makes a turn's audit records attributable (ADR 0295 rule 8, slot #9):
 /// `audit_log` grows the nullable `turn_id` column and its partial index, so
 /// one turn's tool executions are an indexed read instead of a scan of
 /// redacted payloads. Additive: every existing row keeps its content and stays

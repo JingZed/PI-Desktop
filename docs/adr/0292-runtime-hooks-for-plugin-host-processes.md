@@ -1,11 +1,11 @@
-# ADR 0288: Runtime hooks for plugin-host processes
+# ADR 0292: Runtime hooks for plugin-host processes
 
 - Status: Accepted for implementation
 - Date: 2026-09-18
 - Related: issue #528 (sub-issue #561) ·
   [ADR 0215](0215-agent-extensions-as-plugin-contribution.md) ·
   [ADR 0214](0214-trusted-extensions.md) ·
-  [ADR 0287](0287-trusted-renderer-execution-host.md) ·
+  [ADR 0291](0291-trusted-renderer-execution-host.md) ·
   [02-plugin-manifest-schema](../spec/07-plugins/02-plugin-manifest-schema.md) ·
   [13-plugin-permissions-matrix](../spec/07-plugins/13-plugin-permissions-matrix.md) ·
   [16-trusted-extensions](../spec/07-plugins/16-trusted-extensions.md)
@@ -13,7 +13,7 @@
 **Implementation status: partial.** This record fixes the accepted design of the
 broker channel, and that channel is not built: there is no registration IPC, no
 registration table, no 2 s deadline, and no circuit breaker. What is built is
-the slot model around it ([ADR 0291](0291-runtime-slots-and-their-permissions.md)):
+the slot model around it ([ADR 0295](0295-runtime-slots-and-their-permissions.md)):
 the twelve `runtime.*` names are registered (plugin SDK, desktop risk table,
 devkit mirror, eight locales), the agent sidecar resolves a wired event's slot
 permission before a handler runs and reports a skip as a `permission_denied`

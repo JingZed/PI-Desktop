@@ -497,9 +497,9 @@ same 6px contract and scroll-reveal mark. This keeps first-party surfaces such
 as the Files view aligned with the host renderer; the external page loaded
 inside the Browser guest remains page-owned and keeps its own scrollbar style.
 
-The expanded sidebar is a fixed 275px column. Collapse/open changes only whether
-the column is present; the historical resize handle is hidden and legacy width
-preferences are not persisted.
+The expanded sidebar is user-resizable from 240px to 520px (default 275px).
+Dragging the right-edge handle below 160px collapses the column. Collapse/open
+preserves the preferred expanded width.
 
 The profile menu is `280px` wide, opens `8px` above the footer, and uses the
 standard opaque elevated-menu surface, subtle border, and dialog shadow. Its
@@ -1040,7 +1040,7 @@ Codex parity decisions (D034/D070) supersede any older value here.
 |---|---|---|
 | Titlebar row height | 46px | Codex toolbar rhythm (D034); traffic lights {x:16,y:16} |
 | Sidebar width (collapsed) | 48px | Icon-only rail |
-| Sidebar width (expanded) | 275px | Fixed column; collapse/open does not resize it |
+| Sidebar width (expanded) | 240–520px (default 275px) | Right-edge handle; drag below 160px collapses (ADR 0141 / ADR 0290) |
 | Main pane minimum readable width | 450px | The MainChat hard floor; the sidebar yields before it is breached (ADR 0238) |
 | Work panel width (closed) | 0px | Hidden by default |
 | Work panel width (open) | `≥244px` (new-profile default 360px), capped by `client width - 450px - expanded sidebar` with no fixed pixel cap | the panel is an in-flow column whose width is taken from the existing client area; the renderer owns its divider (ADR 0033 / ADR 0151 / ADR 0238); saved widths remain unchanged |

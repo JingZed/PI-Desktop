@@ -1,5 +1,5 @@
 //! Diff-level audit of what a plugin changed in what the model receives
-//! (ADR 0291 rule 5; 04-data-storage §4.15).
+//! (ADR 0295 rule 5; 04-data-storage §4.15).
 //!
 //! Slot #1 (`runtime.send.before`) is the first producer: the agent runtime
 //! hands a rewrite it performed to the host, and `plugin.rewrites.record`
@@ -108,7 +108,7 @@ const MAX_FIELD_PATH_DEPTH: usize = 32;
 /// Most records one read returns, whatever the caller asks for.
 const MAX_LIST_LIMIT: i64 = 500;
 
-/// What a plugin rewrote (ADR 0291 rule 5). One variant per rewrite slot
+/// What a plugin rewrote (ADR 0295 rule 5). One variant per rewrite slot
 /// capability: the outgoing message (slot #1), or the system prompt, the
 /// message list, and the request payload (slot #6).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -442,7 +442,7 @@ pub fn list_for_session(
 }
 
 /// The records of one turn, oldest first — the order the rewrites happened in
-/// the turn, which is what slot #1 / #6 surfaces read (ADR 0291 rule 5).
+/// the turn, which is what slot #1 / #6 surfaces read (ADR 0295 rule 5).
 ///
 /// A record written outside a turn has no `turn_id` and never appears here;
 /// the `id` tiebreak keeps the order stable within a millisecond.

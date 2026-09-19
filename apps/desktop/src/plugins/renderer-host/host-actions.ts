@@ -1,6 +1,6 @@
 /**
  * The host's implementations of the renderer actions this release performs
- * (ADR 0290). The relay (`./relay`) owns the declaration check and the routing;
+ * (ADR 0294). The relay (`./relay`) owns the declaration check and the routing;
  * this module is what it routes to, and it is installed once at app start from
  * `src/main.tsx` next to the other renderer-side installs.
  *

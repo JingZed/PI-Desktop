@@ -133,7 +133,7 @@ export function registerSessionIpc({
   };
 
   /**
-   * Session lifecycle notices (ADR 0291 slot 11, rule 11).
+   * Session lifecycle notices (ADR 0295 slot 11, rule 11).
    *
    * The desktop owns these four moments, so it announces them here instead of
    * pretending the kernel produced them: `created` and `deleted` have no kernel
@@ -163,13 +163,13 @@ export function registerSessionIpc({
     } catch (error) {
       // A notice that cannot be delivered must never fail the switch, delete or
       // fork it is about: those already succeeded, and the notice is
-      // informed-only (ADR 0291 rule 11).
+      // informed-only (ADR 0295 rule 11).
       failed(error);
     }
   };
 
   /**
-   * The session's outgoing-message rewrites (ADR 0291 rule 5). The records live
+   * The session's outgoing-message rewrites (ADR 0295 rule 5). The records live
    * in host-core; this is only the transport that lets the transcript mark a
    * rewritten row. A failed read warns instead of failing the session read: the
    * audit trail is still in the store, so the next read marks the row.
@@ -311,7 +311,7 @@ export function registerSessionIpc({
       const { providers, defaults } = await sessionCapabilityContext();
       // The fork's source session is told before the child exists, which is
       // what `session_before_fork` means here. Informed-only and
-      // fire-and-forget: a plugin cannot cancel a fork (ADR 0291 rule 11).
+      // fire-and-forget: a plugin cannot cancel a fork (ADR 0295 rule 11).
       // Native Pi sessions run outside the extension host, so only a
       // host-core session has a plugin to tell.
       notifyLifecycle(sidecar, {
@@ -390,7 +390,7 @@ export function registerSessionIpc({
       ]);
       if (!result.session) return result;
       // A full read also carries the session's outgoing-message rewrites, which
-      // is what the transcript row badge reads (ADR 0291 rule 5). Paged reads
+      // is what the transcript row badge reads (ADR 0295 rule 5). Paged reads
       // stay as they are: they answer a different question, and the badge does
       // not change between pages.
       const paged =
@@ -448,7 +448,7 @@ export function registerSessionIpc({
     }
     if (!host) throw new Error("host unavailable");
     const res = await host.call("session.delete", { id });
-    // A delete is informed-only (ADR 0291 rule 11): the session's plugin is
+    // A delete is informed-only (ADR 0295 rule 11): the session's plugin is
     // told before its runtime goes away, and the delete never waits for it.
     notifyLifecycle(sidecar, { change: "deleted", sessionId: id });
     await persistenceOutbox.dropSession(id);

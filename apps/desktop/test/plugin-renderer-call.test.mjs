@@ -1,5 +1,5 @@
 /**
- * The main-process half of `plugin.call` (ADR 0290 decision 4): a renderer
+ * The main-process half of `plugin.call` (ADR 0294 decision 4): a renderer
  * slot's forwarded action reaches the calling plugin's own headless entry, and
  * every refusal on the way is a coded error rather than a silent no-op.
  *
@@ -146,7 +146,7 @@ test("a UI-only plugin has no entry of its own and is refused, not served by a n
       permissions: ["renderer.extension"],
     }),
   });
-  // "Its own entry" does not exist (ADR 0290 decision 4): there is no page
+  // "Its own entry" does not exist (ADR 0294 decision 4): there is no page
   // relay to fall back on, and answering from another plugin's process would
   // run the call in a plugin the renderer never named.
   await refusal(runtime.invokeRendererCall(id, "slots.echo", null), "PLUGIN_CALL_NO_ENTRY");

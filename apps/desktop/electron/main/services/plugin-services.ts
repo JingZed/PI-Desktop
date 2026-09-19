@@ -184,7 +184,6 @@ export function createPluginServices({
       globalShortcut.unregister(accelerator);
     },
     // Late-bound: the runtime is constructed just below, and a trigger can
-    // Late-bound: the runtime is constructed just below, and a trigger can
     // only arrive once the app is running and a plugin holds a shortcut.
     onTrigger: (entry) => {
       void plugins.triggerPluginShortcut(entry);
@@ -340,6 +339,13 @@ export function createPluginServices({
     project: {
       create: (pluginId, input) => callPluginProjectHost(pluginId, input),
     },
+    // Read-only usage facts: the same host-owned session transport, no
+    // mutation, so no `sessionsChanged` fan-out (callPluginSessionHost only
+    // announces the mutating methods).
+    usage: {
+      listTurns: (pluginId, input) =>
+        callPluginSessionHost("plugin.usage.listTurns", pluginId, input),
+    },
     complete: async (input): Promise<PluginCompleteResult> => {
       if (!getHost()) {
         throw Object.assign(new Error("host unavailable"), { code: "UNSUPPORTED" });
@@ -417,7 +423,6 @@ export function createPluginServices({
       // surface. Drop it; the renderer re-opens it on the pluginChanged event if
       // the tab is still active and the plugin came back.
       pluginViews.closePlugin(pluginId);
-      pluginSettingsViews.closePlugin(pluginId);
       if (pluginId === BROWSER_PLUGIN_ID) browserHost.disposeGuest();
       sendToRenderer(IPC.event.pluginChanged,{ reason: "crash", pluginId });
     },
@@ -445,7 +450,6 @@ export function createPluginServices({
       });
       // Views were loaded from the previous revision of the plugin's files.
       pluginViews.closePlugin(pluginId);
-      pluginSettingsViews.closePlugin(pluginId);
       if (pluginId === BROWSER_PLUGIN_ID) browserHost.disposeGuest();
       sendToRenderer(IPC.event.pluginChanged,{ reason: "reload", pluginId });
     },
@@ -460,9 +464,17 @@ export function createPluginServices({
     emit: (event) => sendToRenderer(IPC.event.mcpOauth, event),
     openExternal: (url) => safeOpenExternal(url),
     log: (level, message, data) => logger.app("plugin", level, message, { data }),
-    onAuthorized: async (serverId): Promise<McpServerStatus> => {
+    onAuthorized: async (serverId, record): Promise<McpServerStatus> => {
+      const existed = userMcp.listRecords().some((item) => item.id === serverId);
+      if (record && !existed) {
+        userMcp.setRecords([...userMcp.listRecords(), record]);
+      }
       userMcp.invalidate(serverId);
       const status: McpServerStatus = await userMcp.test(serverId);
+      if (!existed) {
+        userMcp.invalidate(serverId);
+        userMcp.setRecords(userMcp.listRecords().filter((item) => item.id !== serverId));
+      }
       sendToRenderer(IPC.event.pluginChanged, { reason: "mcp", pluginId: serverId });
       return status;
     },
@@ -538,17 +550,7 @@ export function createPluginServices({
       data: { api: "view.egress", ok: false, url, ts: Date.now() },
     });
   });
-  // Settings extensions use the same sandboxed preload and egress policy as
-  // work-panel views, but have their own visible surface and lifecycle.
-  const pluginSettingsViews = new PluginViewHost(({ pluginId, url }) => {
-    logger.app("plugin", "warn", "plugin.api", {
-      pluginId,
-      code: "PERMISSION_DENIED",
-      data: { api: "settings.egress", ok: false, url, ts: Date.now() },
-    });
-  });
   pluginPanels.addSenderResolver((senderId) => pluginViews.pluginIdForSender(senderId));
-  pluginPanels.addSenderResolver((senderId) => pluginSettingsViews.pluginIdForSender(senderId));
   const browserHost = new BrowserHost({
     pane: browserPane,
     isPluginLoaded: (pluginId) => Boolean(plugins.getLoaded(pluginId)),
@@ -629,7 +631,6 @@ export function createPluginServices({
     announceTurnEnded,
     pluginPanels,
     pluginViews,
-    pluginSettingsViews,
     browserHost,
     browserPane,
     speech,

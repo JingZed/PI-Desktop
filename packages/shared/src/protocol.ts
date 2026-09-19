@@ -2,7 +2,7 @@ export const PROTOCOL_VERSION = 11 as const;
 export const SCHEMA_VERSION = 16 as const;
 export const APP_ID = "net.aiuo.pi-desktop";
 export const APP_NAME = "PI-Desktop";
-export const APP_VERSION = "0.15.0";
+export const APP_VERSION = "0.15.1-beta.5";
 
 export const APP_MENU_COMMANDS = [
   "newTask",
@@ -146,6 +146,18 @@ export const IPC = {
     askToolResolve: "pi-desktop/agent/askTool/resolve",
     plansPending: "pi-desktop/plans/pending",
     plansResolve: "pi-desktop/plans/resolve",
+    /**
+     * List every paired remote `pi-host` this desktop knows, redacted so no
+     * device token reaches the renderer. See ADR 0286 (R2b pairing UX).
+     */
+    remoteHostList: "pi-desktop/remoteHost/list",
+    /**
+     * Pair with a `pi-host` at `url` using a single-use `pairingToken`, mint
+     * a device token, persist it encrypted, and open the live connection.
+     */
+    remoteHostPair: "pi-desktop/remoteHost/pair",
+    /** Close the live connection for `hostKey` and drop its persisted record. */
+    remoteHostRemove: "pi-desktop/remoteHost/remove",
     providersList: "pi-desktop/providers/list",
     providersCreate: "pi-desktop/providers/create",
     providersUpdate: "pi-desktop/providers/update",
@@ -169,11 +181,11 @@ export const IPC = {
   /**
    * The renderer entry a loaded plugin may run, or null. The renderer never
    * reads a manifest: it asks the main process for the one path it needs
-   * (ADR 0287).
+   * (ADR 0291).
    */
   pluginRendererEntry: "pi-desktop/plugin/renderer/entry",
     /**
-     * One forwarded renderer action (ADR 0290 decision 4): run a method inside
+     * One forwarded renderer action (ADR 0294 decision 4): run a method inside
      * the calling plugin's own headless entry and answer with its result. The
      * renderer never reads a manifest, so the main process looks the plugin id
      * up in the registry it loaded and forwards only when that plugin's
@@ -209,16 +221,14 @@ export const IPC = {
     pluginLauncherToggle: "pi-desktop/pluginLauncher/toggle",
     pluginLauncherDismiss: "pi-desktop/pluginLauncher/dismiss",
     pluginThemes: "pi-desktop/plugin/themes",
-    pluginSettingsDestinations: "pi-desktop/plugin/settings/destinations",
+    pluginScenicThemesDestinations: "pi-desktop/plugin/scenicThemes/destinations",
+    pluginScenicThemesSetBlur: "pi-desktop/plugin/scenicThemes/setBlur",
     pluginServices: "pi-desktop/plugin/services",
     pluginViews: "pi-desktop/plugin/views",
     pluginViewOpen: "pi-desktop/plugin/view/open",
     pluginViewClose: "pi-desktop/plugin/view/close",
     pluginViewSetBounds: "pi-desktop/plugin/view/setBounds",
     pluginViewSetVisible: "pi-desktop/plugin/view/setVisible",
-    pluginSettingsViewOpen: "pi-desktop/plugin/settings/view/open",
-    pluginSettingsViewSetBounds: "pi-desktop/plugin/settings/view/setBounds",
-    pluginSettingsViewSetVisible: "pi-desktop/plugin/settings/view/setVisible",
     mcpList: "pi-desktop/mcp/list",
     mcpUpsert: "pi-desktop/mcp/upsert",
     mcpRemove: "pi-desktop/mcp/remove",

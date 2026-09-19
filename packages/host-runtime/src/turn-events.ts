@@ -65,7 +65,7 @@ export class TurnEventPipeline {
   private readonly inflightSnapshots = new Map<string, UiMessage>();
   private readonly activeTurnUsages = new Map<string, MessageUsage>();
   /**
-   * Spend plugin tools reported for the current turn (ADR 0291 slot 5). Kept
+   * Spend plugin tools reported for the current turn (ADR 0295 slot 5). Kept
    * apart from `activeTurnUsages` because it is recorded as a component of the
    * turn, not as model input/output tokens.
    */

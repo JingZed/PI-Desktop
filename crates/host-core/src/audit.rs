@@ -11,7 +11,7 @@ pub fn append(db: &Database, kind: &str, session_id: Option<&str>, payload: Valu
 }
 
 /// Append a record that belongs to one turn, so a per-turn read finds it by
-/// its own column instead of scanning redacted payloads (schema v21, ADR 0291
+/// its own column instead of scanning redacted payloads (schema v21, ADR 0295
 /// rule 8, slot #9). `turn_id` is a fact the caller knows, never inferred from
 /// the payload; `None` keeps the pre-v21 shape.
 pub fn append_turn(

@@ -102,7 +102,6 @@ export type WindowLifecycleDependencies = {
   createTray: () => void;
   browserPane: BrowserPane;
   pluginViews: PluginViewHost;
-  pluginSettingsViews: PluginViewHost;
   plugins: PluginRuntime;
   logger: Pick<Logger, "app">;
 };
@@ -130,7 +129,6 @@ export async function createWindow({
   createTray,
   browserPane,
   pluginViews,
-  pluginSettingsViews,
   plugins,
   logger,
 }: WindowLifecycleDependencies): Promise<void> {
@@ -637,7 +635,6 @@ export async function createWindow({
 
   browserPane.setWindow(window);
   pluginViews.setWindow(window);
-  pluginSettingsViews.setWindow(window);
   window.on("closed", () => {
     screen.removeListener("display-metrics-changed", reconcileDisplayTopology);
     screen.removeListener("display-added", reconcileDisplayTopology);
@@ -663,7 +660,6 @@ export async function createWindow({
     windowState.mainWindow = null;
     browserPane.setWindow(null);
     pluginViews.setWindow(null);
-    pluginSettingsViews.setWindow(null);
     if (
       process.platform !== "darwin" &&
       windowState.pluginLauncherWindow &&

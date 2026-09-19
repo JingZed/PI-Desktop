@@ -17,13 +17,13 @@ pub struct PluginManifest {
     pub renderer: Option<String>,
     /// `manifest.rendererData`: the host data keys a trusted renderer module
     /// wants handed to its slot components. A declaration, not a permission
-    /// (ADR 0290): naming a key grants nothing, and declaring one without
+    /// (ADR 0294): naming a key grants nothing, and declaring one without
     /// `renderer` still validates.
     #[serde(default, rename = "rendererData")]
     pub renderer_data: Vec<String>,
     /// `manifest.rendererActions`: the host actions a trusted renderer module
     /// may dispatch, from the host-owned vocabulary. Also a declaration, not a
-    /// permission (ADR 0290).
+    /// permission (ADR 0294).
     #[serde(default, rename = "rendererActions")]
     pub renderer_actions: Vec<String>,
     #[serde(default)]

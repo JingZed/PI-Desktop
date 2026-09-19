@@ -1,14 +1,12 @@
-import {
-  hostedSearchHasContent,
-  type ContextCompactionMark,
-  type MessageUsage,
-  type UiMessage,
+import type {
+  ContextCompactionMark,
+  MessageUsage,
+  UiMessage,
 } from "@pi-desktop/shared";
 import { isDelegationStartTool } from "./tool-display";
 
 export type AssistantActivityItem =
   | { kind: "thinking"; message: UiMessage }
-  | { kind: "hostedSearch"; message: UiMessage }
   | {
       kind: "tool";
       message: UiMessage;
@@ -243,9 +241,6 @@ export function buildTranscriptEntries(
     const current = ensureTurn(message);
     const thinking = messageThinking(message);
     if (thinking) pushActivity({ kind: "thinking", message });
-    if (hostedSearchHasContent(message.hostedSearch)) {
-      pushActivity({ kind: "hostedSearch", message });
-    }
     if ((message.content || "").trim() || !thinking || message.error) {
       current.parts.push({ kind: "message", message });
       if (!current.anchorId && (message.content || "").trim()) {

@@ -95,6 +95,7 @@ import {
   type PluginShortcutEntry,
   type PluginShortcutRegistry,
 } from "./plugin-shortcut-registry";
+import { repairImportedExtensionWrapper } from "./imported-plugin-wrapper";
 
 export type RegisteredCommand = {
   id: string;
@@ -435,6 +436,10 @@ export type PluginHostServices = {
   project?: {
     create: (pluginId: string, input: Record<string, unknown>) => Promise<unknown>;
   };
+  /** Read-only completed-turn facts served by host-core's usage domain. */
+  usage?: {
+    listTurns: (pluginId: string, input: Record<string, unknown>) => Promise<unknown>;
+  };
 };
 
 /** Host APIs a plugin process may reach. Anything else does not exist (spec 04 §2). */
@@ -514,6 +519,7 @@ const HOST_API_ALLOWLIST = new Set([
   "session.importBatch",
   "session.rename",
   "session.delete",
+  "usage.listTurns",
   "agent.complete",
   "keyboard.registerGlobalShortcut",
   "keyboard.unregisterGlobalShortcut",
@@ -548,7 +554,7 @@ const PLUGIN_PANEL_TIMEOUT_MS = 30_000;
 const PLUGIN_RENDERER_CALL_TIMEOUT_MS = PLUGIN_PANEL_TIMEOUT_MS;
 /**
  * The one renderer action this runtime forwards. The vocabulary is host-owned
- * (ADR 0290 decision 2); this is the name a manifest has to declare before a
+ * (ADR 0294 decision 2); this is the name a manifest has to declare before a
  * call is relayed at all.
  */
 const RENDERER_CALL_ACTION = "plugin.call";
@@ -708,7 +714,7 @@ function apiError(code: string, message: string): PluginApiError {
 }
 
 /**
- * One refused or failed renderer call (ADR 0290 decision 4). `code` is what the
+ * One refused or failed renderer call (ADR 0294 decision 4). `code` is what the
  * caller branches on; `errorCode` carries the same value under the name the IPC
  * result envelope reads before it falls back to a generic `INTERNAL`
  * (register.ts `wrap`), so the code a plugin author sees is the code the host
@@ -920,6 +926,81 @@ function normalizePluginSessionInput(
   return { ...(input as Record<string, unknown>) };
 }
 
+/**
+ * Bounds for the read-only usage fact listing. The host RPC re-checks the
+ * same windows, so a caller that skips this main-process side still cannot
+ * widen the scan (spec 07-plugins/03 §usage).
+ */
+const PLUGIN_USAGE_MAX_WINDOW_MS = 365 * 24 * 60 * 60 * 1000;
+const PLUGIN_USAGE_DEFAULT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** Absent/null keeps the host default; anything else must be an integer. */
+function pluginUsageProjectId(value: Record<string, unknown>): number | undefined {
+  const raw = value.projectId;
+  if (raw === undefined || raw === null) return undefined;
+  if (typeof raw !== "number" || !Number.isInteger(raw)) {
+    throw apiError("INVALID_PARAMS", "projectId must be an integer");
+  }
+  return raw;
+}
+
+/**
+ * Mirrors the host-side validation for `usage.listTurns`: absent/null fields
+ * stay absent (the host applies the 30-day default window and 200-row page),
+ * and anything out of range is rejected here so a plugin sees a plain
+ * INVALID_PARAMS instead of a host round-trip. Implied bounds (now / now-30d)
+ * are used only to check order and the 365-day cap.
+ */
+function normalizePluginUsageListTurnsInput(input: unknown): Record<string, unknown> {
+  if (input === undefined || input === null) return {};
+  if (typeof input !== "object" || Array.isArray(input)) {
+    throw apiError("INVALID_PARAMS", "usage input must be an object");
+  }
+  const value = input as Record<string, unknown>;
+  const normalized: Record<string, unknown> = {};
+  const intField = (key: string): number | undefined => {
+    const raw = value[key];
+    if (raw === undefined || raw === null) return undefined;
+    if (typeof raw !== "number" || !Number.isInteger(raw) || raw < 0) {
+      throw apiError("INVALID_PARAMS", `${key} must be a non-negative integer`);
+    }
+    normalized[key] = raw;
+    return raw;
+  };
+  const fromMs = intField("fromMs");
+  const toMs = intField("toMs");
+  const resolvedTo = toMs ?? Date.now();
+  const resolvedFrom = fromMs ?? resolvedTo - PLUGIN_USAGE_DEFAULT_WINDOW_MS;
+  if (resolvedTo < resolvedFrom) {
+    throw apiError("INVALID_PARAMS", "toMs must be >= fromMs");
+  }
+  if (resolvedTo - resolvedFrom > PLUGIN_USAGE_MAX_WINDOW_MS) {
+    throw apiError("INVALID_PARAMS", "usage window must span at most 365 days");
+  }
+  if (value.sessionId !== undefined && value.sessionId !== null) {
+    if (typeof value.sessionId !== "string" || !value.sessionId.trim()) {
+      throw apiError("INVALID_PARAMS", "sessionId must be a non-empty string");
+    }
+    normalized.sessionId = value.sessionId;
+  }
+  const projectId = pluginUsageProjectId(value);
+  if (projectId !== undefined) normalized.projectId = projectId;
+  if (value.cursor !== undefined && value.cursor !== null) {
+    if (typeof value.cursor !== "string") {
+      throw apiError("INVALID_PARAMS", "cursor must be a string");
+    }
+    if (value.cursor) normalized.cursor = value.cursor;
+  }
+  if (value.limit !== undefined && value.limit !== null) {
+    const limit = value.limit;
+    if (typeof limit !== "number" || !Number.isInteger(limit) || limit < 1 || limit > 500) {
+      throw apiError("INVALID_PARAMS", "limit must be an integer between 1 and 500");
+    }
+    normalized.limit = limit;
+  }
+  return normalized;
+}
+
 /** Key for the per-service supervision map. */
 function serviceStateKey(pluginId: string, serviceId: string): string {
   return `${pluginId}:${serviceId}`;
@@ -1051,7 +1132,7 @@ export function resolveInsidePlugin(pluginPath: string, relative: string): strin
  * referencing one is refused instead of served from a half-honoured list.
  */
 function resolveThemeAssets(
-  _pluginPath: string,
+  pluginPath: string,
   declared: readonly string[],
 ): { files: Map<string, string>; dropped: number } {
   const files = new Map<string, string>();
@@ -1059,16 +1140,15 @@ function resolveThemeAssets(
   let total = 0;
   let dropped = 0;
   for (const asset of declared) {
-    // A theme asset is an absolute path; `normalizeThemeAssetPath` rejects
-    // package-relative references, so nothing is resolved against the package
-    // root any more. The plugin is the one naming the file.
     const normalized = normalizeThemeAssetPath(asset);
-    if (!normalized) {
+    if (!normalized || normalized.split("/").includes("node_modules")) {
       dropped += 1;
       continue;
     }
-    const absolute = normalized;
-    if (!existsSync(absolute)) {
+    const absolute = isExternalThemeAssetPath(normalized)
+      ? normalized
+      : resolveInsidePlugin(pluginPath, normalized);
+    if (!absolute || !existsSync(absolute)) {
       dropped += 1;
       continue;
     }
@@ -1406,7 +1486,7 @@ export class PluginRuntime {
    * A loaded plugin that may run a renderer entry right now: it declared
    * `manifest.renderer`, it still holds the `renderer.extension` grant, and it
    * is not on its way out. Everything the renderer host is allowed to fetch or
-   * evaluate goes through this one gate (ADR 0287).
+   * evaluate goes through this one gate (ADR 0291).
    */
   private rendererPlugin(pluginId: string): LoadedPlugin | null {
     const loaded = this.loaded.get(pluginId);
@@ -1490,6 +1570,25 @@ export class PluginRuntime {
 
   getLoaded(pluginId: string): LoadedPlugin | undefined {
     return this.loaded.get(pluginId);
+  }
+
+  /**
+   * Read a persisted declared variable without exposing the plugin's private
+   * settings record. Host-rendered scenic destinations use this only after
+   * validating the matching declaration themselves.
+   */
+  getThemeVariableValue(pluginId: string, themeId: string, name: string): unknown {
+    const loaded = this.loaded.get(pluginId);
+    if (!loaded) return undefined;
+    return this.readThemeVariableValues(loaded, themeId)[name];
+  }
+
+  async setScenicThemeBlur(pluginId: string, themeId: string, blur: number): Promise<void> {
+    const loaded = this.loaded.get(pluginId);
+    if (!loaded || !loaded.permissions.has("ui.theme")) {
+      throw apiError("PERMISSION_DENIED", "ui.theme");
+    }
+    await this.hostApi(loaded).themes.setVariables(themeId, { "--nexus-backdrop-blur": blur });
   }
 
   /** Manifest settings as the installed-plugin sheet reads them. Titles stay the author's language; plugin-owned UI localizes via `app.getLocale` / `appearance:changed` (ADR 0280). */
@@ -1639,6 +1738,8 @@ export class PluginRuntime {
     if (!existsSync(manifestPath)) {
       throw new Error("PLUGIN_INVALID: manifest.json missing");
     }
+    // Generated no-op `main.js` wrappers fail under package `"type":"module"`.
+    repairImportedExtensionWrapper(pluginPath);
     const raw = JSON.parse(readFileSync(manifestPath, "utf8"));
     const validated = validateManifest(raw);
     if (!validated.ok || !validated.manifest) {
@@ -1766,7 +1867,7 @@ export class PluginRuntime {
   }
 
   /**
-   * Slot 5 (`runtime.tool.extend`, ADR 0291 rule 2): the kernel fields a
+   * Slot 5 (`runtime.tool.extend`, ADR 0295 rule 2): the kernel fields a
    * plugin tool may attach to its result — `addedToolNames`, `usage`,
    * `terminate`. They are read here, where the plugin's recorded grants are
    * known, and dropped when the plugin does not hold the slot. A refusal is
@@ -2175,13 +2276,13 @@ export class PluginRuntime {
 
   /**
    * Relay one `plugin.call` renderer action to the calling plugin's own
-   * headless entry and answer with what that entry returned (ADR 0290
+   * headless entry and answer with what that entry returned (ADR 0294
    * decision 4).
    *
    * The plugin id arrives from the renderer, so nothing it claims is trusted:
    * the record, the manifest and the declaration are all read from what this
    * process loaded, which is what makes the call reach the calling plugin's own
-   * entry rather than a neighbour's (ADR 0290 decision 5). Every refusal is
+   * entry rather than a neighbour's (ADR 0294 decision 5). Every refusal is
    * coded, because a silent no-op is indistinguishable from a plugin bug.
    */
   async invokeRendererCall(
@@ -2207,7 +2308,7 @@ export class PluginRuntime {
     }
     // A UI-only plugin has no headless entry, so there is nothing to forward to
     // and no page relay to fall back on: "its own entry" simply does not exist
-    // (ADR 0290 decision 4). Refusing says so, where a fallback would run the
+    // (ADR 0294 decision 4). Refusing says so, where a fallback would run the
     // call in an entry the renderer never named.
     if (!headlessEntry(loaded.manifest)) {
       throw rendererCallRefusal(
@@ -2793,6 +2894,17 @@ export class PluginRuntime {
           throw apiError("UNSUPPORTED", "host api not available: session.delete");
         }
         return this.services.session.delete(loaded.manifest.id, input);
+      }
+      case "usage.listTurns": {
+        // Read-only completed-turn facts (spec 07-plugins/03 §usage): flat
+        // counters and identifiers, no message body, no write path. Every
+        // dashboard shape stays the plugin's own computation.
+        this.assertPermission(loaded, "usage.read");
+        const input = normalizePluginUsageListTurnsInput(args[0]);
+        if (!this.services.usage?.listTurns) {
+          throw apiError("UNSUPPORTED", "host api not available: usage.listTurns");
+        }
+        return this.services.usage.listTurns(loaded.manifest.id, input);
       }
       case "agent.complete": {
         return this.runAgentComplete(loaded, (args[0] ?? {}) as PluginCompleteInput);

@@ -330,6 +330,9 @@ ids 和非负 `tokensBefore`；它不会插入 message/search 行
   只读取调用插件自己导入且仍处于活动状态的会话
 - `plugin.session.rename` — 重命名自己拥有的活动导入会话
 - `plugin.session.delete` — `trash` 隐藏并保留转录本；`purge` 删除并允许重新导入
+- `plugin.usage.listTurns` — 未删除会话的已完成 turn 事实页（标识符与 token
+  计数，绝不含消息正文）。由 Electron main 用 `usage.read` 鉴权。增量方法，
+  不升协议版本。
 - 插件会话变更成功后，Electron main 发送一次 `sessionsChanged` 渲染器事件，
   渲染器刷新会话列表；插件不发送此 UI 同步事件
 
@@ -471,9 +474,9 @@ off | minimal | low | medium | high | xhigh | max
   （`create | write | edit | download | delete`）、`turnId` 和 `updatedAt`；
   被多个回合触碰过的路径每次触碰各出现一次，会话视图按最新在前，回合视图按触碰
   顺序。只有 `turnId` 而没有 `sessionId` 返回 `INVALID_ARGUMENT`。增量 RPC；
-  不提升协议版本（ADR 0291 规则 8）。
+  不提升协议版本（ADR 0295 规则 8）。
 - `plugin.rewrites.list({ sessionId, turnId?, kind?, limit? }) -> { rewrites }` —
-  插件对"模型收到内容"所做改动的差分级审计（ADR 0291 规则 5）。带 `turnId` 时按最旧在前
+  插件对"模型收到内容"所做改动的差分级审计（ADR 0295 规则 5）。带 `turnId` 时按最旧在前
   返回单个回合的记录 —— 即改写发生的顺序，也是插槽 #1 / #6 表面读取的形状 —— 不带时按
   最新在前返回会话记录，包括在回合之外写入的记录。`kind` 可过滤 `outgoing_message |
   system_prompt | message_list | request_payload`。每条记录带 `id`、`sessionId`、
@@ -483,7 +486,7 @@ off | minimal | low | medium | high | xhigh | max
   在 500。增量 RPC；不提升协议版本。**目前没有生产者** —— 插槽 #1 与 #6 尚未实现，
   在它们落地前该列表为空。
 - `turn.facts({ sessionId, turnId, limit? }) -> { facts }` — 单个回合的
-  **权威结构化数字**，由主机从自己的表中汇总（ADR 0291 规则 8，插槽 #9
+  **权威结构化数字**，由主机从自己的表中汇总（ADR 0295 规则 8，插槽 #9
   `runtime.turn.facts`）。这里没有任何内容是从插件观察到的事件重建的，也不返回对话正文。
   `facts` 携带 `sessionId`、`turnId`、`status`（`running | completed | aborted | error`）、
   `providerId`、`modelId`、`errorCode`（该回合自身的终止错误）、`startedAt`、`endedAt`

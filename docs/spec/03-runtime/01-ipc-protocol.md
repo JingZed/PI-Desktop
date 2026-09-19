@@ -1553,7 +1553,7 @@ Desktop-only MCP market channels (not host RPC) live on Electron IPC:
   cursor state for browse and server-side search. One failed source does not
   discard successful sources; the response and caches are bounded.
 
-### MCP OAuth (ADR 0281)
+### MCP OAuth (ADR 0283)
 
 Browser-based OAuth 2.1 authentication for HTTP MCP servers is handled in the Electron main process via non-blocking IPC invocations and an event stream:
 
@@ -1580,7 +1580,7 @@ type McpOAuthLoginEvent = {
 - `McpServerStatus` includes:
   - `hasOauth: boolean` — whether the server has an encrypted OAuth secret stored in host-core (`secret:mcp:<serverId>:oauth`).
   - `authRequired: boolean` — flags that a connection attempt or `tools/call` returned HTTP 401 Unauthorized and user re-authentication is required.
-- OAuth tokens (`accessToken`, `refreshToken`, `expiresAt`, `resource`, `clientId`) are persisted exclusively in host-core encrypted secrets under `secret:mcp:<serverId>:oauth` and never exposed to the renderer.
+- OAuth tokens (`accessToken`, `refreshToken`, `expiresAt`, `resource`, `clientId`, `redirectUris`) are persisted exclusively in host-core encrypted secrets under `secret:mcp:<serverId>:oauth` and never exposed to the renderer. Authorization-server endpoints must be HTTPS (loopback HTTP is the only exception). Token-endpoint error bodies stay in main-process logs and are not copied into renderer events.
 
 ## 12c. Subagent API (D202)
 

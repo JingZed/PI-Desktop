@@ -8198,7 +8198,7 @@ describe("DesktopAgentRuntime turn-closing hook (#561 item 7)", () => {
    *
    * Every test in this block is about the closing hook, so the plugin holds its
    * slot permission by default; a test that registers another event overrides
-   * the grant (ADR 0291 rule 2: the tier permission implies no slot).
+   * the grant (ADR 0295 rule 2: the tier permission implies no slot).
    */
   const CLOSING_GRANT = ["agent.extension", "runtime.turn.closing"] as const;
   function spec(
@@ -8440,7 +8440,7 @@ describe("DesktopAgentRuntime turn-closing hook (#561 item 7)", () => {
   });
 
   it("refuses the closing hook when the plugin holds no slot permission", async () => {
-    // The defect ADR 0291 rule 2 names: `agent.extension` used to be enough for
+    // The defect ADR 0295 rule 2 names: `agent.extension` used to be enough for
     // the hook to fire. It is not, and the refusal is reported.
     const ext = spec(
       "tier-only",
@@ -8468,7 +8468,7 @@ describe("DesktopAgentRuntime turn-closing hook (#561 item 7)", () => {
 });
 
 /**
- * Issue #561 items 3 and 5 (spec 07-plugins/16 sections 6-7, ADR 0291). Slot 3
+ * Issue #561 items 3 and 5 (spec 07-plugins/16 sections 6-7, ADR 0295). Slot 3
  * is the abort entry plus the cancellation signal; slot 5 is what a plugin
  * tool's result may do beyond its content. The runtime is the only layer that
  * sees a tool result's `addedToolNames` / `usage` / `terminate` before the
@@ -8872,7 +8872,7 @@ describe("DesktopAgentRuntime turn abort and tool capabilities (#561 items 3, 5)
 });
 
 /**
- * Issue #561 items 1 and 11 (ADR 0291 slots 1 and 11, spec
+ * Issue #561 items 1 and 11 (ADR 0295 slots 1 and 11, spec
  * 07-plugins/16 section 6). These drive the real prompt path and the real
  * compaction, with extension modules on disk, so what is under test is the
  * wiring — where the event fires, what a handler's answer does, and what the
@@ -9290,7 +9290,7 @@ describe("DesktopAgentRuntime send-before and session-lifecycle slots (#561 item
 });
 
 /**
- * Runtime slots 8, 9 and 10 (ADR 0291): the calls a plugin makes for itself
+ * Runtime slots 8, 9 and 10 (ADR 0295): the calls a plugin makes for itself
  * reach host-core through the same reverse proxy every other sidecar call uses,
  * so what is under test here is the wiring — which host method is asked, with
  * which arguments, and what the plugin receives back.
@@ -9484,7 +9484,7 @@ describe("DesktopAgentRuntime turn slot calls (#561 slots 8, 9, 10)", () => {
       queuedTurnId: "queued-turn-7",
     });
     // The same host-owned queue a desktop send uses, with the plugin named in
-    // the request so the host can attribute the continuation (ADR 0289).
+    // the request so the host can attribute the continuation (ADR 0293).
     expect(host.call).toHaveBeenCalledWith(
       "session.queuePush",
       expect.objectContaining({

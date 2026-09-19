@@ -607,7 +607,6 @@ export function createSessionLaunchRuntime({
         ),
         ...(overrides.turnId ? { turnId: overrides.turnId } : {}),
         thinkingLevel,
-        nativeWebSearch: settings?.nativeWebSearchEnabled === true,
         commandShell,
         scratchDir: join(dataDir, "scratch", sessionId),
         attachmentsDir: join(dataDir, "attachments"),
@@ -669,7 +668,7 @@ export function createSessionLaunchRuntime({
             source: "plugin" as const,
             root: extension.root,
             // The permissions the plugin was loaded with, which is what the
-            // sidecar's slot gate consults (ADR 0291 rule 2): `agent.extension`
+            // sidecar's slot gate consults (ADR 0295 rule 2): `agent.extension`
             // says where the module runs, never what it may do to a turn.
             permissions: [...(plugins.getLoaded(extension.pluginId)?.permissions ?? [])],
           })),

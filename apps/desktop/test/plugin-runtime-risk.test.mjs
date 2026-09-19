@@ -103,7 +103,7 @@ test("a forwarded renderer call is re-checked against the manifest the host load
   assert.match(pluginIpcSrc, /plugins\.invokeRendererCall\(/);
   assert.doesNotMatch(pluginIpcSrc, /input\.rendererActions|input\.rendererData/);
   // The declaration is read from the manifest this process validated at load,
-  // never from anything the renderer sent (ADR 0290 decision 5), and the call
+  // never from anything the renderer sent (ADR 0294 decision 5), and the call
   // goes to that plugin's own entry over the child channel the panel bridge
   // already uses.
   assert.match(

@@ -18,7 +18,7 @@ export type ClassifiedAgentError = {
 
 /**
  * Code a prompt ends with when a plugin's `input` handler kept it away from the
- * model (ADR 0291 slot 1). It is declared here because the classifier has to
+ * model (ADR 0295 slot 1). It is declared here because the classifier has to
  * preserve it: without this branch the generic path would report a provider
  * failure, and the user would be told the model failed when a plugin stopped
  * their message.
@@ -400,7 +400,7 @@ export function classifyAgentError(err: unknown): ClassifiedAgentError {
   }
   // A prompt a plugin kept away from the model keeps its own code: the message
   // is the plugin's reason, and calling that a provider failure would blame the
-  // wrong layer (ADR 0291 slot 1).
+  // wrong layer (ADR 0295 slot 1).
   if ((err as { errorCode?: unknown } | null)?.errorCode === PLUGIN_HANDLED_PROMPT_CODE) {
     return result(PLUGIN_HANDLED_PROMPT_CODE, false);
   }

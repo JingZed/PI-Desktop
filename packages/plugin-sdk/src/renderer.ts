@@ -14,7 +14,7 @@
  *
  * A plugin may also register pure synchronous functions (`pi.functions`) that
  * the host calls directly while it renders — the positions that cannot wait
- * for an async round trip (ADR 0290 decision 6).
+ * for an async round trip (ADR 0294 decision 6).
  */
 
 
@@ -150,7 +150,7 @@ export const PLUGIN_RENDERER_ACTIONS = [
 export type PluginRendererActionName = (typeof PLUGIN_RENDERER_ACTIONS)[number];
 
 /**
- * The host method a slot component calls to act (ADR 0290). It arrives as the
+ * The host method a slot component calls to act (ADR 0294). It arrives as the
  * `dispatch` prop on every render, bound to exactly one plugin: an action that
  * plugin did not declare in `manifest.rendererActions` is refused with a
  * `PLUGIN_ACTION_UNDECLARED` error, and a declared action the host has no
@@ -181,7 +181,7 @@ export type PiRendererStyleHandle = {
   remove(): void;
 };
 /**
- * A function a plugin hands the host to call *while it renders* (ADR 0290
+ * A function a plugin hands the host to call *while it renders* (ADR 0294
  * decision 6). Some positions cannot wait for an async round trip — a
  * per-message block whose height the transcript has to know, a code-block
  * decoration, a value read while a composer control is computed — so these
@@ -222,7 +222,7 @@ export type PiRendererFunctionCallResult =
 /**
  * The object handed to a renderer module's `onLoad`. It is the whole host API a
  * renderer plugin is handed, kept per-plugin by the `onLoad` argument. It is a
- * contract, not a boundary: the module shares the host's realm (ADR 0287), so
+ * contract, not a boundary: the module shares the host's realm (ADR 0291), so
  * `window.piDesktop` and the host DOM both stay reachable from plugin code.
  */
 export type PiRendererApi = {

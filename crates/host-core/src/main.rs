@@ -11,6 +11,7 @@ mod permissions;
 mod plans;
 mod plugin_rewrites;
 mod plugin_sessions;
+mod plugin_usage;
 mod plugins;
 mod providers;
 mod review;

@@ -172,7 +172,7 @@ CREATE TRIGGER messages_au AFTER UPDATE OF text ON messages
       SELECT new.mid, new.text WHERE new.text IS NOT NULL;
   END;
 
--- One row per recorded touch, not one row per file (schema v19, ADR 0291
+-- One row per recorded touch, not one row per file (schema v19, ADR 0295
 -- rule 8): a file changed in three turns must stay attributable to all three,
 -- so `turn_id` is part of the exposed shape and `op` names the effect that
 -- turn had (`create | write | edit | download | delete`; the vocabulary is
@@ -242,7 +242,7 @@ CREATE TABLE audit_log (
   kind         TEXT NOT NULL,
   session_id   TEXT,
   payload_json TEXT NOT NULL DEFAULT '{}',
-  -- The turn this record belongs to (schema v21, ADR 0291 rule 8, slot #9
+  -- The turn this record belongs to (schema v21, ADR 0295 rule 8, slot #9
   -- `runtime.turn.facts`): one turn's records are an indexed read instead of
   -- a scan of redacted payloads. NULL when the record is not about a turn —
   -- including every row written before v21 — so a per-turn read sees only

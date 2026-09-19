@@ -448,3 +448,12 @@ test("the move action offers a level only when there is a destination", () => {
     assert.match(source, /showToast\(t\("settings\.selectProjectFirst"\)/);
   }
 });
+
+test("MCP OAuth subscribe is owned by a ref cleaned up on unmount", () => {
+  const mcpIpc = readMainModuleSync("ipc/mcp-ipc.ts");
+  assert.match(mcp, /pendingOAuthRef/);
+  assert.match(mcp, /useEffect\(\(\) => \{/);
+  assert.match(mcp, /pendingOAuthRef\.current\?\.unsubscribe\(\)/);
+  assert.match(mcp, /api\.onMcpOAuth\(/);
+  assert.match(mcpIpc, /oauth\.start\(server\.id, server\.url, server\)/);
+});

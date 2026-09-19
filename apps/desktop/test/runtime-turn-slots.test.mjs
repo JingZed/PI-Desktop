@@ -1,5 +1,5 @@
 // The three turn slots whose host data already exists and which a plugin could
-// not reach yet (ADR 0291 slots 8, 9 and 10): `runtime.turn.facts`,
+// not reach yet (ADR 0295 slots 8, 9 and 10): `runtime.turn.facts`,
 // `runtime.turn.recap` (+ `runtime.session.read`) and `runtime.turn.continue`.
 //
 // Each half of the wiring is asserted here because a missing half fails only in
