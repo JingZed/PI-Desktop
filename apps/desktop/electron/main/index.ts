@@ -1051,8 +1051,10 @@ const sessionCoordination = createSessionCoordination({
 const {
   turnSettlements,
   activeTurnUsages,
+  activeTurnPluginUsages,
   acquireSessionOperation,
   addActiveTurnUsage,
+  addActiveTurnPluginUsage,
   activeToolCallKey,
   planSubmissionTurnKey,
   waitForTurnSettlement,
@@ -1163,6 +1165,7 @@ const eventPersistence = createEventPersistence({
   inflightCheckpointer,
   persistenceOutbox,
   addActiveTurnUsage,
+  addActiveTurnPluginUsage,
   logger,
   finishTurn,
   isStaleTerminalEvent,

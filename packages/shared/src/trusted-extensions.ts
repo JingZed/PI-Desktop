@@ -215,6 +215,49 @@ export function trustedExtensionEventPermission(event: string): string | undefin
     : undefined;
 }
 
+
+/**
+ * The one slot permission behind a plugin tool's extended result fields (ADR
+ * 0291 slot 5): introducing a tool, reporting spend, and requesting early
+ * termination. `TRUSTED_EXTENSION_API_PERMISSIONS.toolResult` is the same name
+ * seen from an agent extension; the constant exists so Electron main, which
+ * holds no extension context, refuses with exactly the same permission.
+ */
+export const PLUGIN_TOOL_EXTEND_PERMISSION = "runtime.tool.extend";
+
+/**
+ * Runtime slot behind each extension call that is not an event (ADR 0291
+ * rule 2).
+ *
+ * {@link TRUSTED_EXTENSION_EVENT_PERMISSIONS} answers "may this handler run";
+ * this answers the same question for the two things an extension asks for
+ * itself and that no event describes. An API call carries no event name, so
+ * its slot cannot be inferred from the payload: it is named here, resolved by
+ * the runner before the call runs, and reported as `permission_denied` when the
+ * plugin does not hold the permission — the same gate an event gets.
+ *
+ * `requestTurnAbort` is slot 3: stop the current turn (the plugin's own
+ * long-running work receives the cancellation signal separately).
+ * `toolResult` is slot 5: introduce a tool, report spend, or request early
+ * termination through a tool's result.
+ */
+export const TRUSTED_EXTENSION_API_PERMISSIONS = {
+  requestTurnAbort: "runtime.turn.abort",
+  toolResult: PLUGIN_TOOL_EXTEND_PERMISSION,
+} as const satisfies Record<string, string>;
+
+/** The non-event calls this map knows about. */
+export type TrustedExtensionApiCall = keyof typeof TRUSTED_EXTENSION_API_PERMISSIONS;
+
+/**
+ * The slot permission a call of `apiCall` needs; `undefined` means the call is
+ * not part of the extension API surface the map covers.
+ */
+export function trustedExtensionApiPermission(apiCall: string): string | undefined {
+  return Object.hasOwn(TRUSTED_EXTENSION_API_PERMISSIONS, apiCall)
+    ? TRUSTED_EXTENSION_API_PERMISSIONS[apiCall as TrustedExtensionApiCall]
+    : undefined;
+}
 /**
  * Slot permissions the permission registry holds today (spec 13 §2).
  *

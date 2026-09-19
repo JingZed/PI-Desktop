@@ -8464,3 +8464,408 @@ describe("DesktopAgentRuntime turn-closing hook (#561 item 7)", () => {
     await runtime.dispose();
   });
 });
+
+/**
+ * Issue #561 items 3 and 5 (spec 07-plugins/16 sections 6-7, ADR 0291). Slot 3
+ * is the abort entry plus the cancellation signal; slot 5 is what a plugin
+ * tool's result may do beyond its content. The runtime is the only layer that
+ * sees a tool result's `addedToolNames` / `usage` / `terminate` before the
+ * kernel does, so the gating and the catalogue marking are tested here.
+ */
+describe("DesktopAgentRuntime turn abort and tool capabilities (#561 items 3, 5)", () => {
+  let extensionRoot: string;
+
+  beforeEach(() => {
+    extensionRoot = mkdtempSync(join(tmpdir(), "pi-tool-extend-"));
+    clearTrustedExtensionCache();
+  });
+
+  afterEach(() => {
+    rmSync(extensionRoot, { recursive: true, force: true });
+  });
+
+  function spec(
+    name: string,
+    source: string,
+    permissions: readonly string[] = [
+      "agent.extension",
+      "runtime.tool.extend",
+      "runtime.turn.abort",
+    ],
+  ): TrustedExtensionSpec {
+    const entry = join(extensionRoot, `${name}.ts`);
+    writeFileSync(entry, source);
+    return { id: entry, entry, label: name, source: "user", root: extensionRoot, permissions };
+  }
+
+  async function startRuntime(
+    specs: TrustedExtensionSpec[],
+    host: {
+      call: ReturnType<typeof vi.fn>;
+      onNotification?: ReturnType<typeof vi.fn>;
+    } = {
+      call: vi.fn(async () => undefined),
+      onNotification: vi.fn(() => () => {}),
+    },
+  ) {
+    const runtime = createRuntime({ host, trustedExtensions: specs });
+    await runtime.loadTrustedExtensions();
+    (runtime as any).rebuildToolCatalog();
+    (runtime as any).agent.state.tools = (runtime as any).activeTools();
+    return { runtime, host };
+  }
+
+  /** One tool call context for the runtime's own `afterToolCall` fold. */
+  function toolResult(toolName: string, result: Record<string, unknown>) {
+    return {
+      assistantMessage: assistantMessage({ content: [] }),
+      toolCall: { type: "toolCall", id: `call-${toolName}`, name: toolName, arguments: {} },
+      args: {},
+      result: { content: [{ type: "text", text: "ok" }], details: {}, ...result },
+      isError: false,
+      context: { systemPrompt: "", messages: [], tools: [] },
+    } as never;
+  }
+
+  it("round-trips a plugin tool's added names, spend, and terminate request", async () => {
+    const host = {
+      call: vi.fn(async (method: string) => {
+        if (method !== "tools.execute") return undefined;
+        return {
+          ok: true,
+          content: {
+            content: [{ type: "text", text: "search done" }],
+            details: { source: "plugin" },
+            usage: { inputTokens: 7, outputTokens: 3, totalTokens: 10 },
+            addedToolNames: ["BrowserPreview"],
+            terminate: true,
+          },
+        };
+      }),
+      onNotification: vi.fn(() => () => {}),
+    };
+    const runtime = createRuntime({
+      host: host as never,
+      pluginTools: [
+        { name: "plugin_demo_search", description: "search", parameters: {} },
+      ],
+    });
+    // Plugin tools are non-core: they live in the catalog on demand.
+    const tool = (runtime as any).toolCatalog.get("plugin_demo_search");
+
+    const result = await tool.execute("call-1", {});
+
+    expect(result.content).toEqual([{ type: "text", text: "search done" }]);
+    expect(result.details).toEqual({ source: "plugin" });
+    expect(result.usage).toMatchObject({ input: 7, output: 3, totalTokens: 10 });
+    expect(result.addedToolNames).toEqual(["BrowserPreview"]);
+    expect(result.terminate).toBe(true);
+    await runtime.dispose();
+  });
+
+  it("makes an introduced tool available from the next turn on and marks it", async () => {
+    const runtime = createRuntime({
+      pluginTools: [
+        { name: "plugin_demo_search", description: "search", parameters: {} },
+        { name: "plugin_demo_other", description: "other", parameters: {} },
+      ],
+    });
+    const agent = (runtime as any).agent;
+    expect(
+      agent.state.tools.some((tool: any) => tool.name === "plugin_demo_other"),
+    ).toBe(false);
+
+    // A plugin tool's result introduces a tool that exists in the catalog but
+    // was not active yet.
+    expect(
+      (runtime as any).activatePluginIntroducedTools("plugin_demo_search", [
+        "plugin_demo_other",
+      ]),
+    ).toEqual(["plugin_demo_other"]);
+    await (runtime as any).prepareNextTurn({
+      context: { systemPrompt: "", messages: [], tools: agent.state.tools },
+      messages: [],
+      newMessages: [],
+      toolResults: [],
+    });
+
+    expect(
+      agent.state.tools.some((tool: any) => tool.name === "plugin_demo_other"),
+    ).toBe(true);
+    // The catalogue the model reads and the catalogue an extension reads both
+    // say where the tool came from.
+    const prompt = (runtime as any).optionalToolsPrompt() as string;
+    expect(prompt).toContain("plugin_demo_other (introduced by a plugin)");
+    const catalogue = (runtime as any).createExtensionBridge().getAllTools() as Array<{
+      name: string;
+      introducedBy?: string;
+    }>;
+    expect(
+      catalogue.find((tool) => tool.name === "plugin_demo_other")?.introducedBy,
+    ).toBe("plugin");
+    expect(
+      catalogue.find((tool) => tool.name === "plugin_demo_search")?.introducedBy,
+    ).toBe(undefined);
+    await runtime.dispose();
+  });
+
+  it("never lets a host tool's result introduce another tool", async () => {
+    const runtime = createRuntime({
+      pluginTools: [
+        { name: "plugin_demo_other", description: "other", parameters: {} },
+      ],
+    });
+    const agent = (runtime as any).agent;
+
+    // `Read` is a host tool: `addedToolNames` is a slot-5 capability and only a
+    // plugin can hold the slot, so the name is ignored.
+    expect(
+      (runtime as any).activatePluginIntroducedTools("Read", ["plugin_demo_other"]),
+    ).toEqual([]);
+    await (runtime as any).prepareNextTurn({
+      context: { systemPrompt: "", messages: [], tools: agent.state.tools },
+      messages: [],
+      newMessages: [],
+      toolResults: [],
+    });
+    expect(
+      agent.state.tools.some((tool: any) => tool.name === "plugin_demo_other"),
+    ).toBe(false);
+    await runtime.dispose();
+  });
+
+
+  it("refuses a slot-5 result from an extension without runtime.tool.extend", async () => {
+    const ext = spec(
+      "extend-refused",
+      `export default function (pi: any) {
+  pi.registerTool({
+    name: "fx_extend", description: "", parameters: {},
+    execute: async () => ({
+      content: [{ type: "text", text: "done" }],
+      details: {},
+      addedToolNames: ["BrowserPreview"],
+      usage: { input: 5, output: 5, totalTokens: 10 },
+      terminate: true,
+    }),
+  });
+}`,
+      ["agent.extension"],
+    );
+    const { runtime } = await startRuntime([ext]);
+    const before = (runtime as any).optionalToolsPrompt() as string;
+
+    const folded = await (runtime as any).afterToolCall(
+      toolResult("fx_extend", {
+        addedToolNames: ["BrowserPreview"],
+        usage: { input: 5, output: 5, totalTokens: 10 },
+        terminate: true,
+      }),
+    );
+
+    // The refused result clears the terminate hint and introduces nothing.
+    expect(folded).toEqual({ terminate: false });
+    expect((runtime as any).turnPluginToolUsage).toBeUndefined();
+    expect((runtime as any).optionalToolsPrompt()).toBe(before);
+    expect((runtime as any).extensionRunner.getDiagnostics()).toEqual([
+      expect.objectContaining({
+        kind: "permission_denied",
+        member: "toolResult:fx_extend",
+      }),
+    ]);
+    await runtime.dispose();
+  });
+
+  it("records an extension tool's spend as its own turn component", async () => {
+    const ext = spec(
+      "extend-granted",
+      `export default function (pi: any) {
+  pi.registerTool({
+    name: "fx_spend", description: "", parameters: {},
+    execute: async () => ({
+      content: [{ type: "text", text: "done" }],
+      details: {},
+      usage: {
+        input: 20, output: 5, cacheRead: 2, cacheWrite: 1, totalTokens: 28,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+    }),
+  });
+}`,
+    );
+    const { runtime } = await startRuntime([ext]);
+
+    await (runtime as any).afterToolCall(
+      toolResult("fx_spend", {
+        usage: { input: 20, output: 5, cacheRead: 2, cacheWrite: 1, totalTokens: 28 },
+      }),
+    );
+
+    // The spend is a component of the turn, never part of a message's usage.
+    expect((runtime as any).turnPluginToolUsage).toEqual({
+      inputTokens: 20,
+      outputTokens: 5,
+      cacheReadTokens: 2,
+      cacheWriteTokens: 1,
+      totalTokens: 28,
+    });
+    expect((runtime as any).extensionRunner.getDiagnostics()).toEqual([]);
+    await runtime.dispose();
+  });
+
+  it("carries a tool's own terminate through the tool_result fold", async () => {
+    const ext = spec(
+      "tool-result-terminate",
+      `export default function (pi: any) {
+  pi.on("tool_result", () => ({
+    terminate: true,
+    usage: {
+      input: 4, output: 2, cacheRead: 0, cacheWrite: 0, totalTokens: 6,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+  }));
+}`,
+      ["agent.extension", "runtime.tool.gate"],
+    );
+    const { runtime } = await startRuntime([ext]);
+
+    const folded = await (runtime as any).afterToolCall(toolResult("Read", {}));
+
+    // Both fields survive the fold; dropping them was the defect.
+    expect(folded?.terminate).toBe(true);
+    expect(folded?.usage).toMatchObject({ input: 4, output: 2, totalTokens: 6 });
+    await runtime.dispose();
+  });
+
+  it("stops a tool batch only when every result in it asks", async () => {
+    // The kernel's own rule (`shouldTerminateToolBatch`), reached through the
+    // runtime's `afterToolCall`: one tool's request must not cut the batch
+    // short, and the whole batch agreeing must stop it.
+    const runtime = createRuntime();
+    const agent = (runtime as any).agent;
+    const calls: string[] = [];
+    const tool = (name: string, terminate: boolean) => ({
+      name,
+      label: name,
+      description: name,
+      parameters: { type: "object", properties: {} },
+      execute: async () => {
+        calls.push(name);
+        return {
+          content: [{ type: "text", text: name }],
+          details: {},
+          ...(terminate ? { terminate: true } : {}),
+        };
+      },
+    });
+    agent.state.tools = [tool("ToolA", true), tool("ToolB", false)];
+    let requests = 0;
+    agent.streamFunction = () => {
+      requests += 1;
+      const stream = createAssistantMessageEventStream();
+      const message = assistantMessage({
+        content:
+          requests === 1
+            ? [
+                { type: "toolCall", id: "a", name: "ToolA", arguments: {} },
+                { type: "toolCall", id: "b", name: "ToolB", arguments: {} },
+              ]
+            : [{ type: "text", text: "done" }],
+        stopReason: requests === 1 ? "toolUse" : "stop",
+      }) as unknown as AssistantMessage;
+      queueMicrotask(() => {
+        stream.push({ type: "done", reason: "stop", message });
+        stream.end(message);
+      });
+      return stream;
+    };
+
+    await agent.prompt("go");
+
+    expect(calls).toEqual(["ToolA", "ToolB"]);
+    // ToolB did not ask, so the loop kept going instead of stopping the batch.
+    expect(requests).toBe(2);
+
+    // Now every tool in the batch agrees.
+    calls.length = 0;
+    requests = 0;
+    agent.state.tools = [tool("ToolA", true), tool("ToolB", true)];
+    agent.state.messages = [];
+    await agent.prompt("go again");
+    expect(calls).toEqual(["ToolA", "ToolB"]);
+    // One request only: the batch stopped the run.
+    expect(requests).toBe(1);
+    await runtime.dispose();
+  });
+
+  it("hands plugin work the live run's token and cancels plugin tools on abort", async () => {
+    const host = {
+      call: vi.fn(async () => undefined),
+      onNotification: vi.fn(() => () => {}),
+    };
+    const runtime = createRuntime({ host: host as never });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    (runtime as any).models = {
+      streamSimple: vi.fn(() => {
+        const stream = createAssistantMessageEventStream();
+        void gate.then(() => {
+          const message = assistantMessage({
+            content: [{ type: "text", text: "done" }],
+          }) as unknown as AssistantMessage;
+          stream.push({ type: "done", reason: "stop", message });
+          stream.end(message);
+        });
+        return stream;
+      }),
+    };
+    const prompting = runtime.prompt("start", "user-1", "turn-1");
+    await vi.waitFor(() => {
+      expect((runtime as any).agent.signal).toBeDefined();
+    });
+
+    const signal = (runtime as any).createExtensionBridge().getAbortSignal();
+    expect(signal).toBe((runtime as any).agent.signal);
+    expect(signal.aborted).toBe(false);
+
+    // The extension-facing abort path: the runner calls the bridge, which
+    // aborts the kernel run and tells main to cancel the session's plugin
+    // invocations.
+    (runtime as any).createExtensionBridge().abort();
+    // The plugin's own long-running work sees the cancellation, and Electron
+    // main is told to cancel the session's plugin invocations, which the
+    // sidecar cannot reach on its own.
+    expect(signal.aborted).toBe(true);
+    expect(host.call).toHaveBeenCalledWith(
+      "extensions.turnAbort",
+      expect.objectContaining({ sessionId: "session-1" }),
+    );
+    release();
+    await prompting.catch(() => undefined);
+    await runtime.dispose();
+  });
+  it("drops an introduced tool and its mark when its plugin unloads", async () => {
+    const runtime = createRuntime({
+      pluginTools: [
+        { name: "plugin_demo_search", description: "search", parameters: {} },
+        { name: "plugin_demo_other", description: "other", parameters: {} },
+      ],
+    });
+    (runtime as any).activatePluginIntroducedTools("plugin_demo_search", [
+      "plugin_demo_other",
+    ]);
+    expect((runtime as any).pluginIntroducedToolNames.has("plugin_demo_other")).toBe(true);
+
+    // The plugin unloads: the session's runtime is retired with it and the
+    // next one builds its catalog from the plugins that are still loaded.
+    (runtime as any).pluginTools = [];
+    (runtime as any).rebuildToolCatalog();
+
+    expect((runtime as any).pluginIntroducedToolNames.size).toBe(0);
+    expect((runtime as any).activeDeferredToolNames.has("plugin_demo_other")).toBe(false);
+    await runtime.dispose();
+  });
+
+});

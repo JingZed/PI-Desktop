@@ -19,6 +19,11 @@ export type EventPersistenceDependencies = {
   inflightCheckpointer: InflightCheckpointer;
   persistenceOutbox: PersistenceOutbox;
   addActiveTurnUsage: (sessionId: string, usage: any) => void;
+  /**
+   * Slot-5 spend plugin tools reported for the turn (ADR 0291). It is kept as
+   * its own component of the turn's recorded usage.
+   */
+  addActiveTurnPluginUsage: (sessionId: string, usage: any) => void;
   logger: Logger;
   finishTurn: FinishTurn;
   /**
@@ -45,6 +50,7 @@ export function createEventPersistence({
   inflightCheckpointer,
   persistenceOutbox,
   addActiveTurnUsage,
+  addActiveTurnPluginUsage,
   logger,
   finishTurn,
   isStaleTerminalEvent,
@@ -234,6 +240,8 @@ function persistAgentEvent(envelope: AgentEventEnvelope): UiMessage | undefined 
   }
   if (event.type === "turn_end" && !envelope.parentToolCallId) {
     addActiveTurnUsage(envelope.sessionId, event.subagentUsage);
+    // Slot 5: a plugin tool's own spend stays its own component of the turn.
+    addActiveTurnPluginUsage(envelope.sessionId, event.pluginToolUsage);
   }
   if (event.type === "message_end" && event.message.role === "user" && !envelope.parentToolCallId) {
     // Reserve the current reply before persisting input accepted during its stream.

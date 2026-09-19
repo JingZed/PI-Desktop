@@ -69,6 +69,9 @@ const HOST_PROXY_ALLOWED = new Set([
   "extensions.commands.publish",
   "extensions.ui.request",
   "extensions.diagnostics.publish",
+  // Slot 3 (ADR 0291): a plugin asked to stop the turn. The embedding host
+  // cancels the session's plugin tool work, which the sidecar cannot reach.
+  "extensions.turnAbort",
   "extensions.model.configure",
   "session.rename",
   "session.create",
@@ -86,6 +89,11 @@ export type TrustedExtensionSidecarBridge = {
   /** `sendUserMessage`: the Host-owned queue drains it (D386); host-core alone would only store it. */
   queuePush: (params: Record<string, unknown>) => Promise<unknown>;
   queuePrioritize: (params: Record<string, unknown>) => Promise<unknown>;
+  /**
+   * Slot 3: a plugin asked to stop the current turn. The embedding host
+   * cancels that session's plugin tool work, which the sidecar cannot reach.
+   */
+  turnAbort: (params: Record<string, unknown>) => void | Promise<unknown>;
 };
 
 /** The host-core transport as the sidecar proxy sees it. `HostProcess` satisfies it. */
@@ -498,6 +506,7 @@ export class AgentSidecar {
           if (method === "extensions.commands.publish") bridge.publishCommands(params);
           else if (method === "extensions.diagnostics.publish") bridge.publishDiagnostics(params);
           else if (method === "extensions.model.configure") result = await bridge.configureModel(params);
+          else if (method === "extensions.turnAbort") await bridge.turnAbort(params);
           else if (method === "session.queuePush") result = await bridge.queuePush(params);
           else if (method === "session.queuePrioritize") result = await bridge.queuePrioritize(params);
           else result = await bridge.requestUi(params);

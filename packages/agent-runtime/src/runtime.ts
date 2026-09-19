@@ -1482,6 +1482,63 @@ function estimateToolTokenUsage(
     estimated: true,
   };
 }
+/**
+ * The host-side spend of one plugin tool call, normalized to the host's own
+ * usage vocabulary (`packages/plugin-sdk`). Anything non-numeric or negative
+ * is dropped rather than trusted, and a record that reports nothing is
+ * `undefined`, so a malformed result cannot invent spend.
+ */
+function messageUsageFromPlugin(value: Record<string, unknown>): MessageUsage | undefined {
+  const count = (key: string): number | undefined => {
+    const raw = value[key];
+    return typeof raw === "number" && Number.isFinite(raw) && raw > 0
+      ? Math.round(raw)
+      : undefined;
+  };
+  const inputTokens = count("inputTokens") ?? 0;
+  const outputTokens = count("outputTokens") ?? 0;
+  const cacheReadTokens = count("cacheReadTokens");
+  const cacheWriteTokens = count("cacheWriteTokens");
+  const reasoningTokens = count("reasoningTokens");
+  const totalTokens =
+    count("totalTokens") ??
+    inputTokens + outputTokens + (cacheReadTokens ?? 0) + (cacheWriteTokens ?? 0);
+  if (totalTokens <= 0 && inputTokens <= 0 && outputTokens <= 0) return undefined;
+  return {
+    inputTokens,
+    outputTokens,
+    ...(cacheReadTokens !== undefined ? { cacheReadTokens } : {}),
+    ...(cacheWriteTokens !== undefined ? { cacheWriteTokens } : {}),
+    ...(reasoningTokens !== undefined ? { reasoningTokens } : {}),
+    totalTokens,
+  };
+}
+
+/**
+ * Slot 5 (`runtime.tool.extend`) fields of a plugin tool's result, or
+ * `undefined` when the result opts out of the kernel's `AgentToolResult`
+ * shape. Electron main refuses the fields for a plugin that does not hold the
+ * slot, so this reads only what the host already allowed.
+ */
+function pluginToolResultExtension(raw: Record<string, unknown>): {
+  addedToolNames?: string[];
+  usage?: MessageUsage;
+  terminate?: boolean;
+} | undefined {
+  const addedToolNames = Array.isArray(raw.addedToolNames)
+    ? raw.addedToolNames.filter(
+        (name: unknown): name is string => typeof name === "string" && name.length > 0,
+      )
+    : [];
+  const usage = isRecord(raw.usage) ? messageUsageFromPlugin(raw.usage) : undefined;
+  const terminate = raw.terminate === true;
+  if (addedToolNames.length === 0 && !usage && !terminate) return undefined;
+  return {
+    ...(addedToolNames.length > 0 ? { addedToolNames } : {}),
+    ...(usage ? { usage } : {}),
+    ...(terminate ? { terminate } : {}),
+  };
+}
 
 function estimateVisibleResponseOutputTokens(
   message: Pick<UiMessage, "content" | "thinking">,
@@ -1571,6 +1628,12 @@ export class DesktopAgentRuntime {
   private deferredToolNames = new Set<string>();
   /** Deferred tools loaded for the current user prompt. */
   private activeDeferredToolNames = new Set<string>();
+  /**
+   * Tools a plugin introduced through a tool result's `addedToolNames` (slot
+   * 5). Kept apart from the on-demand names so the catalogue can say where the
+   * tool came from (ADR 0291 slot 5).
+   */
+  private pluginIntroducedToolNames = new Set<string>();
   private scratchDir?: string;
   private projectPath?: string;
   private commandShell: CommandShellOption;
@@ -1702,6 +1765,12 @@ export class DesktopAgentRuntime {
   private activeToolProgressCleanups = new Set<(flush: boolean) => void>();
   private hostCloseUnsubscribe?: () => void;
   private turnSubagentUsage?: MessageUsage;
+  /**
+   * Spend plugin tools reported for this turn via their result's `usage`
+   * (slot 5). It is a component of the turn's recorded usage, never merged
+   * into the model's own input/output token counts.
+   */
+  private turnPluginToolUsage?: MessageUsage;
 
   constructor(opts: AgentRuntimeOptions) {
     this.sessionId = opts.sessionId;
@@ -2074,11 +2143,54 @@ Delegation rules:
     context: AfterToolCallContext,
   ): Promise<AfterToolCallResult | undefined> {
     const own = this.resolveOwnToolOutcome(context);
+    const fromCapabilities = this.applyExtensionToolCapabilities(context, own);
     const fromExtensions = await this.extensionToolResult(context, own);
-    if (!fromExtensions) return own;
-    return { ...(own ?? {}), ...fromExtensions };
+    const merged = { ...(own ?? {}), ...fromCapabilities };
+    if (!fromExtensions) return Object.keys(merged).length ? merged : undefined;
+    return { ...merged, ...fromExtensions };
   }
 
+  /**
+   * Slot 5 for extension tools (ADR 0291 rule 2): an extension tool's result
+   * may introduce tools, report its own spend, and request early termination
+   * only when its plugin holds `runtime.tool.extend`. `plugin_*` tools are
+   * gated in Electron main, which owns the plugin's grants, and host tools are
+   * the runtime's own business. A refused `terminate` has to be cleared
+   * explicitly, because the kernel reads an absent field as "keep the original
+   * hint" — but never over a termination the host itself resolved.
+   */
+  private applyExtensionToolCapabilities(
+    context: AfterToolCallContext,
+    own: AfterToolCallResult | undefined,
+  ): AfterToolCallResult | undefined {
+    const result = context.result;
+    // Callers that drive the fold directly (tests, recovery paths) may omit the
+    // kernel's result; with nothing to inspect there is nothing to gate.
+    if (!result) return undefined;
+    const usesSlotFields =
+      (result.addedToolNames?.length ?? 0) > 0 ||
+      result.usage !== undefined ||
+      result.terminate === true;
+    if (!usesSlotFields || context.isError) return undefined;
+    const verdict = this.extensionRunner?.toolResultExtensionAllowed(context.toolCall.name);
+    if (verdict === undefined) return undefined; // Not an extension tool.
+    if (!verdict) {
+      return result.terminate === true && own?.terminate !== true
+        ? { terminate: false }
+        : undefined;
+    }
+    this.activatePluginIntroducedTools(context.toolCall.name, result.addedToolNames);
+    if (result.usage) {
+      // Extension tools are not executed by the runtime's own `run()`, so
+      // their spend is accumulated here; a plugin tool's spend was accumulated
+      // where its result was translated.
+      this.turnPluginToolUsage = addUsage(
+        this.turnPluginToolUsage,
+        usageFromPi(result.usage),
+      );
+    }
+    return undefined;
+  }
   /** `tool_call` hook: an extension may block a call with a reason (spec 16 §6). */
   private async extensionToolCall(
     context: BeforeToolCallContext,
@@ -2095,7 +2207,12 @@ Delegation rules:
     return { block: true, reason: result.reason ?? "blocked by a trusted extension" };
   }
 
-  /** `tool_result` hook: an extension may replace content, details, or the error flag. */
+  /**
+   * `tool_result` hook: an extension may replace content, details, the error
+   * flag, and (slot 5) the tool's own spend and early-termination hint. The
+   * fold keeps every field the kernel's `AfterToolCallResult` understands, so
+   * `usage` and `terminate` are not dropped between the handlers and the loop.
+   */
   private async extensionToolResult(
     context: AfterToolCallContext,
     own: AfterToolCallResult | undefined,
@@ -2109,6 +2226,9 @@ Delegation rules:
       input: context.args,
       content: context.result.content,
       details: context.result.details,
+      usage: context.result.usage,
+      addedToolNames: context.result.addedToolNames,
+      terminate: context.result.terminate,
       isError: own?.isError ?? context.isError,
     }, (acc, next) => ({ ...(acc ?? {}), ...next }));
     if (!result) return undefined;
@@ -2116,6 +2236,11 @@ Delegation rules:
     if (result.content !== undefined) out.content = result.content;
     if (result.details !== undefined) out.details = result.details;
     if (result.isError !== undefined) out.isError = result.isError;
+    if (result.usage !== undefined) out.usage = result.usage;
+    // The kernel only stops a batch when every finalized result asks for it
+    // (`shouldTerminateToolBatch`); passing one tool's hint through is safe and
+    // is the only way a plugin's request can be counted at all.
+    if (result.terminate !== undefined) out.terminate = result.terminate;
     return Object.keys(out).length ? out : undefined;
   }
 
@@ -2461,8 +2586,24 @@ Delegation rules:
         runtime.thinkingLevel = clampThinkingLevel(runtime.provider, level as ThinkingLevel);
       },
       isIdle: () => !runtime.agent.state.isStreaming,
+      /**
+       * Slot 3: the running turn's cancellation token. `Agent.signal` is the
+       * live run's token, so plugin work that keeps it stops exactly when the
+       * turn is stopped — by the user, by `abort()`, or by another plugin.
+       */
+      getAbortSignal: () => runtime.agent.signal,
       abort: () => {
         void runtime.abort();
+        // Plugin tool work runs in the plugin process; Electron main cancels
+        // its invocations per session (the same path a user Stop takes), and
+        // the runtime's own abort cannot reach across that boundary. A failure
+        // here is not fatal: the turn is already stopping.
+        void runtime.host
+          .call("extensions.turnAbort", {
+            sessionId: runtime.sessionId,
+            reason: "Session turn was aborted by a plugin",
+          })
+          .catch(() => undefined);
       },
       hasPendingMessages: () => false,
       getContextUsage: () => {
@@ -2484,6 +2625,11 @@ Delegation rules:
           name: tool.name,
           description: tool.description,
           active: active.has(tool.name),
+          // The catalogue names the provenance of a tool a plugin introduced
+          // at runtime (ADR 0291 slot 5) instead of leaving it anonymous.
+          ...(runtime.pluginIntroducedToolNames.has(tool.name)
+            ? { introducedBy: "plugin" as const }
+            : {}),
         }));
       },
       setActiveTools: (names) => {
@@ -3142,9 +3288,40 @@ Delegation rules:
         }
         const rawContent = result.content;
         const imageBlocks: Array<{ type: "image"; data: string; mimeType: string }> = [];
+        // Slot 5 (`runtime.tool.extend`): a plugin tool's result may carry the
+        // kernel's `AgentToolResult` fields. Electron main refuses them for a
+        // plugin that does not hold the slot, so what arrives here is already
+        // allowed; the result opts in by carrying one of them.
+        const rawRecord = isRecord(rawContent) ? rawContent : undefined;
+        const extended = rawRecord && this.pluginTools.some((tool) => tool.name === toolName)
+          ? pluginToolResultExtension(rawRecord)
+          : undefined;
         let text: string;
-        let details: unknown = rawContent;
-        if (typeof rawContent === "string") {
+        let details: unknown = extended && rawRecord ? rawRecord.details ?? rawRecord : rawContent;
+        if (extended && rawRecord) {
+          // The model reads the content blocks, not the wire object.
+          const parts = Array.isArray(rawRecord.content) ? rawRecord.content : [];
+          const texts: string[] = [];
+          const vision = visionFromModelConfig(this.provider.modelConfig);
+          for (const part of parts) {
+            if (!isRecord(part)) continue;
+            if (part.type === "text" && typeof part.text === "string") {
+              texts.push(part.text);
+            } else if (
+              part.type === "image" &&
+              typeof part.data === "string" &&
+              typeof part.mimeType === "string" &&
+              vision
+            ) {
+              imageBlocks.push({ type: "image", data: part.data, mimeType: part.mimeType });
+            }
+          }
+          text = texts.length > 0
+            ? texts.join("\n")
+            : typeof rawRecord.text === "string"
+              ? rawRecord.text
+              : JSON.stringify(rawRecord.content ?? rawRecord, null, 2);
+        } else if (typeof rawContent === "string") {
           text = rawContent;
         } else if (isRecord(rawContent) && Array.isArray(rawContent.images)) {
           text =
@@ -3182,9 +3359,20 @@ Delegation rules:
           text = JSON.stringify(rawContent, null, 2);
         }
         if (!result.ok) this.failedHostToolCalls.add(toolCallId);
+        if (extended?.usage) {
+          this.turnPluginToolUsage = addUsage(this.turnPluginToolUsage, extended.usage);
+        }
+        // Slot 5: the introduced names join the active set before the loop asks
+        // for the next turn, so they are in the tool list from that request on.
+        if (extended?.addedToolNames?.length) {
+          this.activatePluginIntroducedTools(toolName, extended.addedToolNames);
+        }
         return {
           content: [{ type: "text", text }, ...imageBlocks],
           details,
+          ...(extended?.addedToolNames?.length ? { addedToolNames: extended.addedToolNames } : {}),
+          ...(extended?.usage ? { usage: usageToPi(extended.usage) } : {}),
+          ...(extended?.terminate ? { terminate: true } : {}),
           ...(terminateAfterMutationFailure ? { terminate: true } : {}),
           isError: result.isError === true || result.ok === false,
         };
@@ -3388,9 +3576,17 @@ Delegation rules:
         (name) => !this.isCoreTool(name) && name !== TOOL_SEARCH_NAME,
       ),
     );
+    // A tool a plugin introduced disappears with its plugin: the catalog is
+    // rebuilt from the loaded plugins, so a name it no longer holds is pruned
+    // here together with its provenance mark (ADR 0291 slot 5).
     for (const name of this.activeDeferredToolNames) {
       if (!this.deferredToolNames.has(name)) {
         this.activeDeferredToolNames.delete(name);
+      }
+    }
+    for (const name of this.pluginIntroducedToolNames) {
+      if (!this.toolCatalog.has(name)) {
+        this.pluginIntroducedToolNames.delete(name);
       }
     }
     if (this.deferredToolNames.size > 0) {
@@ -3476,9 +3672,14 @@ Delegation rules:
     if (entries.length === 0) return "";
 
     const visibleEntries = entries.slice(0, MAX_ON_DEMAND_TOOL_PROMPT_ENTRIES);
-    const lines = visibleEntries.map(
-      (entry) => `- ${entry.name}: ${this.compactToolDescription(entry.description)}`,
-    );
+    // The catalogue the model reads says where a tool came from: one a plugin
+    // introduced at runtime is marked as such (ADR 0291 slot 5).
+    const lines = visibleEntries.map((entry) => {
+      const introduced = this.pluginIntroducedToolNames.has(entry.name)
+        ? " (introduced by a plugin)"
+        : "";
+      return `- ${entry.name}${introduced}: ${this.compactToolDescription(entry.description)}`;
+    });
     if (entries.length > visibleEntries.length) {
       lines.push(
         `- ... ${entries.length - visibleEntries.length} more; search by exact name or capability`,
@@ -3538,9 +3739,17 @@ Delegation rules:
         const available = [...this.deferredToolNames];
         const availablePreview = available.slice(0, MAX_TOOL_SEARCH_RESULT_NAMES);
         const remaining = available.length - availablePreview.length;
+        // The model's own answer says where a newly available tool came from:
+        // a name another plugin introduced is marked as such (ADR 0291 slot 5).
+        const pluginIntroduced = activated.filter((name) =>
+          this.pluginIntroducedToolNames.has(name),
+        );
         const text =
           activated.length > 0
-            ? `Activated on-demand tools: ${activated.join(", ")}. They are available on the next model turn.`
+            ? `Activated on-demand tools: ${activated.join(", ")}. They are available on the next model turn.` +
+              (pluginIntroduced.length > 0
+                ? ` Introduced by a plugin: ${pluginIntroduced.join(", ")}.`
+                : "")
             : matches.length > 0
               ? `These tools are already active: ${matches.join(", ")}.`
               : `No matching on-demand tool. Available names: ${availablePreview.join(", ")}${remaining > 0 ? `, and ${remaining} more` : ""}.`;
@@ -4957,8 +5166,49 @@ Delegation rules:
 
   private resetDeferredToolsForPrompt(): void {
     this.activeDeferredToolNames.clear();
+    this.pluginIntroducedToolNames.clear();
     this.restoreDeferredToolsFromContext();
     this.agent.state.tools = this.activeTools();
+  }
+
+  /**
+   * Slot-5 gate (ADR 0291 rule 2): may the tool that produced this result
+   * introduce tools, report spend, and request early termination?
+   *
+   * An extension tool is checked here, because the runner owns the plugin's
+   * granted set and its diagnostics channel. A `plugin_*` tool was already
+   * checked by Electron main, which holds the plugin's grants and refuses the
+   * fields before they cross into the sidecar. A host tool (Read, Bash, ...)
+   * extends nothing: `addedToolNames` is a slot-5 capability and only a plugin
+   * can hold the slot.
+   */
+  private toolResultCapabilityAllowed(toolName: string): boolean {
+    const extensionVerdict = this.extensionRunner?.toolResultExtensionAllowed(toolName);
+    if (extensionVerdict !== undefined) return extensionVerdict;
+    return this.pluginTools.some((def) => def.name === toolName);
+  }
+
+  /**
+   * Slot-5 activation (ADR 0291): tools a plugin's result introduced become
+   * available from the next provider request onward, and stay available for as
+   * long as that result remains part of the context. Returns the names that
+   * actually entered the catalog, which is what the tool-search answer and the
+   * on-demand catalogue mark as plugin-introduced.
+   */
+  private activatePluginIntroducedTools(
+    toolName: string,
+    addedToolNames: readonly string[] | undefined,
+  ): string[] {
+    if (!addedToolNames || addedToolNames.length === 0) return [];
+    if (!this.toolResultCapabilityAllowed(toolName)) return [];
+    const activated: string[] = [];
+    for (const name of addedToolNames) {
+      if (!this.deferredToolNames.has(name)) continue;
+      this.activeDeferredToolNames.add(name);
+      this.pluginIntroducedToolNames.add(name);
+      activated.push(name);
+    }
+    return activated;
   }
 
   /**
@@ -4984,6 +5234,13 @@ Delegation rules:
         if (this.deferredToolNames.has(name)) {
           this.activeDeferredToolNames.add(name);
         }
+      }
+      // A plugin's tool result may have introduced further tools (slot 5);
+      // the names travel on the tool-result row and are re-applied here so a
+      // rehydrated transcript keeps the same catalogue. ToolSearch has its own
+      // path above and is not a plugin.
+      if (message.toolName !== TOOL_SEARCH_NAME) {
+        this.activatePluginIntroducedTools(message.toolName, message.addedToolNames);
       }
     }
   }
@@ -7323,9 +7580,14 @@ Delegation rules:
           break;
         const subagentUsage = this.turnSubagentUsage;
         this.turnSubagentUsage = undefined;
+        const pluginToolUsage = this.turnPluginToolUsage;
+        this.turnPluginToolUsage = undefined;
         this.emit({
           type: "turn_end",
           ...(subagentUsage ? { subagentUsage } : {}),
+          // Slot 5: a plugin tool's own spend is a component of the turn's
+          // recorded usage, never part of the model's token counts.
+          ...(pluginToolUsage ? { pluginToolUsage } : {}),
         });
         break;
       case "agent_end":
@@ -7497,6 +7759,7 @@ Delegation rules:
     this.pendingUserMessageId = undefined;
     this.gracefulStopRequested = false;
     this.runCancelled = false;
+    this.turnPluginToolUsage = undefined;
     this.resetRunRecoveryState();
     this.turnEpoch += 1;
     this.abortDelegationsFromPreviousTurns();
@@ -7573,6 +7836,7 @@ Delegation rules:
     this.gracefulStopRequested = false;
     this.runCancelled = false;
     this.turnSubagentUsage = undefined;
+    this.turnPluginToolUsage = undefined;
     // Capabilities and path-scoped instruction claims belong to one prompt.
     this.resetDeferredToolsForPrompt();
     this.pathInstructionClaims.clear();

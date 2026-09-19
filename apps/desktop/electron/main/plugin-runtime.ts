@@ -71,6 +71,7 @@ import {
   type PluginSettingDefinition,
   type PluginWorkspaceInfo,
   BUILTIN_SPEECH_PROTOCOL_IDS,
+  PLUGIN_TOOL_EXTEND_PERMISSION,
 } from "@pi-desktop/shared";
 import {
   previewFile,
@@ -1762,6 +1763,36 @@ export class PluginRuntime {
   /** Abort this session's invocations without affecting sibling sessions. */
   cancelSessionTools(sessionId: string, reason = "Session tool execution aborted"): void {
     this.toolInvocations.cancelSession(sessionId, reason);
+  }
+
+  /**
+   * Slot 5 (`runtime.tool.extend`, ADR 0291 rule 2): the kernel fields a
+   * plugin tool may attach to its result — `addedToolNames`, `usage`,
+   * `terminate`. They are read here, where the plugin's recorded grants are
+   * known, and dropped when the plugin does not hold the slot. A refusal is
+   * audited rather than silent, so the author can see why the fields did
+   * nothing; the rest of the result is returned unchanged.
+   */
+  extendToolResult(pluginId: string, result: unknown): unknown {
+    if (!result || typeof result !== "object" || Array.isArray(result)) return result;
+    const record = result as Record<string, unknown>;
+    const usesSlotFields =
+      (Array.isArray(record.addedToolNames) && record.addedToolNames.length > 0) ||
+      (record.usage !== undefined && record.usage !== null) ||
+      record.terminate === true;
+    if (!usesSlotFields) return result;
+    if (this.loaded.get(pluginId)?.permissions.has(PLUGIN_TOOL_EXTEND_PERMISSION)) {
+      return result;
+    }
+    const { addedToolNames: _added, usage: _usage, terminate: _terminate, ...rest } = record;
+    this.services.audit?.({
+      pluginId,
+      api: "agent.toolResult.extend",
+      ok: false,
+      errorCode: "PERMISSION_DENIED",
+      ts: Date.now(),
+    });
+    return rest;
   }
 
   /** Deregister contributions, run `onUnload` in the child, then stop it. */

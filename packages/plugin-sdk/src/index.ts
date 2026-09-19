@@ -662,6 +662,53 @@ export type PluginSpeechAdapter = {
   handle: (input: PluginSpeechHandleInput) => Promise<PluginSpeechHandleResult> | PluginSpeechHandleResult;
 };
 
+/** Spend one plugin tool call reports for itself. The host records it as its
+ * own component of the turn (`pluginToolUsage`), never folded into the model's
+ * input/output token counts. Requires the `runtime.tool.extend` permission.
+ */
+export type PluginToolUsage = {
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  reasoningTokens?: number;
+  /** Defaults to the sum of the parts above. */
+  totalTokens?: number;
+};
+
+/**
+ * A plugin tool's own result for the `runtime.tool.extend` slot (ADR 0291
+ * slot 5). A result that carries any of these fields is read as this shape, so
+ * `content` reaches the model as content instead of a JSON blob; a result with
+ * none of them keeps the previous behaviour and is rendered as before.
+ *
+ * `addedToolNames` introduces tools: each name must already be in the session's
+ * tool catalogue (a contributed or MCP tool the model has not activated yet).
+ * They become available from the next model turn onward and are marked as
+ * plugin-introduced wherever the catalogue is shown. `usage` reports the call's
+ * own spend. `terminate` asks the agent to stop after the current tool batch,
+ * and the kernel stops only when **every** finalized result in the batch asks
+ * for it, so one tool's request never cuts a batch short.
+ *
+ * The permission is checked against the plugin's recorded grants before the
+ * fields leave the host: a plugin without `runtime.tool.extend` is refused (the
+ * fields are dropped and the refusal is audited), never silently trusted.
+ */
+export type PluginToolResult = {
+  /** Text or image content returned to the model. */
+  content?: Array<
+    | { type: "text"; text: string }
+    | { type: "image"; data: string; mimeType: string }
+  >;
+  /** Arbitrary structured details for logs or UI rendering. */
+  details?: unknown;
+  usage?: PluginToolUsage;
+  addedToolNames?: string[];
+  terminate?: boolean;
+  /** Convenience alias for a single text block when `content` is omitted. */
+  text?: string;
+};
+
 export type PluginTool = {
   name: string;
   description: string;
@@ -675,7 +722,10 @@ export type PluginTool = {
    */
   planSafeActions?: readonly string[];
   schema?: unknown;
-  execute: (args: unknown, ctx?: PluginToolExecContext) => Promise<unknown> | unknown;
+  execute: (
+    args: unknown,
+    ctx?: PluginToolExecContext,
+  ) => Promise<PluginToolResult | unknown> | PluginToolResult | unknown;
 };
 
 export type PluginToolExecContext = {
@@ -686,6 +736,12 @@ export type PluginToolExecContext = {
   /** Executor model for this session, `providerId/modelId`. Configuration, not transcript. */
   modelKey?: string;
   thinkingLevel?: string;
+  /**
+   * The turn's cancellation token (ADR 0291 slot 3): it aborts when the user
+   * stops the turn, when a plugin asks the host to stop it (`runtime.turn.abort`),
+   * or when the host abandons the turn. Long-running work should pass it to
+   * `fetch` or watch it and stop.
+   */
   signal?: AbortSignal;
   log: (msg: string) => void;
 };

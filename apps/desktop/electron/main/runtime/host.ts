@@ -255,10 +255,13 @@ export function createHostRuntime({
                 modelKey,
                 thinkingLevel,
               });
+              // Slot 5 (`runtime.tool.extend`): the kernel fields a plugin tool
+              // may attach survive only when the plugin holds the slot; here is
+              // where the plugin's recorded grants are known.
               payload = {
                 executionId: q.executionId,
                 ok: true,
-                content: result ?? null,
+                content: plugins.extendToolResult(tool.pluginId, result ?? null),
               };
             }
           } catch (e) {

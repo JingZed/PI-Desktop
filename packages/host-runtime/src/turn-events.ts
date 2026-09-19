@@ -4,6 +4,7 @@ import {
   type AgentEventEnvelope,
   type MessageUsage,
   type UiMessage,
+  type TurnUsageRecord,
 } from "@pi-desktop/shared";
 
 import { InflightCheckpointer } from "./inflight-checkpoint.js";
@@ -63,6 +64,12 @@ export class TurnEventPipeline {
   private readonly steeringReplies = new Set<string>();
   private readonly inflightSnapshots = new Map<string, UiMessage>();
   private readonly activeTurnUsages = new Map<string, MessageUsage>();
+  /**
+   * Spend plugin tools reported for the current turn (ADR 0291 slot 5). Kept
+   * apart from `activeTurnUsages` because it is recorded as a component of the
+   * turn, not as model input/output tokens.
+   */
+  private readonly activeTurnPluginUsages = new Map<string, MessageUsage>();
   private readonly persistence: TurnPersistence;
   private readonly checkpointer: InflightCheckpointer;
   private readonly now: () => number;
@@ -93,15 +100,31 @@ export class TurnEventPipeline {
     return this.activeToolCalls.get(toolKey(sessionId, toolCallId));
   }
 
-  /** Usage accumulated by the session's current turn, then forget it. */
-  takeTurnUsage(sessionId: string): MessageUsage | undefined {
+  /**
+   * Usage accumulated by the session's current turn, then forget it. Plugin
+   * tool spend travels as its own component (`pluginToolUsage`) so the turn
+   * record can name it instead of folding it into the model's tokens.
+   */
+  takeTurnUsage(sessionId: string): TurnUsageRecord | undefined {
     const usage = this.activeTurnUsages.get(sessionId);
     this.activeTurnUsages.delete(sessionId);
-    return usage;
+    const pluginToolUsage = this.activeTurnPluginUsages.get(sessionId);
+    this.activeTurnPluginUsages.delete(sessionId);
+    if (!usage && !pluginToolUsage) return undefined;
+    return {
+      inputTokens: usage?.inputTokens ?? 0,
+      outputTokens: usage?.outputTokens ?? 0,
+      ...(usage?.cacheReadTokens !== undefined ? { cacheReadTokens: usage.cacheReadTokens } : {}),
+      ...(usage?.cacheWriteTokens !== undefined ? { cacheWriteTokens: usage.cacheWriteTokens } : {}),
+      ...(usage?.reasoningTokens !== undefined ? { reasoningTokens: usage.reasoningTokens } : {}),
+      totalTokens: usage?.totalTokens ?? 0,
+      ...(pluginToolUsage ? { pluginToolUsage } : {}),
+    };
   }
 
   resetTurnUsage(sessionId: string): void {
     this.activeTurnUsages.delete(sessionId);
+    this.activeTurnPluginUsages.delete(sessionId);
   }
 
   /** Write the session's pending reply checkpoint now; the last text before a crash. */
@@ -213,7 +236,10 @@ export class TurnEventPipeline {
         void finish("completed", undefined);
         return;
       case "turn_end":
-        if (!envelope.parentToolCallId) this.addTurnUsage(sessionId, event.subagentUsage);
+        if (!envelope.parentToolCallId) {
+          this.addTurnUsage(sessionId, event.subagentUsage);
+          this.addTurnPluginUsage(sessionId, event.pluginToolUsage);
+        }
         return;
       case "message_end":
         return this.persistMessageEnd(envelope, event.message, event.precedingAssistant, turnId);
@@ -313,6 +339,17 @@ export class TurnEventPipeline {
     if (!usage) return;
     const next = addUsage(this.activeTurnUsages.get(sessionId), usage);
     if (next) this.activeTurnUsages.set(sessionId, next);
+  }
+
+  /**
+   * Slot 5: accumulate the spend plugin tools reported for this turn. It stays
+   * in its own map so the turn record can carry it as a named component
+   * (`pluginToolUsage`) instead of adding it to the model's tokens.
+   */
+  private addTurnPluginUsage(sessionId: string, usage: MessageUsage | undefined): void {
+    if (!usage) return;
+    const next = addUsage(this.activeTurnPluginUsages.get(sessionId), usage);
+    if (next) this.activeTurnPluginUsages.set(sessionId, next);
   }
 }
 

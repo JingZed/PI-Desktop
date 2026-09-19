@@ -64,6 +64,8 @@ function runnerBridge(cwd, publications) {
     getThinkingLevel: () => "medium",
     setThinkingLevel: () => {},
     isIdle: () => true,
+    // No turn is running in this script, so plugin work has no token to watch.
+    getAbortSignal: () => undefined,
     abort: () => {},
     hasPendingMessages: () => false,
     getContextUsage: () => undefined,

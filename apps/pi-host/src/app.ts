@@ -189,6 +189,10 @@ export async function startPiHost(config: PiHostConfig, options: { log?: HostLog
           context: { requestId: `ext-${Date.now().toString(36)}`, ...(typeof params.idempotencyKey === "string" ? { idempotencyKey: params.idempotencyKey } : {}) },
         }),
       queuePrioritize: async (params) => agentHost.prioritizeTurn({ subject: "extension", roles: ["controller"] }, String(params.id ?? "")),
+      // Slot 3: a plugin asked to stop the turn. A headless host runs no
+      // plugin host process, so it holds no plugin tool invocations to cancel;
+      // the sidecar asks anyway because the desktop host does.
+      turnAbort: () => undefined,
     });
     state.sidecar = sidecar;
     runtime.attachSidecar(sidecar);

@@ -392,6 +392,20 @@ export function createSidecarRuntime({
       await runtimeState.agentHostBridge.queue.prioritize(String(params.id ?? ""));
       return { ok: true };
     },
+    /**
+     * Slot 3 (ADR 0291): a plugin asked to stop the turn. The user Stop path
+     * cancels this session's plugin tool invocations so the plugin's own
+     * long-running work learns it was cancelled; a plugin-initiated abort takes
+     * the same path. The runtime's own side already aborts the kernel run and
+     * emits the TURN_ABORTED terminal event.
+     */
+    turnAbort: async (params) => {
+      plugins.cancelSessionTools(
+        String(params.sessionId ?? ""),
+        typeof params.reason === "string" && params.reason ? params.reason : "Session turn was aborted",
+      );
+      return { ok: true };
+    },
   });
   s.setVendorAuthResolver(async ({ providerId }) =>
     vendorOAuth.resolveAuth(providerId),

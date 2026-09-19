@@ -23,8 +23,10 @@ import {
 import {
   isRegisteredSlotPermission,
   trustedExtensionAgentProviderId,
+  trustedExtensionApiPermission,
   trustedExtensionEventPermission,
   type TrustedExtensionAgentModelConfig,
+  type TrustedExtensionApiCall,
 } from "@pi-desktop/shared";
 import {
   createVirtualModules,
@@ -158,7 +160,18 @@ export type ExtensionExecResult = {
   killed: boolean;
 };
 
-export type ExtensionToolInfo = { name: string; description: string; active: boolean };
+/**
+ * One row of the tool catalogue an extension reads through `getAllTools()`.
+ * `introducedBy: "plugin"` marks a tool another plugin brought in at runtime
+ * through a tool result (ADR 0291 slot 5), so the catalogue never presents it
+ * as a host tool.
+ */
+export type ExtensionToolInfo = {
+  name: string;
+  description: string;
+  active: boolean;
+  introducedBy?: "plugin";
+};
 
 export type TrustedExtensionAgentDefinition = {
   id: string;
@@ -200,6 +213,12 @@ export interface TrustedExtensionBridge {
   getThinkingLevel(): string;
   setThinkingLevel(level: string): void;
   isIdle(): boolean;
+  /**
+   * The running turn's cancellation token, or `undefined` when no turn is
+   * running. Plugin work observes the abort through this (ADR 0291 slot 3);
+   * `abort()` is the same turn being stopped.
+   */
+  getAbortSignal(): AbortSignal | undefined;
   abort(): void;
   hasPendingMessages(): boolean;
   getContextUsage(): { tokens: number | null; contextWindow: number; percent: number | null } | undefined;
@@ -605,17 +624,75 @@ export class TrustedExtensionRunner {
   /**
    * The slot permission that refuses `event` for this extension, or `undefined`
    * when its handlers may run (ADR 0291 rule 2).
-   *
+   */
+  private refusedSlot(extension: LoadedExtension, event: string): string | undefined {
+    return this.refusedPermission(extension, trustedExtensionEventPermission(event));
+  }
+
+  /**
+   * The slot permission that refuses the non-event call `apiCall` for this
+   * extension, or `undefined` when the call may run (ADR 0291 rule 2). An API
+   * call has no event name, so its slot comes from the named contract in
+   * `@pi-desktop/shared` rather than from the payload.
+   */
+  private refusedApi(
+    extension: LoadedExtension,
+    apiCall: TrustedExtensionApiCall,
+  ): string | undefined {
+    return this.refusedPermission(extension, trustedExtensionApiPermission(apiCall));
+  }
+
+  /**
+   * Report and refuse `apiCall` for `extension` when the plugin does not hold
+   * its slot permission; `true` means the call may proceed. Every refusal is
+   * reported, never swallowed: the author and the user both need to know why
+   * the call did nothing (ADR 0291 rule 2).
+   */
+  private refuseApi(
+    extension: LoadedExtension,
+    apiCall: TrustedExtensionApiCall,
+    member: string,
+  ): boolean {
+    const refused = this.refusedApi(extension, apiCall);
+    if (!refused) return false;
+    this.report(
+      extension.spec.id,
+      "permission_denied",
+      `${member} was refused: the plugin does not hold ${refused}`,
+      member,
+    );
+    return true;
+  }
+
+  /**
    * A mapped permission the registry does not hold yet is reserved, not
    * enforced: no plugin can be granted it, so refusing on it would remove a
-   * working hook to answer a question nobody asked. The gate starts applying
+   * working call to answer a question nobody asked. The gate starts applying
    * the moment the name is registered with its slot (see
    * `REGISTERED_SLOT_PERMISSIONS` in `@pi-desktop/shared`).
    */
-  private refusedSlot(extension: LoadedExtension, event: string): string | undefined {
-    const permission = trustedExtensionEventPermission(event);
+  private refusedPermission(
+    extension: LoadedExtension,
+    permission: string | undefined,
+  ): string | undefined {
     if (!permission || !isRegisteredSlotPermission(permission)) return undefined;
     return extension.permissions.has(permission) ? undefined : permission;
+  }
+
+  /**
+   * Slot-5 gate for one tool result (ADR 0291 rule 2): may the extension that
+   * registered `toolName` introduce tools, report spend, and request early
+   * termination with its result? A refusal is reported as `permission_denied`
+   * on the plugin row. `undefined` means the tool belongs to no extension, so
+   * the caller's own rules decide; only the runner knows the slot behind a tool
+   * an extension registered.
+   */
+  toolResultExtensionAllowed(toolName: string): boolean | undefined {
+    const owner = [...this.loaded.values()].find((extension) =>
+      extension.tools.has(toolName),
+    );
+    if (!owner) return undefined;
+    return !this.refuseApi(owner, "toolResult", `toolResult:${toolName}`);
   }
 
   private errorReport(extensionId: string): TrustedExtensionLoadReport {
@@ -767,6 +844,9 @@ export class TrustedExtensionRunner {
         return bridge.getModel();
       },
       isIdle: () => bridge.isIdle(),
+      // The live cancellation token of the running turn (ADR 0291 slot 3): a
+      // long-running plugin keeps the signal and stops when the turn aborts.
+      signal: bridge.getAbortSignal(),
       abort: () => bridge.abort(),
       hasPendingMessages: () => bridge.hasPendingMessages(),
       shutdown: this.inert(extension, "shutdown"),
@@ -977,6 +1057,19 @@ export class TrustedExtensionRunner {
         void bridge.setSessionName(String(name));
       },
       getSessionName: () => bridge.getSessionName(),
+      /**
+       * Slot 3: ask the host to stop the current turn (ADR 0291 rule 2). The
+       * plugin's own long-running work learns about it through
+       * `ctx.signal` / the tool execution context's `signal`. Returns whether
+       * the request was accepted: a plugin that does not hold
+       * `runtime.turn.abort` is refused with a `permission_denied` diagnostic
+       * and gets `false`, never a throw and never a silent no-op.
+       */
+      requestTurnAbort: (): boolean => {
+        if (this.refuseApi(extension, "requestTurnAbort", "requestTurnAbort")) return false;
+        bridge.abort();
+        return true;
+      },
       sendUserMessage: (content: string | unknown[], options?: { deliverAs?: "steer" | "followUp" }) =>
         bridge.sendUserMessage(content, options),
       events: {

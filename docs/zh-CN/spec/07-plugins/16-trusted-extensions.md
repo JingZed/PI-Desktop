@@ -353,8 +353,8 @@ main、渲染层或插件宿主进程中。
 
 | 类别 | 成员 |
 |---|---|
-| 支持 | `registerTool`、`registerCommand`、§6 中每个事件的 `on(...)`、`exec`、`getActiveTools`、`getAllTools`、`setActiveTools`、`getCommands`、`setModel`（v1 说明：返回 `false`，桌面拥有会话的 provider 绑定）、`getThinkingLevel`、`setThinkingLevel`、`setSessionName`、`getSessionName`、`sendUserMessage`（Host 队列，D386）、`getFlag` |
-| 上下文上支持 | `ui.notify`、`ui.confirm`、`ui.select`、`ui.input`、`ui.setStatus`、`ui.setWorkingMessage`、`cwd`、`modelRegistry`、`isIdle`、`abort`、`hasPendingMessages`、`getContextUsage`、`compact`、`getSystemPrompt`、`waitForIdle`、`newSession`、`fork` |
+| 支持 | `registerTool`、`registerCommand`、§6 中每个事件的 `on(...)`、`exec`、`getActiveTools`、`getAllTools`、`setActiveTools`、`getCommands`、`setModel`（v1 说明：返回 `false`，桌面拥有会话的 provider 绑定）、`getThinkingLevel`、`setThinkingLevel`、`setSessionName`、`getSessionName`、`sendUserMessage`（Host 队列，D386）、`getFlag`、`requestTurnAbort`（槽位 3；需要 `runtime.turn.abort`） |
+| 上下文上支持 | `ui.notify`、`ui.confirm`、`ui.select`、`ui.input`、`ui.setStatus`、`ui.setWorkingMessage`、`cwd`、`modelRegistry`、`isIdle`、`signal`、`abort`、`hasPendingMessages`、`getContextUsage`、`compact`、`getSystemPrompt`、`waitForIdle`、`newSession`、`fork` |
 | 推迟到 v2 | `sendMessage`、`appendEntry`、`setLabel`、`sessionManager` 只读 API、`switchSession`、`registerShortcut`、`registerMarkdownTransformer`、`ui.setEditorText`、`ui.getEditorText`、`ui.addAutocompleteProvider`、`registerFlag` 值编辑 |
 | 不支持 | `ui.setWidget`、`ui.setFooter`、`ui.setHeader`、`ui.setTitle`、`ui.custom`、`ui.overlay`、`ui.onTerminalInput`、`ui.setWorkingVisible`、`ui.setWorkingIndicator`、`ui.setHiddenThinkingLabel`、`ui.pasteToEditor`、`ui.editor`、`registerMessageRenderer`、`registerEntryRenderer`、`navigateTree`、`shutdown` |
 
@@ -396,6 +396,22 @@ main、渲染层或插件宿主进程中。
 `permission_denied`、写明权限名的扩展诊断上报。被跳过的处理器不会阻塞回合：与抛错的
 处理器一样，它只是没有意见。
 
+有两类调用是扩展为自己发出的、并非事件，因此同一份契约改为给调用本身命名（`@pi-desktop/shared`
+中的 `TRUSTED_EXTENSION_API_PERMISSIONS`）：`requestTurnAbort` 需要 `runtime.turn.abort`，
+§7.6 的工具结果能力需要 `runtime.tool.extend`。两者的门禁与上报方式与事件完全一致：调用返回
+拒绝值（`requestTurnAbort` 返回 `false`），插件行得到一条写明权限与调用名的 `permission_denied`
+诊断 —— 既不静默跳过，也不抛错。
+
+### 6.1 中止回合与取消信号（槽位 3）
+
+`requestTurnAbort()` 请求宿主停止当前回合。插件自己的长任务会在同一槽位内得知本次运行已被取消，
+因为只有中止、没有信号会让这些任务在回合消失后继续运行：
+
+- 扩展上下文带有 `signal`，即当前运行回合的 `AbortSignal`（没有回合在跑时为 `undefined`）；
+- 插件工具的执行上下文同样带有 `signal`（见 §7.7），它在用户停止、插件请求中止、或宿主放弃回合时触发；
+- 对插件工作而言，用户 Stop 与 `requestTurnAbort` 走同一条路：Electron main 取消该会话的插件调用
+  （sidecar 自身无法触达），运行时照常发出 `TURN_ABORTED` 终结事件，回合被记录为已中止。
+
 `pi-agent-core` 还暴露两个上下文钩子 —— `transformContext` 与 `prepareNextTurn`
 —— 插件目前都无法触及：桌面只设置了 `prepareNextTurnWithContext`，上表的
 `context` 事件就走这条路径。面向插件的入口是 ADR 0291 的 Phasing 第 3 步；那里的
@@ -414,7 +430,30 @@ main、渲染层或插件宿主进程中。
    在启用时做出。`onUpdate` 流映射到工具执行更新事件。
 4. 每次执行写一条审计记录，含扩展 id、工具名和耗时。不记录参数。
 5. `exec` 在 sidecar 内以会话工作目录、会话代理和环境设置运行。
-
+6. **槽位 5 —— 工具结果在内容之外还能做什么。** 扩展工具的 `AgentToolResult` 可以带
+   `addedToolNames`、`usage` 和 `terminate`，经 `pi.agent.registerTool` 注册的插件工具也可以
+   用 `PluginToolResult` 返回同样的三个字段。三者都需要 `runtime.tool.extend`；未获授权的
+   插件被拒绝而不是被默默信任，拒绝会记为 `permission_denied` 诊断（扩展工具，落在插件行）
+   或审计记录（`agent.toolResult.extend`，插件工具，在 Electron main）：
+   - `addedToolNames` 在运行时引入工具。每个名字必须已在会话目录中 —— 一个模型尚未激活的
+     按需工具，包括其他插件的工具 —— 并从下一次 provider 请求起可用。目录之外的名字被忽略，
+     宿主工具的结果永远不能引入工具：`addedToolNames` 是槽位 5 的能力，只有插件持有该槽位。
+     被引入的工具在展示目录的地方被标注：模型系统提示词中的按需工具列表、激活它的那次
+     ToolSearch 回复，以及 `getAllTools()`（行字段 `introducedBy: "plugin"`）。只要引入它的
+     那处转录上下文仍在，这个标注就一直跟随该工具。
+   - `usage` 是本次调用自己的花费。它作为已完成回合的独立组成部分记录
+     （`turn_end.pluginToolUsage` → host-core 中该回合记录的用量），绝不并入模型的
+     `inputTokens` / `outputTokens`，因此成本界面可以把它单列一行。
+   - `terminate` 请求在本次批次之后停止。内核规则不变：只有批次内**每一条**已定稿结果都请求
+     停止时才停止，因此单个工具的请求不会截断批次。被拒绝的插件该提示会被显式清除，因为内核
+     把字段缺失理解为“保留原值”。
+   插件工具的结果只要带上其中任一字段就同时选用了内核形状：`content` 会作为内容抵达模型，
+   而不是 JSON 串。不带这些字段的结果保持原有渲染。三个字段都随插件消失：它引入的工具属于会话
+   目录，而目录由 `rebuildToolCatalog` 依据已加载插件重建。
+7. 插件工具在插件自己的进程中执行（规格 04）。其执行上下文（`PluginToolExecContext`）带有
+   `sessionId`、`turnId`、`mode`、`modelKey`、`thinkingLevel`、`log` 与 `signal` —— 本回合的
+   取消令牌（§6.1）。`signal` 在用户停止、插件请求中止、或宿主放弃回合时触发；长任务应把它
+   传给 `fetch` 或监听它并停止。宿主仍持有的每个插件调用都会在插件卸载、会话回合替换和关闭时被取消。
 ## 8. 命令
 
 1. `registerCommand` 条目出现在全局搜索的 Commands 区（见

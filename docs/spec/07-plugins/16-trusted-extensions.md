@@ -438,8 +438,8 @@ unsupported ones.
 
 | Class | Members |
 |---|---|
-| Supported | `registerTool`, `registerCommand`, `registerAgent`, `registerProvider` (plugin-owned compatibility alias; same shape as `registerAgent`), `unregisterAgent`, `unregisterProvider`, `on(...)` for every event in §6, `exec`, `getActiveTools`, `getAllTools`, `setActiveTools`, `getCommands`, `setModel` (configured models and plugin agents; idle-only; persists the current session binding), `getThinkingLevel`, `setThinkingLevel`, `setSessionName`, `getSessionName`, `sendUserMessage` (Host-owned queue, D386), `getFlag` |
-| Supported on context | `ui.notify`, `ui.confirm`, `ui.select`, `ui.input`, `ui.setStatus`, `ui.setWorkingMessage`, `cwd`, `modelRegistry`, `isIdle`, `abort`, `hasPendingMessages`, `getContextUsage`, `compact`, `getSystemPrompt`, `waitForIdle`, `newSession`, `fork` |
+| Supported | `registerTool`, `registerCommand`, `registerAgent`, `registerProvider` (plugin-owned compatibility alias; same shape as `registerAgent`), `unregisterAgent`, `unregisterProvider`, `on(...)` for every event in §6, `exec`, `getActiveTools`, `getAllTools`, `setActiveTools`, `getCommands`, `setModel` (configured models and plugin agents; idle-only; persists the current session binding), `getThinkingLevel`, `setThinkingLevel`, `setSessionName`, `getSessionName`, `sendUserMessage` (Host-owned queue, D386), `getFlag`, `requestTurnAbort` (slot 3; requires `runtime.turn.abort`) |
+| Supported on context | `ui.notify`, `ui.confirm`, `ui.select`, `ui.input`, `ui.setStatus`, `ui.setWorkingMessage`, `cwd`, `modelRegistry`, `isIdle`, `signal`, `abort`, `hasPendingMessages`, `getContextUsage`, `compact`, `getSystemPrompt`, `waitForIdle`, `newSession`, `fork` |
 | Deferred to v2 | `sendMessage`, `appendEntry`, `setLabel`, `sessionManager` read API, `switchSession`, `registerShortcut`, `registerMarkdownTransformer`, `ui.setEditorText`, `ui.getEditorText`, `ui.addAutocompleteProvider`, `registerFlag` value editing |
 | Unsupported | `ui.setWidget`, `ui.setFooter`, `ui.setHeader`, `ui.setTitle`, `ui.custom`, `ui.overlay`, `ui.onTerminalInput`, `ui.setWorkingVisible`, `ui.setWorkingIndicator`, `ui.setHiddenThinkingLabel`, `ui.pasteToEditor`, `ui.editor`, `registerMessageRenderer`, `registerEntryRenderer`, `navigateTree`, `shutdown` |
 
@@ -502,6 +502,32 @@ run, reporting the skip as an extension diagnostic of kind `permission_denied`
 that names the permission, on the plugin row. A skipped handler never blocks the
 turn: like a throwing handler, it counts as having no opinion.
 
+Two calls an extension makes for itself are not events, so the same contract
+names the call instead of an event name (`TRUSTED_EXTENSION_API_PERMISSIONS` in
+`@pi-desktop/shared`): `requestTurnAbort` needs `runtime.turn.abort`, and the
+tool-result capability behind §7.6 needs `runtime.tool.extend`. Both are gated
+and reported exactly like an event, in both directions: the call returns a
+refusal value (`false` for `requestTurnAbort`) and the plugin row gets a
+`permission_denied` diagnostic that names the permission and the call — never a
+silent no-op and never a throw.
+
+### 6.1 Aborting the turn and the cancellation signal (slot 3)
+
+`requestTurnAbort()` asks the host to stop the current turn. The plugin's own
+long-running work learns that the run was cancelled through the same slot,
+because an abort without a signal would leave that work running after the turn
+is gone:
+
+- the extension context carries `signal`, the running turn's `AbortSignal`
+  (`undefined` while no turn runs);
+- a plugin tool's execution context carries `signal` too (see §7.7), which
+  aborts when the user stops the turn, when a plugin asks for the abort, or when
+  the host abandons it;
+- the user's Stop and `requestTurnAbort` take the same path for plugin work:
+  Electron main cancels that session's plugin invocations, which the sidecar
+  cannot reach on its own, and the runtime emits the ordinary `TURN_ABORTED`
+  terminal event, so the turn is recorded as aborted.
+
 The kernel exposes two more context hooks — `pi-agent-core`'s `transformContext`
 and `prepareNextTurn` — that no plugin can reach yet: the desktop sets only
 `prepareNextTurnWithContext`, and the `context` event above rides that path. A
@@ -528,6 +554,46 @@ abandoned with a diagnostic and the turn proceeds with the unmodified value.
    duration. Parameters are not logged.
 5. `exec` runs in the sidecar with the session's working directory and the
    session's proxy and environment settings.
+6. **Slot 5 — what a tool result may do beyond its content.** An extension
+   tool's `AgentToolResult` may carry `addedToolNames`, `usage`, and
+   `terminate`, and a plugin tool registered through `pi.agent.registerTool`
+   may return the same three fields in its `PluginToolResult`. All three need
+   `runtime.tool.extend`; a plugin without the grant is refused rather than
+   silently trusted, and the refusal is reported as a `permission_denied`
+   diagnostic (extension tools, on the plugin row) or an audit record
+   (`agent.toolResult.extend`, plugin tools, in Electron main):
+   - `addedToolNames` introduces tools. Each name must already be in the
+     session's catalogue — an on-demand tool the model has not activated yet,
+     including another plugin's tool — and becomes available from the next
+     provider request onward. A name outside the catalogue is ignored, and a
+     host tool's result can never introduce one: `addedToolNames` is a slot-5
+     capability and only a plugin holds the slot. An introduced tool is marked
+     where the catalogue is presented: the on-demand list in the model's system
+     prompt, the ToolSearch answer for the turn that activated it, and
+     `getAllTools()` (row field `introducedBy: "plugin"`). The mark follows the
+     tool for as long as the transcript point that introduced it is in context.
+   - `usage` is the call's own spend. It is recorded as its own component of
+     the completed turn (`turn_end.pluginToolUsage` → the turn's recorded usage
+     in host-core), never summed into the model's `inputTokens` /
+     `outputTokens`, so the cost surface can show it as its own line.
+   - `terminate` asks the agent to stop after the current batch. The kernel's
+     rule applies unchanged: it stops only when **every** finalized result in
+     the batch asks for it, so one tool's request never cuts a batch short. A
+     refused plugin's hint is cleared explicitly, because the kernel reads an
+     absent field as "keep the original".
+   A plugin tool's result also opts into the kernel shape by carrying one of
+   these fields: `content` then reaches the model as content instead of a JSON
+   blob. A result without them keeps the previous rendering. All three fields
+   disappear with the plugin: the tools it introduced live in the session's
+   catalogue, which `rebuildToolCatalog` rebuilds from the loaded plugins.
+7. A plugin tool executes in the plugin's own process (spec 04). Its execution
+   context (`PluginToolExecContext`) carries `sessionId`, `turnId`, `mode`,
+   `modelKey`, `thinkingLevel`, `log`, and `signal` — the turn's cancellation
+   token (§6.1). `signal` aborts when the user stops the turn, when a plugin
+   asks for the abort, or when the host abandons the turn; long-running work
+   should pass it to `fetch` or watch it and stop. Every plugin invocation the
+   host still holds is cancelled on plugin unload, on session turn replacement,
+   and on shutdown.
 
 ## 8. Commands
 

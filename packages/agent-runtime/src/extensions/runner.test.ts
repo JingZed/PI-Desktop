@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   REGISTERED_SLOT_PERMISSIONS,
+  TRUSTED_EXTENSION_API_PERMISSIONS,
+  trustedExtensionApiPermission,
   trustedExtensionEventPermission,
   TRUSTED_EXTENSION_EVENT_PERMISSIONS,
   TRUSTED_EXTENSION_HANDLER_TIMEOUT_MS,
@@ -57,12 +59,15 @@ type BridgeLog = {
   ui: TrustedExtensionUiRequest[];
   sessionName?: string;
   userMessages: unknown[];
+  /** Turn aborts the extension asked for through `requestTurnAbort`. */
+  aborts: number;
 };
 
 function fakeBridge(
   answers: Partial<Record<TrustedExtensionUiRequest["kind"], TrustedExtensionUiResponse>> = {},
+  abortSignal?: AbortSignal,
 ): { bridge: TrustedExtensionBridge; log: BridgeLog } {
-  const log: BridgeLog = { commands: [], diagnostics: [], ui: [], userMessages: [] };
+  const log: BridgeLog = { commands: [], diagnostics: [], ui: [], userMessages: [], aborts: 0 };
   const bridge: TrustedExtensionBridge = {
     sessionId: "s1",
     cwd: root,
@@ -71,7 +76,10 @@ function fakeBridge(
     getThinkingLevel: () => "off",
     setThinkingLevel: () => {},
     isIdle: () => true,
-    abort: () => {},
+    getAbortSignal: () => abortSignal,
+    abort: () => {
+      log.aborts += 1;
+    },
     hasPendingMessages: () => false,
     getContextUsage: () => ({ tokens: 1, contextWindow: 10, percent: 10 }),
     compact: () => {},
@@ -519,4 +527,132 @@ export default function (pi: any) {
       }),
     ]);
   });
+
+  it("names each non-event call's slot permission in the same contract as events", () => {
+    // Slot 3 and slot 5 are API-shaped, not event-shaped: an API call has no
+    // event name, so the contract names the call instead (ADR 0291 rule 2).
+    expect(TRUSTED_EXTENSION_API_PERMISSIONS.requestTurnAbort).toBe("runtime.turn.abort");
+    expect(TRUSTED_EXTENSION_API_PERMISSIONS.toolResult).toBe("runtime.tool.extend");
+    expect(trustedExtensionApiPermission("requestTurnAbort")).toBe("runtime.turn.abort");
+    expect(trustedExtensionApiPermission("toolResult")).toBe("runtime.tool.extend");
+    expect(trustedExtensionApiPermission("not_a_call")).toBeUndefined();
+    expect(trustedExtensionApiPermission("constructor")).toBeUndefined();
+    expect(REGISTERED_SLOT_PERMISSIONS).toContain("runtime.turn.abort");
+    expect(REGISTERED_SLOT_PERMISSIONS).toContain("runtime.tool.extend");
+  });
+
+  it("refuses requestTurnAbort without the slot permission and reports it", async () => {
+    const ext = spec(
+      "abort-refused",
+      `export default function (pi: any) {
+  pi.on("session_start", () => {
+    (globalThis as any).__abortResult = pi.requestTurnAbort();
+  });
+}`,
+      // The tier grant the loader recorded; the slot is not in it.
+      ["agent.extension"],
+    );
+    const { bridge, log } = fakeBridge();
+    const runner = new TrustedExtensionRunner({ specs: [ext], bridge });
+    await runner.load();
+
+    expect((globalThis as { __abortResult?: boolean }).__abortResult).toBe(false);
+    delete (globalThis as { __abortResult?: boolean }).__abortResult;
+    // Refused means refused: the turn was not stopped.
+    expect(log.aborts).toBe(0);
+    expect(runner.getDiagnostics()).toEqual([
+      {
+        extensionId: ext.id,
+        kind: "permission_denied",
+        message: "requestTurnAbort was refused: the plugin does not hold runtime.turn.abort",
+        member: "requestTurnAbort",
+        count: 1,
+      },
+    ]);
+  });
+
+  it("aborts the turn through requestTurnAbort once the plugin holds the slot", async () => {
+    const ext = spec(
+      "abort-granted",
+      `export default function (pi: any) {
+  pi.on("session_start", () => {
+    (globalThis as any).__abortResult = pi.requestTurnAbort();
+  });
+}`,
+      ["agent.extension", "runtime.turn.abort"],
+    );
+    const { bridge, log } = fakeBridge();
+    const runner = new TrustedExtensionRunner({ specs: [ext], bridge });
+    await runner.load();
+
+    expect((globalThis as { __abortResult?: boolean }).__abortResult).toBe(true);
+    delete (globalThis as { __abortResult?: boolean }).__abortResult;
+    expect(log.aborts).toBe(1);
+    expect(runner.getDiagnostics()).toEqual([]);
+  });
+
+  it("hands the running turn's cancellation token to the extension context", async () => {
+    // Slot 3's second half: abort without a signal leaves plugin work running
+    // after the user stopped, so the token is part of the same slot.
+    const controller = new AbortController();
+    const ext = spec(
+      "signal",
+      `export default function (pi: any) {
+  pi.on("session_start", (_event: any, ctx: any) => {
+    (globalThis as any).__ctxSignal = ctx.signal;
+  });
+}`,
+    );
+    const { bridge } = fakeBridge({}, controller.signal);
+    const runner = new TrustedExtensionRunner({ specs: [ext], bridge });
+    await runner.load();
+
+    const signal = (globalThis as { __ctxSignal?: AbortSignal }).__ctxSignal;
+    delete (globalThis as { __ctxSignal?: AbortSignal }).__ctxSignal;
+    expect(signal).toBe(controller.signal);
+    expect(signal?.aborted).toBe(false);
+    controller.abort();
+    expect(signal?.aborted).toBe(true);
+  });
+
+  it("gates an extension tool's result capabilities on runtime.tool.extend", async () => {
+    // Slot 5: the result may introduce tools, report spend, and request early
+    // termination only with the grant; the refusal is a diagnostic.
+    const refused = spec(
+      "tool-extend-refused",
+      `export default function (pi: any) {
+  pi.registerTool({
+    name: "fx_extend", description: "", parameters: {},
+    execute: async () => ({ content: [], details: {}, addedToolNames: ["BrowserPreview"], terminate: true }),
+  });
+}`,
+      ["agent.extension"],
+    );
+    const runner = new TrustedExtensionRunner({ specs: [refused], bridge: fakeBridge().bridge });
+    await runner.load();
+
+    expect(runner.toolResultExtensionAllowed("fx_extend")).toBe(false);
+    // A tool that belongs to no extension is the caller's own business.
+    expect(runner.toolResultExtensionAllowed("Read")).toBeUndefined();
+    expect(runner.getDiagnostics()).toEqual([
+      expect.objectContaining({
+        kind: "permission_denied",
+        member: "toolResult:fx_extend",
+        message: "toolResult:fx_extend was refused: the plugin does not hold runtime.tool.extend",
+      }),
+    ]);
+
+    const granted = spec(
+      "tool-extend-granted",
+      `export default function (pi: any) {
+  pi.registerTool({ name: "fx_extend_ok", description: "", parameters: {}, execute: async () => ({ content: [], details: {} }) });
+}`,
+      ["agent.extension", "runtime.tool.extend"],
+    );
+    const runner2 = new TrustedExtensionRunner({ specs: [granted], bridge: fakeBridge().bridge });
+    await runner2.load();
+    expect(runner2.toolResultExtensionAllowed("fx_extend_ok")).toBe(true);
+    expect(runner2.getDiagnostics()).toEqual([]);
+  });
 });
+
