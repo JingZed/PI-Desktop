@@ -175,7 +175,17 @@ export async function startPiHost(config: PiHostConfig, options: { log?: HostLog
     sidecar.setTrustedExtensionBridge({
       publishCommands: () => undefined,
       publishDiagnostics: () => undefined,
-      requestUi: async () => {
+      requestUi: async (params) => {
+        // One reverse-proxy call is not a UI request: slot #1's audit write
+        // (`extensions.rewrites.record`) rides the same channel, and a headless
+        // Host still owns a `plugin_rewrites` store (ADR 0291 rule 5). A
+        // malformed record is refused by host-core with a coded error rather
+        // than dropped; everything else has no window to prompt in.
+        if (isRewriteRecordPayload(params)) {
+          const host = getHost();
+          if (!host) throw new Error("host unavailable");
+          return host.call("plugin.rewrites.record", params as Record<string, unknown>);
+        }
         throw new Error("extension UI is not available on a headless host");
       },
       configureModel: async () => {
@@ -238,6 +248,24 @@ export async function startPiHost(config: PiHostConfig, options: { log?: HostLog
       getHost,
       runtime,
       browseRoot: config.browseRoot,
+      // Slot 11 (ADR 0291 rule 11): announce the moment when it happens. The
+      // notice is fire-and-forget — a session operation never waits on a
+      // plugin — and a failed delivery is logged, not thrown.
+      notifyLifecycle: (notice) => {
+        const sidecar = getSidecar();
+        if (!sidecar) return;
+        const failed = (error: unknown) => {
+          log("warn", "session lifecycle notice failed", {
+            sessionId: notice.sessionId,
+            error: String(error),
+          });
+        };
+        try {
+          void sidecar.call("agent.notifyLifecycle", notice).catch(failed);
+        } catch (error) {
+          failed(error);
+        }
+      },
       disposeSession: async (sessionId) => {
         const sidecar = getSidecar();
         if (!sidecar) return;
@@ -284,4 +312,20 @@ export async function startPiHost(config: PiHostConfig, options: { log?: HostLog
       state.host = null;
     },
   };
+}
+
+/**
+ * Slot #1's record as the runtime hands it over (`extensions.rewrites.record`).
+ * A plain shape check: host-core owns the real validation and answers a
+ * malformed record with a coded error, so this only decides whether the call is
+ * a rewrite write or a UI request.
+ */
+function isRewriteRecordPayload(params: unknown): boolean {
+  if (!params || typeof params !== "object") return false;
+  const candidate = params as Record<string, unknown>;
+  return (
+    candidate.kind === "outgoing_message" ||
+    typeof candidate.targetMessageId === "string" ||
+    (typeof candidate.before === "string" && typeof candidate.after === "string")
+  );
 }

@@ -298,6 +298,10 @@ export const fr = {
     "revisionPrev": "Version précédente",
     "revisionNext": "Version suivante",
     "revisionPager": "{{current}} / {{total}}",
+    "rewrittenByPlugin": "Réécrit par {{name}}",
+    "rewriteModelVersion": "Ce que le modèle a reçu",
+    "rewritePartial":
+      "L'enregistrement a été tronqué, une partie de la modification n'est pas affichée.",
     "usageContextLabel": "Contexte",
     "usageContextLeft": "{{count}} jetons restants",
     "usageContextSpent": "{{count}} jetons utilisés",

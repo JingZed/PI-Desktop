@@ -433,7 +433,16 @@ export function useAppShellRuntime() {
   useEffect(() => {
     if (!ready) return;
     void useAppStore.getState().refreshPlugins();
-    return api.onPluginChanged(() => void useAppStore.getState().refreshPlugins());
+    return api.onPluginChanged((event) => {
+      void useAppStore.getState().refreshPlugins();
+      // Slot #1 stored a rewrite (ADR 0291 rule 5): re-read that session's
+      // audit records so the rewritten row can show its badge without a
+      // session switch. The record itself lives in host-core; this event is
+      // only the signal that there is something new to read.
+      if (event.reason === "agentExtensionRewrite" && event.sessionId) {
+        void useAppStore.getState().refreshPluginRewrites(event.sessionId);
+      }
+    });
   }, [ready]);
 
   // Work panel views are filtered by activation scope, so opening a different

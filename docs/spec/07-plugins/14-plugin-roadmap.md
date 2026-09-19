@@ -109,10 +109,15 @@ Local plugins usable → developer-friendly → marketplace distribution → sig
   the hooks that were already wired — Turn Watch (2), Tool Gate (4) and the
   request hooks of Before Request (6) — keep the behaviour they had; spec 13 §2C
   states per event which hook points the desktop emits today.
-- Not shipped: Before Send (1) — registered and enforced on the mapped `input`
-  event, but the desktop does not emit that hook point yet, so nothing consults
-  it during a turn; Turn Recap (8) and Turn Continue (10) — a registered name
-  with no hook or call behind it; Approval Before (12) — not built.
+- Shipped: Before Send (1) — the runtime's `input` hook fires after Electron main
+  persisted the user's message and before it is queued, honours all three kernel
+  actions, and every rewrite a plugin performs is stored at diff level through
+  the `plugin.rewrites.record` RPC (04-data-storage §4.15) and marked on the
+  message row (ADR 0291 rule 5) — and Session Lifecycle (11) — create, switch,
+  delete and fork are announced informed-only, with the compaction handover
+  keeping its cancel.
+- Not shipped: Turn Recap (8) and Turn Continue (10) — a registered name with no
+  hook or call behind it; Approval Before (12) — not built.
 - Before Request (6) stays out of this cycle in ADR 0291's phasing, and the slot
   set, the per-slot permissions and the order of work are all fixed in
   [ADR 0291](../../adr/0291-runtime-slots-and-their-permissions.md).

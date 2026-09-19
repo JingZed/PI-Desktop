@@ -995,8 +995,10 @@ CREATE INDEX idx_notifications_unread
 
 运行时插槽对"模型收到的内容"所做的每一次改写都按**差分级**记录 —— 改了哪些字符、哪些
 消息、哪些负载字段（ADR 0291 规则 5）。生产者是插槽 #1（`runtime.send.before`，发出的
-消息）和插槽 #6（`runtime.request.before`，系统提示词 / 消息列表 / 请求负载），**两者都
-尚未实现**：表、上限和读取路径先行落地，因为 ADR 把审计当作改写能力的前提而不是后续工作。
+消息）与插槽 #6（`runtime.request.before`，系统提示词 / 消息列表 / 请求负载）。插槽 #1
+已实现：agent 运行时的发送钩子把两段文本交给宿主，`plugin.rewrites.record` 存入差异，
+transcript 在对应行标出（"由插件 X 改写"），展开可见改动片段。插槽 #6 尚未实现：存储与
+读取已先共用同一张表和同一组上限，因为 ADR 把审计当作改写能力的前提而不是后续工作。
 
 ```sql
 CREATE TABLE plugin_rewrites (
@@ -1036,6 +1038,10 @@ CREATE INDEX idx_plugin_rewrites_turn
 `summary.beforeBytes` / `summary.afterBytes` 按**完整**对象计量，因此 body 被截断时摘要仍然精确。
 
 上限在此声明，并在写入边界（`plugin_rewrites::record`）强制执行；没有其他代码写这张表：
+
+写入：`plugin.rewrites.record` 是唯一的写入 RPC，它接受运行时
+`extensions.rewrites.record` 的记录（会话、可选的回合、插件、发出的消息 id 与两段文本），
+在宿主侧计算字符差异；载荷不合法返回 `INVALID_PARAMS`，标识符超长返回 `LIMIT_EXCEEDED`。
 
 | 上限 | 取值 | 边界行为 |
 |---|---|---|

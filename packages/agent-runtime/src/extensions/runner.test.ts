@@ -5,10 +5,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   REGISTERED_SLOT_PERMISSIONS,
   TRUSTED_EXTENSION_API_PERMISSIONS,
+  TRUSTED_EXTENSION_RECAP_DEFAULT_LIMIT,
+  TRUSTED_EXTENSION_RECAP_MAX_LIMIT,
+  TRUSTED_EXTENSION_SESSION_READ_PERMISSION,
   trustedExtensionApiPermission,
+  trustedExtensionApiScopePermission,
   trustedExtensionEventPermission,
   TRUSTED_EXTENSION_EVENT_PERMISSIONS,
   TRUSTED_EXTENSION_HANDLER_TIMEOUT_MS,
+  type TrustedExtensionContinuationRequest,
+  type TrustedExtensionTurnFacts,
 } from "@pi-desktop/shared";
 import {
   clearTrustedExtensionCache,
@@ -61,13 +67,81 @@ type BridgeLog = {
   userMessages: unknown[];
   /** Turn aborts the extension asked for through `requestTurnAbort`. */
   aborts: number;
+  /** One entry per `turnFacts` call: what the plugin asked for. */
+  factsQueries: Array<{ turnId?: string; limit?: number }>;
+  /** One entry per `recapSession` call: the window the plugin asked for. */
+  sessionRecaps: Array<{ limit: number }>;
+  /** One entry per `continueTurn` call, plugin identity included. */
+  continuations: TrustedExtensionContinuationRequest[];
+};
+
+/**
+ * A turn-facts answer shaped like host-core's `turn.facts` reply, so a test can
+ * assert the plugin's answer is the host's object and not a re-derived count.
+ */
+function factsFixture(): TrustedExtensionTurnFacts {
+  return {
+    sessionId: "s1",
+    turnId: "turn-1",
+    status: "completed",
+    providerId: "local",
+    modelId: "local-model",
+    errorCode: null,
+    startedAt: "2026-09-18T10:00:00.000Z",
+    endedAt: "2026-09-18T10:00:02.000Z",
+    durationMs: 2_000,
+    tokens: { input: 120, output: 30, total: 150 },
+    usage: { inputTokens: 120, outputTokens: 30, totalTokens: 150 },
+    pluginToolUsage: { totalTokens: 12 },
+    toolCalls: {
+      total: 3,
+      ok: 2,
+      failed: 1,
+      byTool: [
+        { toolName: "Bash", calls: 1, ok: 0, failed: 1, errorCodes: ["TOOL_TIMEOUT"] },
+        { toolName: "Read", calls: 2, ok: 2, failed: 0, errorCodes: [] },
+      ],
+    },
+    files: [
+      {
+        sessionId: "s1",
+        sessionTitle: null,
+        path: "src/a.ts",
+        op: "edit",
+        turnId: "turn-1",
+        updatedAt: "2026-09-18T10:00:01.000Z",
+      },
+    ],
+    filesTruncated: false,
+  };
+}
+
+type SlotAnswers = {
+  /** Facts the host answers `turn.facts` with. */
+  facts?: TrustedExtensionTurnFacts;
+  /** A host failure the fake `turn.facts` read rejects with. */
+  factsError?: Error;
+  /** Transcript the host answers a session recap with. */
+  session?: { messages: unknown[]; truncated: boolean };
+  /** Id of the queued turn the host answers a continuation with. */
+  queuedTurnId?: string;
 };
 
 function fakeBridge(
   answers: Partial<Record<TrustedExtensionUiRequest["kind"], TrustedExtensionUiResponse>> = {},
   abortSignal?: AbortSignal,
+  slots: SlotAnswers = {},
 ): { bridge: TrustedExtensionBridge; log: BridgeLog } {
-  const log: BridgeLog = { commands: [], diagnostics: [], ui: [], userMessages: [], aborts: 0 };
+  const log: BridgeLog = {
+    commands: [],
+    diagnostics: [],
+    ui: [],
+    userMessages: [],
+    aborts: 0,
+    factsQueries: [],
+    sessionRecaps: [],
+    continuations: [],
+  };
   const bridge: TrustedExtensionBridge = {
     sessionId: "s1",
     cwd: root,
@@ -97,6 +171,19 @@ function fakeBridge(
     waitForIdle: async () => {},
     newSession: async () => ({ cancelled: false }),
     fork: async () => ({ cancelled: false }),
+    turnFacts: async (input) => {
+      log.factsQueries.push(input);
+      if (slots.factsError) throw slots.factsError;
+      return slots.facts ?? factsFixture();
+    },
+    recapSession: async ({ limit }) => {
+      log.sessionRecaps.push({ limit });
+      return slots.session ?? { messages: [], truncated: false };
+    },
+    continueTurn: async (input) => {
+      log.continuations.push(input);
+      return { queuedTurnId: slots.queuedTurnId ?? "queued-turn-1" };
+    },
     requestUi: async (_ext, request) => {
       log.ui.push(request);
       return answers[request.kind] ?? ({ kind: request.kind } as TrustedExtensionUiResponse);
@@ -531,6 +618,39 @@ export default function (pi: any) {
     ]);
   });
 
+  it("names each non-event call's slot permission in the same contract as events", () => {
+    // Slots 3, 5, 8, 9 and 10 are API-shaped, not event-shaped: an API call has
+    // no event name, so the contract names the call instead (ADR 0291 rule 2).
+    expect(TRUSTED_EXTENSION_API_PERMISSIONS.requestTurnAbort).toBe("runtime.turn.abort");
+    expect(TRUSTED_EXTENSION_API_PERMISSIONS.toolResult).toBe("runtime.tool.extend");
+    expect(TRUSTED_EXTENSION_API_PERMISSIONS.turnFacts).toBe("runtime.turn.facts");
+    expect(TRUSTED_EXTENSION_API_PERMISSIONS.recap).toBe("runtime.turn.recap");
+    expect(TRUSTED_EXTENSION_API_PERMISSIONS.continueTurn).toBe("runtime.turn.continue");
+    expect(trustedExtensionApiPermission("requestTurnAbort")).toBe("runtime.turn.abort");
+    expect(trustedExtensionApiPermission("toolResult")).toBe("runtime.tool.extend");
+    expect(trustedExtensionApiPermission("turnFacts")).toBe("runtime.turn.facts");
+    expect(trustedExtensionApiPermission("recap")).toBe("runtime.turn.recap");
+    expect(trustedExtensionApiPermission("continueTurn")).toBe("runtime.turn.continue");
+    expect(trustedExtensionApiPermission("not_a_call")).toBeUndefined();
+    expect(trustedExtensionApiPermission("constructor")).toBeUndefined();
+    // The scope, not the call, decides whether a second right is needed: a
+    // whole-session recap reads conversation content (rule 7).
+    expect(trustedExtensionApiScopePermission("recap", "session")).toBe(
+      TRUSTED_EXTENSION_SESSION_READ_PERMISSION,
+    );
+    expect(trustedExtensionApiScopePermission("recap", "turn")).toBeUndefined();
+    expect(trustedExtensionApiScopePermission("turnFacts", "session")).toBeUndefined();
+    for (const name of [
+      "runtime.turn.abort",
+      "runtime.tool.extend",
+      "runtime.turn.facts",
+      "runtime.turn.recap",
+      "runtime.turn.continue",
+      TRUSTED_EXTENSION_SESSION_READ_PERMISSION,
+    ]) {
+      expect(REGISTERED_SLOT_PERMISSIONS as readonly string[]).toContain(name);
+    }
+  });
   it("runs the tool_call handler once the plugin holds runtime.tool.gate", async () => {
     const ext = spec(
       "tool-call-granted",
@@ -580,19 +700,6 @@ export default function (pi: any) {
         message: `handler exceeded ${TRUSTED_EXTENSION_HANDLER_TIMEOUT_MS}ms`,
       }),
     ]);
-  });
-
-  it("names each non-event call's slot permission in the same contract as events", () => {
-    // Slot 3 and slot 5 are API-shaped, not event-shaped: an API call has no
-    // event name, so the contract names the call instead (ADR 0291 rule 2).
-    expect(TRUSTED_EXTENSION_API_PERMISSIONS.requestTurnAbort).toBe("runtime.turn.abort");
-    expect(TRUSTED_EXTENSION_API_PERMISSIONS.toolResult).toBe("runtime.tool.extend");
-    expect(trustedExtensionApiPermission("requestTurnAbort")).toBe("runtime.turn.abort");
-    expect(trustedExtensionApiPermission("toolResult")).toBe("runtime.tool.extend");
-    expect(trustedExtensionApiPermission("not_a_call")).toBeUndefined();
-    expect(trustedExtensionApiPermission("constructor")).toBeUndefined();
-    expect(REGISTERED_SLOT_PERMISSIONS).toContain("runtime.turn.abort");
-    expect(REGISTERED_SLOT_PERMISSIONS).toContain("runtime.tool.extend");
   });
 
   it("refuses requestTurnAbort without the slot permission and reports it", async () => {
@@ -810,6 +917,302 @@ export default function (pi: any) {
     // does for these events, which is what makes them informed-only.
     expect(result).toEqual({ cancel: true });
     expect(runner2.getDiagnostics()).toEqual([]);
+  });
+
+  it("refuses turnFacts without runtime.turn.facts and reports it", async () => {
+    const ext = spec(
+      "facts-refused",
+      `export default function (pi: any) {
+  pi.on("session_start", async () => {
+    (globalThis as any).__facts = await pi.turnFacts();
+  });
+}`,
+      // The tier grant the loader recorded; the slot is not in it (ADR 0291
+      // rule 2: `agent.extension` never implies a slot permission).
+      ["agent.extension"],
+    );
+    const { bridge, log } = fakeBridge();
+    const runner = new TrustedExtensionRunner({ specs: [ext], bridge });
+    await runner.load();
+
+    expect((globalThis as { __facts?: unknown }).__facts).toBeUndefined();
+    delete (globalThis as { __facts?: unknown }).__facts;
+    // Refused means the host was never asked.
+    expect(log.factsQueries).toEqual([]);
+    expect(runner.getDiagnostics()).toEqual([
+      {
+        extensionId: ext.id,
+        kind: "permission_denied",
+        message: "turnFacts was refused: the plugin does not hold runtime.turn.facts",
+        member: "turnFacts",
+        count: 1,
+      },
+    ]);
+  });
+
+  it("answers turnFacts with the host's own facts and asks for the named turn", async () => {
+    // Slot 9: the answer is the host's object, passed through unchanged — a
+    // count the plugin assembled from events it happened to receive is a
+    // different number, which is what the slot exists to avoid.
+    const facts = factsFixture();
+    const ext = spec(
+      "facts-granted",
+      `export default function (pi: any) {
+  pi.on("session_start", async () => {
+    (globalThis as any).__facts = await pi.turnFacts({ turnId: "turn-1", limit: 5 });
+  });
+}`,
+      ["agent.extension", "runtime.turn.facts"],
+    );
+    const { bridge, log } = fakeBridge({}, undefined, { facts });
+    const runner = new TrustedExtensionRunner({ specs: [ext], bridge });
+    await runner.load();
+
+    const seen = (globalThis as { __facts?: TrustedExtensionTurnFacts }).__facts;
+    delete (globalThis as { __facts?: TrustedExtensionTurnFacts }).__facts;
+    expect(seen).toBe(facts);
+    expect(seen?.toolCalls.total).toBe(3);
+    expect(seen?.tokens.total).toBe(150);
+    expect(seen?.pluginToolUsage).toEqual({ totalTokens: 12 });
+    expect(seen?.filesTruncated).toBe(false);
+    expect(log.factsQueries).toEqual([{ turnId: "turn-1", limit: 5 }]);
+    expect(runner.getDiagnostics()).toEqual([]);
+  });
+
+  it("reports a turn the host cannot answer instead of inventing zeroes", async () => {
+    // A turn the host never recorded is an error there (`TURN_NOT_FOUND`), not
+    // an empty answer: the plugin gets `undefined` and the reason is visible.
+    const ext = spec(
+      "facts-missing",
+      `export default function (pi: any) {
+  pi.on("session_start", async () => {
+    (globalThis as any).__facts = await pi.turnFacts({ turnId: "turn-that-never-was" });
+  });
+}`,
+      ["agent.extension", "runtime.turn.facts"],
+    );
+    const { bridge } = fakeBridge({}, undefined, {
+      factsError: new Error("turn not found"),
+    });
+    const runner = new TrustedExtensionRunner({ specs: [ext], bridge });
+    await runner.load();
+
+    expect((globalThis as { __facts?: unknown }).__facts).toBeUndefined();
+    delete (globalThis as { __facts?: unknown }).__facts;
+    expect(runner.getDiagnostics()).toEqual([
+      expect.objectContaining({
+        kind: "handler_error",
+        message: "turn not found",
+        member: "turnFacts",
+      }),
+    ]);
+  });
+
+  it("answers a turn recap with the host's facts and names the missing text", async () => {
+    // Slot 8, turn scope: the numbers are the host's, and the conversation text
+    // of one turn has no host read path, so it is marked unavailable rather
+    // than returned empty.
+    const facts = factsFixture();
+    const ext = spec(
+      "recap-turn",
+      `export default function (pi: any) {
+  pi.on("session_start", async () => {
+    (globalThis as any).__recap = await pi.recap();
+  });
+}`,
+      ["agent.extension", "runtime.turn.recap"],
+    );
+    const { bridge, log } = fakeBridge({}, undefined, { facts });
+    const runner = new TrustedExtensionRunner({ specs: [ext], bridge });
+    await runner.load();
+
+    const recap = (globalThis as { __recap?: unknown }).__recap;
+    delete (globalThis as { __recap?: unknown }).__recap;
+    expect(recap).toEqual({
+      scope: "turn",
+      sessionId: "s1",
+      turnId: "turn-1",
+      facts,
+      messages: null,
+      messagesUnavailable: "no-host-turn-read",
+    });
+    // No transcript read was attempted for a turn scope.
+    expect(log.sessionRecaps).toEqual([]);
+    expect(runner.getDiagnostics()).toEqual([]);
+  });
+
+  it("refuses a whole-session recap without runtime.session.read", async () => {
+    // Rule 7: reading a session's content is its own permission, so the slot
+    // grant alone is not enough for a whole-session read.
+    const ext = spec(
+      "recap-session-refused",
+      `export default function (pi: any) {
+  pi.on("session_start", async () => {
+    (globalThis as any).__recap = await pi.recap({ scope: "session" });
+  });
+}`,
+      ["agent.extension", "runtime.turn.recap"],
+    );
+    const { bridge, log } = fakeBridge();
+    const runner = new TrustedExtensionRunner({ specs: [ext], bridge });
+    await runner.load();
+
+    expect((globalThis as { __recap?: unknown }).__recap).toBeUndefined();
+    delete (globalThis as { __recap?: unknown }).__recap;
+    expect(log.sessionRecaps).toEqual([]);
+    expect(runner.getDiagnostics()).toEqual([
+      {
+        extensionId: ext.id,
+        kind: "permission_denied",
+        message:
+          "recap:session was refused: the plugin does not hold runtime.session.read",
+        member: "recap:session",
+        count: 1,
+      },
+    ]);
+  });
+
+  it("reads the session transcript once both recap grants are held", async () => {
+    const session = {
+      messages: [{ id: "u1", role: "user", content: "hello" }],
+      truncated: true,
+    };
+    const ext = spec(
+      "recap-session-granted",
+      `export default function (pi: any) {
+  pi.on("session_start", async () => {
+    (globalThis as any).__recap = await pi.recap({ scope: "session", limit: 4000 });
+  });
+}`,
+      ["agent.extension", "runtime.turn.recap", "runtime.session.read"],
+    );
+    const { bridge, log } = fakeBridge({}, undefined, { session });
+    const runner = new TrustedExtensionRunner({ specs: [ext], bridge });
+    await runner.load();
+
+    const recap = (globalThis as { __recap?: unknown }).__recap;
+    delete (globalThis as { __recap?: unknown }).__recap;
+    expect(recap).toEqual({
+      scope: "session",
+      sessionId: "s1",
+      messages: session.messages,
+      truncated: true,
+    });
+    // The window is clamped before the host is asked, so one call cannot pull
+    // an unbounded history.
+    expect(log.sessionRecaps).toEqual([{ limit: TRUSTED_EXTENSION_RECAP_MAX_LIMIT }]);
+    expect(runner.getDiagnostics()).toEqual([]);
+  });
+
+  it("asks the host for a default transcript window and clamps nonsense", async () => {
+    const ext = spec(
+      "recap-limits",
+      `export default function (pi: any) {
+  pi.on("session_start", async () => {
+    const g = globalThis as any;
+    g.__defaults = await pi.recap({ scope: "session" });
+    g.__clamped = await pi.recap({ scope: "session", limit: 0 });
+  });
+}`,
+      ["agent.extension", "runtime.turn.recap", "runtime.session.read"],
+    );
+    const { bridge, log } = fakeBridge();
+    const runner = new TrustedExtensionRunner({ specs: [ext], bridge });
+    await runner.load();
+    delete (globalThis as { __defaults?: unknown }).__defaults;
+    delete (globalThis as { __clamped?: unknown }).__clamped;
+
+    expect(log.sessionRecaps).toEqual([
+      { limit: TRUSTED_EXTENSION_RECAP_DEFAULT_LIMIT },
+      { limit: 1 },
+    ]);
+    expect(runner.getDiagnostics()).toEqual([]);
+  });
+
+  it("refuses continueTurn without runtime.turn.continue and reports it", async () => {
+    const ext = spec(
+      "continue-refused",
+      `export default function (pi: any) {
+  pi.on("session_start", async () => {
+    (globalThis as any).__continued = await pi.continueTurn("keep going");
+  });
+}`,
+      ["agent.extension"],
+    );
+    const { bridge, log } = fakeBridge();
+    const runner = new TrustedExtensionRunner({ specs: [ext], bridge });
+    await runner.load();
+
+    expect((globalThis as { __continued?: unknown }).__continued).toBeUndefined();
+    delete (globalThis as { __continued?: unknown }).__continued;
+    // No turn was queued: a refusal is not a quiet continuation.
+    expect(log.continuations).toEqual([]);
+    expect(runner.getDiagnostics()).toEqual([
+      {
+        extensionId: ext.id,
+        kind: "permission_denied",
+        message:
+          "continueTurn was refused: the plugin does not hold runtime.turn.continue",
+        member: "continueTurn",
+        count: 1,
+      },
+    ]);
+  });
+
+  it("starts another turn through the host queue and carries the plugin's identity", async () => {
+    // Slot 10: the host owns the queue, so the continuation is a real durable
+    // turn. The request names the plugin that asked, because only the caller
+    // knows it (ADR 0289); the queued turn's id comes back from the host.
+    const ext = spec(
+      "continue-granted",
+      `export default function (pi: any) {
+  pi.on("session_start", async () => {
+    (globalThis as any).__continued = await pi.continueTurn({ message: "finish the check" });
+  });
+}`,
+      ["agent.extension", "runtime.turn.continue"],
+    );
+    const { bridge, log } = fakeBridge({}, undefined, { queuedTurnId: "queued-turn-7" });
+    const runner = new TrustedExtensionRunner({ specs: [ext], bridge });
+    await runner.load();
+
+    const continued = (globalThis as { __continued?: unknown }).__continued;
+    delete (globalThis as { __continued?: unknown }).__continued;
+    expect(continued).toEqual({ queuedTurnId: "queued-turn-7" });
+    expect(log.continuations).toEqual([
+      { message: "finish the check", pluginId: ext.id, pluginLabel: "continue-granted" },
+    ]);
+    expect(runner.getDiagnostics()).toEqual([]);
+  });
+
+  it("refuses a continuation with nothing to say instead of queueing it", async () => {
+    const ext = spec(
+      "continue-empty",
+      `export default function (pi: any) {
+  pi.on("session_start", async () => {
+    const g = globalThis as any;
+    g.__blank = await pi.continueTurn("   ");
+    g.__empty = await pi.continueTurn({});
+  });
+}`,
+      ["agent.extension", "runtime.turn.continue"],
+    );
+    const { bridge, log } = fakeBridge();
+    const runner = new TrustedExtensionRunner({ specs: [ext], bridge });
+    await runner.load();
+    delete (globalThis as { __blank?: unknown }).__blank;
+    delete (globalThis as { __empty?: unknown }).__empty;
+
+    expect(log.continuations).toEqual([]);
+    // Two calls, two members, one diagnostic kind each: the failure is visible.
+    expect(runner.getDiagnostics()).toEqual([
+      expect.objectContaining({
+        kind: "handler_error",
+        member: "continueTurn",
+        message: "continueTurn needs a message to continue with",
+        count: 2,
+      }),
+    ]);
   });
 });
 

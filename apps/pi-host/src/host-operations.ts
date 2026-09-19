@@ -13,6 +13,7 @@ import {
   type RuntimeService,
 } from "@pi-desktop/host-runtime";
 import type { RacpHostOperations, RacpProjectCatalog, RacpSessionCatalog, RacpWorkspaceAccess } from "@pi-desktop/racp";
+import type { TrustedExtensionSessionLifecycleNotice } from "@pi-desktop/shared";
 import type { RacpProjectSummary } from "@pi-desktop/shared";
 
 /** A project row as host-core lists it. */
@@ -44,6 +45,17 @@ export type HostOperationsDeps = {
   revokeDevice?: (deviceId: string) => Promise<boolean>;
   /** Root the folder picker may not leave; defaults to the user's home directory. */
   browseRoot?: string;
+  /**
+   * Slot 11 (ADR 0291 rule 11): tell a session's plugins about a moment only
+   * the Host observes. Notices are informed-only and fire-and-forget — a
+   * session operation never waits on a plugin — and a headless Host has the
+   * create / fork / delete moments but no switch moment: RACP has no
+   * "open session" operation, so a client switching its own view never tells
+   * the Host that anything changed.
+   */
+  notifyLifecycle?: (
+    notice: Exclude<TrustedExtensionSessionLifecycleNotice, { change: "switch" }>,
+  ) => void;
 };
 
 function requireHost(getHost: () => HostRpc | null): HostRpc {
@@ -105,6 +117,9 @@ export function createSessionCatalog(deps: HostOperationsDeps): RacpSessionCatal
         })
         .catch(hostError);
       if (!result.session) throw new RacpError("INTERNAL", "session.create returned no session");
+      // The created session has no runtime yet, so the sessions loaded right
+      // now are the ones that hear about it (ADR 0291 rule 11).
+      deps.notifyLifecycle?.({ change: "created", sessionId: result.session.id });
       if (input.permissionMode) {
         await host
           .call("session.configure", { id: result.session.id, mode: result.session.mode ?? input.mode ?? "agent", permissionMode: input.permissionMode })
@@ -130,6 +145,15 @@ export function createSessionCatalog(deps: HostOperationsDeps): RacpSessionCatal
     },
     async fork(sessionId, input) {
       const host = requireHost(getHost);
+      // The source session is told before the child exists, which is what
+      // `session_before_fork` means here. Informed-only: a plugin cannot
+      // cancel or delay the fork (ADR 0291 rule 11).
+      deps.notifyLifecycle?.({
+        change: "fork",
+        sessionId,
+        ...(input.throughMessageId ? { entryId: input.throughMessageId } : {}),
+        position: "before",
+      });
       const result = await host
         .call<{ session?: HostSessionRecord | null }>("session.fork", {
           sessionId,
@@ -146,6 +170,9 @@ export function createSessionCatalog(deps: HostOperationsDeps): RacpSessionCatal
     async delete(sessionId) {
       if (deps.runtime.isBusy(sessionId)) throw new RacpError("CONFLICT", "the session has an active turn");
       await requireHost(getHost).call("session.delete", { id: sessionId }).catch(hostError);
+      // The session's own plugin hears about the delete while its runtime is
+      // still there to answer (ADR 0291 rule 11).
+      deps.notifyLifecycle?.({ change: "deleted", sessionId });
       await deps.disposeSession?.(sessionId).catch(() => undefined);
     },
     async compact(sessionId) {

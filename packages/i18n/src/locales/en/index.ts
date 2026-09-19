@@ -310,6 +310,10 @@ export const en = {
     revisionPrev: "Previous version",
     revisionNext: "Next version",
     revisionPager: "{{current}} / {{total}}",
+    rewrittenByPlugin: "Rewritten by {{name}}",
+    rewriteModelVersion: "What the model received",
+    rewritePartial:
+      "The record was capped, so part of the rewrite is not shown.",
     usageContextLabel: "Context",
     usageContextLeft: "{{count}} tokens left",
     usageContextSpent: "{{count}} tokens used",

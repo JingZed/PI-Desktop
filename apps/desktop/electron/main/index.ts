@@ -536,6 +536,23 @@ const agentExtensions = new AgentExtensionBridge({
   },
   onToast: (message) => sendToRenderer(IPC.event.toast, { message }),
   onStatus: (event) => sendToRenderer(IPC.event.extensionsStatus, event),
+  /**
+   * Slot #1 (ADR 0291 rule 5): the runtime hands over a rewrite it performed,
+   * host-core owns `plugin_rewrites` and computes the diff, and the renderer is
+   * told afterwards so the rewritten row can show its badge without waiting for
+   * the next session read. A write that fails rejects here, which the runtime
+   * reports once per session — an un-audited rewrite is never silent.
+   */
+  recordRewrite: async (record) => {
+    if (!host) throw new Error("host unavailable");
+    const stored = await host.call<{ id: number }>("plugin.rewrites.record", record);
+    sendToRenderer(IPC.event.pluginChanged, {
+      reason: "agentExtensionRewrite",
+      pluginId: record.pluginId,
+      sessionId: record.sessionId,
+    });
+    return stored;
+  },
 });
 
 const logger = new Logger(

@@ -129,15 +129,16 @@ ADR 0291 要建的每一个运行时槽位都已注册并受门禁。agent sidec
 明确不建的那个槽位：没有事件映射到它，也没有权限表持有它。修改工具调用的参数不是槽位，
 且已被永久排除（ADR 0291 规则 4）：`tool_call` 处理器只能带理由阻止，别的都不能做。
 
-有些已映射事件挂在桌面尚未触发的钩子点上（`input`、`project_trust`、`resources_discover`、
-`session_before_fork`、`model_select`、`thinking_level_select`）。它们的权限按映射关系
-强制执行，因此钩子点一接线门禁就已就位；在那之前没有处理器会运行，因为事件根本不会触发。
+有些已映射事件挂在桌面尚未触发的钩子点上（`project_trust`、`resources_discover`、
+`model_select`、`thinking_level_select`）。它们的权限按映射关系强制执行，因此钩子点一接线
+门禁就已就位；在那之前没有处理器会运行，因为事件根本不会触发。会话生命周期通告正好相反：
+`session_before_switch`、`session_before_fork` 与 `session_lifecycle` 会触发，且为仅告知，
+因此调用方会忽略门禁本会接纳的结果（ADR 0291 规则 11）。
 
 与权限问题无关的另一件事：受信任扩展 sidecar 的结果型事件集合
-（`packages/agent-runtime/src/extensions/runner.ts:96-110`）把 30 秒处理器预算给了
-桌面从不触发的事件（`project_trust`、`resources_discover`、`session_before_fork`、
-`input`），并把 `message_end` 计为结果型事件，尽管桌面的转发路径会丢弃该结果。
-这是 sidecar 侧需要代码修复的缺陷；不涉及任何权限或信任决定。
+（`packages/agent-runtime/src/extensions/runner.ts:116-130`）把 30 秒处理器预算给了结果会被
+忽略的事件：按设计仅告知的生命周期通告（ADR 0291 规则 11），以及 `message_end` —— 桌面的
+转发路径会丢弃其结果。该预算正是防止停滞的处理器一直占用通知循环；不涉及任何权限或信任决定。
 
 ## 3. 权限依赖
 

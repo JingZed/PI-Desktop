@@ -169,6 +169,31 @@ export function registerSessionIpc({
   };
 
   /**
+   * The session's outgoing-message rewrites (ADR 0291 rule 5). The records live
+   * in host-core; this is only the transport that lets the transcript mark a
+   * rewritten row. A failed read warns instead of failing the session read: the
+   * audit trail is still in the store, so the next read marks the row.
+   */
+  const readOutgoingRewrites = async (
+    hostProcess: HostProcess,
+    sessionId: string,
+  ): Promise<unknown[]> => {
+    try {
+      const result = await hostProcess.call<{ rewrites?: unknown[] }>(
+        "plugin.rewrites.list",
+        { sessionId, kind: "outgoing_message", limit: 200 },
+      );
+      return Array.isArray(result?.rewrites) ? result.rewrites : [];
+    } catch (error) {
+      logger.app("plugin", "warn", "rewrite audit read failed", {
+        sessionId,
+        data: String(error),
+      });
+      return [];
+    }
+  };
+
+  /**
    * when it is a change, so the previous session is what receives
    * `session_before_switch` — the plugin of a session that is being left is the
    * one with state to flush.
@@ -363,9 +388,20 @@ export function registerSessionIpc({
         }),
         sessionCapabilityContext(),
       ]);
-      return result.session
-        ? { ...result, session: enrichSession(result.session, providers, defaults) }
-        : result;
+      if (!result.session) return result;
+      // A full read also carries the session's outgoing-message rewrites, which
+      // is what the transcript row badge reads (ADR 0291 rule 5). Paged reads
+      // stay as they are: they answer a different question, and the badge does
+      // not change between pages.
+      const paged =
+        Number.isInteger(request.messageBefore) ||
+        (typeof request.messageAround === "string" && request.messageAround.trim() !== "");
+      const rewrites = paged ? undefined : await readOutgoingRewrites(host, id);
+      return {
+        ...result,
+        session: enrichSession(result.session, providers, defaults),
+        ...(rewrites ? { rewrites } : {}),
+      };
     },
   );
   handle(IPC.invoke.sessionCollaboration, async (input?: { sessionId?: unknown }) => {

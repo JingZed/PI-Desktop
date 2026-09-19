@@ -264,6 +264,76 @@ test("ui requests: notify and status pass through; prompts round-trip, queue per
   await assert.rejects(headless.requestUi(envelope({ kind: "input", title: "x" })), (err) => err.errorCode === "UNSUPPORTED");
 });
 
+test("slot 1's audit write is forwarded through the bridge, and a malformed record is refused", async () => {
+  const seen = [];
+  const { b } = bridge({
+    recordRewrite: async (record) => {
+      seen.push(record);
+      return { id: 7 };
+    },
+  });
+  // The runtime hands the record over as `extensions.rewrites.record`; the
+  // bridge is the boundary that decides it is a rewrite and not a UI envelope.
+  const answer = await b.requestUi({
+    sessionId: "s1",
+    turnId: "t1",
+    pluginId: "acme.sender",
+    pluginLabel: "Acme Sender",
+    kind: "outgoing_message",
+    targetMessageId: "m-1",
+    before: "hello",
+    after: "hello there",
+  });
+  assert.deepEqual(answer, { kind: "rewriteRecorded", id: 7 });
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].pluginLabel, "Acme Sender");
+  assert.equal(seen[0].targetMessageId, "m-1");
+
+  // A plugin label the runtime omitted falls back to the id the store keeps.
+  await b.requestUi({
+    sessionId: "s1",
+    pluginId: "acme.sender",
+    kind: "outgoing_message",
+    targetMessageId: "m-2",
+    before: "a",
+    after: "b",
+  });
+  assert.equal(seen[1].pluginLabel, "acme.sender");
+  assert.equal(seen[1].turnId, undefined);
+
+  // Malformed records fail loudly and are never forwarded: a silently dropped
+  // audit write is exactly what ADR 0291 rule 5 forbids.
+  for (const record of [
+    { sessionId: "s1", pluginId: "acme.sender", kind: "system_prompt", targetMessageId: "m-1", before: "a", after: "b" },
+    { sessionId: "s1", pluginId: "acme.sender", kind: "outgoing_message", targetMessageId: "m-1", before: "a", after: 7 },
+    { sessionId: "s1", pluginId: "", kind: "outgoing_message", targetMessageId: "m-1", before: "a", after: "b" },
+    { sessionId: "s1", pluginId: "acme.sender", kind: "outgoing_message", before: "a", after: "b" },
+    { sessionId: "s1", turnId: 12, pluginId: "acme.sender", kind: "outgoing_message", targetMessageId: "m-1", before: "a", after: "b" },
+  ]) {
+    await assert.rejects(
+      b.requestUi(record),
+      (error) => error.errorCode === "INVALID_ARGUMENT",
+      JSON.stringify(record),
+    );
+  }
+  assert.equal(seen.length, 2, "a refused record never reaches the store");
+});
+
+test("a bridge with no audit store refuses the record instead of accepting it", async () => {
+  const { b } = bridge();
+  await assert.rejects(
+    b.requestUi({
+      sessionId: "s1",
+      pluginId: "acme.sender",
+      kind: "outgoing_message",
+      targetMessageId: "m-1",
+      before: "a",
+      after: "b",
+    }),
+    (error) => error.errorCode === "UNSUPPORTED",
+  );
+});
+
 test("importing a pi extension directory or file generates a plugin holding agent.extension", () => {
   const root = mkdtempSync(join(tmpdir(), "pi-ax-import-"));
   const importRoot = join(root, "imported");

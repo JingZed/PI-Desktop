@@ -1098,11 +1098,14 @@ CREATE INDEX idx_notifications_unread
 
 Every rewrite a runtime slot performs on what the model receives is recorded at
 **diff level** — which characters, which messages, which payload fields changed
-(ADR 0291 rule 5). Slot #1 (`runtime.send.before`, the outgoing message) and
-slot #6 (`runtime.request.before`, system prompt / message list / request
-payload) are the producers, and **neither is built yet**: the table, its caps,
-and the read path exist first, because the ADR makes the audit a prerequisite of
-the rewrite capability rather than a follow-up.
+(ADR 0291 rule 5). Slot #1 (`runtime.send.before`, the outgoing message) is the
+producer that exists: the agent runtime's send hook hands the two texts to the
+host, `plugin.rewrites.record` stores the diff, and the transcript marks the row
+("rewritten by plugin X") with the changed span behind the expansion. Slot #6
+(`runtime.request.before`, system prompt / message list / request payload) is
+not built yet; it shares this table and these caps, which is why the storage and
+the reads landed first — the ADR makes the audit a prerequisite of the rewrite
+capability rather than a follow-up.
 
 ```sql
 CREATE TABLE plugin_rewrites (
@@ -1145,6 +1148,12 @@ scalar-value offsets into the original text — and carries the exact `beforeCha
 dotted from the payload root (`$.messages.0.content`), and `request_payload`
 measures `summary.beforeBytes` / `summary.afterBytes` on the **full** objects, so
 the summary stays exact when the body is capped.
+
+Writes: `plugin.rewrites.record` is the one write RPC. It accepts the runtime's
+`extensions.rewrites.record` record (session, optional turn, plugin, the outgoing
+message id and both texts) and computes the character diff on the host side; a
+malformed payload is `INVALID_PARAMS` and an identifier past the cap is
+`LIMIT_EXCEEDED`, never a silent drop.
 
 Caps, stated here and enforced at the write boundary
 (`plugin_rewrites::record`); nothing else writes this table:

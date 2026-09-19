@@ -140,19 +140,22 @@ registry holds it. Modifying a tool call's arguments is not a slot and is
 permanently excluded (ADR 0291 rule 4): a `tool_call` handler can block with a
 reason, and nothing else.
 
-Some mapped events ride hook points the desktop does not emit yet (`input`,
-`project_trust`, `resources_discover`, `session_before_fork`, `model_select`,
+Some mapped events ride hook points the desktop does not emit yet
+(`project_trust`, `resources_discover`, `model_select`,
 `thinking_level_select`). Their permission is enforced on the mapping, so the
 gate is already in place the moment the hook point is wired; until then no
-handler runs, because no event fires.
+handler runs, because no event fires. The session lifecycle notices are the
+opposite case: `session_before_switch`, `session_before_fork` and
+`session_lifecycle` are emitted, and they are informed-only, so the result the
+gate would allow is ignored by the caller (ADR 0291 rule 11).
 
 Separate from the permission question, the trusted-extension sidecar's
-result-bearing event set (`packages/agent-runtime/src/extensions/runner.ts:96-110`)
-gives the 30 s handler budget to events the desktop never emits (`project_trust`,
-`resources_discover`, `session_before_fork`, `input`), and it counts
-`message_end` as result-bearing although the desktop's forwarding path discards
-that result. That is a defect on the sidecar surface to fix with a code change;
-no permission or trust decision is involved.
+result-bearing event set
+(`packages/agent-runtime/src/extensions/runner.ts:116-130`) gives the 30 s
+handler budget to events whose result is ignored: the informed-only lifecycle
+notices by design (ADR 0291 rule 11), and `message_end`, which the desktop's
+forwarding path discards. The budget is what keeps a stalled handler from
+holding the notification loop; no permission or trust decision is involved.
 
 ## 3. Permission dependencies
 

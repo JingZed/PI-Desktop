@@ -3167,3 +3167,62 @@
   color: var(--ds-text-muted);
   font-size: var(--text-xs);
 }
+
+/* Slot 1 rewrite notice (ADR 0291 rule 5): the row keeps the text the user
+ * typed, and this names the plugin that changed what the model received. */
+.message-rewrite {
+  margin-bottom: 6px;
+  color: var(--ds-text-muted);
+  font-size: var(--text-xs);
+}
+.message-rewrite-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  list-style: none;
+  color: var(--ds-text-muted);
+}
+.message-rewrite-summary::-webkit-details-marker {
+  display: none;
+}
+.message-rewrite-body {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  background: var(--ds-tile);
+}
+.message-rewrite-label {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--ds-text-faint);
+  font-size: var(--text-2xs);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+.message-rewrite-text {
+  color: var(--ds-text-primary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-compact-plus);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.message-rewrite-spans {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--ds-text-primary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-compact-plus);
+}
+.message-rewrite-spans li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.message-rewrite-note {
+  margin: 6px 0 0;
+  color: var(--ds-text-muted);
+  font-size: var(--text-2xs);
+}

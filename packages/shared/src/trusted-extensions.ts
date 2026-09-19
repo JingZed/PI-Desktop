@@ -390,21 +390,64 @@ export const PLUGIN_TOOL_EXTEND_PERMISSION = "runtime.tool.extend";
  * rule 2).
  *
  * {@link TRUSTED_EXTENSION_EVENT_PERMISSIONS} answers "may this handler run";
- * this answers the same question for the two things an extension asks for
- * itself and that no event describes. An API call carries no event name, so
- * its slot cannot be inferred from the payload: it is named here, resolved by
- * the runner before the call runs, and reported as `permission_denied` when the
+ * this answers the same question for the things an extension asks for itself
+ * and that no event describes. An API call carries no event name, so its slot
+ * cannot be inferred from the payload: it is named here, resolved by the
+ * runner before the call runs, and reported as `permission_denied` when the
  * plugin does not hold the permission — the same gate an event gets.
  *
  * `requestTurnAbort` is slot 3: stop the current turn (the plugin's own
  * long-running work receives the cancellation signal separately).
  * `toolResult` is slot 5: introduce a tool, report spend, or request early
  * termination through a tool's result.
+ * `turnFacts` is slot 9: read the host's own structured numbers for one turn.
+ * `recap` is slot 8: read what a turn contained. Its whole-session form also
+ * needs {@link TRUSTED_EXTENSION_SESSION_READ_PERMISSION} (rule 7), which is a
+ * property of the requested scope rather than of the call — see
+ * {@link trustedExtensionApiScopePermission}.
+ * `continueTurn` is slot 10: start another turn after one ends.
  */
 export const TRUSTED_EXTENSION_API_PERMISSIONS = {
   requestTurnAbort: "runtime.turn.abort",
   toolResult: PLUGIN_TOOL_EXTEND_PERMISSION,
+  turnFacts: "runtime.turn.facts",
+  recap: "runtime.turn.recap",
+  continueTurn: "runtime.turn.continue",
 } as const satisfies Record<string, string>;
+
+/**
+ * Reading a session's own content is a permission of its own (ADR 0291 rule
+ * 7): slot 8's whole-session read needs this on top of `runtime.turn.recap`,
+ * while reading a single turn needs only the slot's own name. Reads are
+ * deliberately **not** recorded one by one; the install review and the plugin
+ * row are the consent surface.
+ */
+export const TRUSTED_EXTENSION_SESSION_READ_PERMISSION = "runtime.session.read";
+
+/**
+ * The permission a call of `apiCall` needs *in addition to* its own slot when
+ * it is made with `scope`, or `undefined` when the scope adds no requirement.
+ *
+ * The requested scope, not the member, decides whether a second right is
+ * needed, so the requirement is named here instead of folding two permissions
+ * into one call: `recap({ scope: "session" })` reads a whole session and
+ * therefore also needs `runtime.session.read` (rule 7), and `scope: "turn"`
+ * does not.
+ */
+export function trustedExtensionApiScopePermission(
+  apiCall: string,
+  scope: string,
+): string | undefined {
+  return apiCall === "recap" && scope === "session"
+    ? TRUSTED_EXTENSION_SESSION_READ_PERMISSION
+    : undefined;
+}
+
+/** Newest transcript rows one `recap` read returns when no `limit` is given. */
+export const TRUSTED_EXTENSION_RECAP_DEFAULT_LIMIT = 200;
+
+/** Upper bound on `recap`'s transcript window, so one call cannot pull an unbounded history. */
+export const TRUSTED_EXTENSION_RECAP_MAX_LIMIT = 500;
 
 /** The non-event calls this map knows about. */
 export type TrustedExtensionApiCall = keyof typeof TRUSTED_EXTENSION_API_PERMISSIONS;
@@ -501,3 +544,150 @@ export function trustedExtensionAgentKeyFromProviderId(providerId: string): stri
     return undefined;
   }
 }
+
+/** One turn's model tokens (host-core `TurnTokens`). */
+export type TrustedExtensionTurnTokens = {
+  input: number;
+  output: number;
+  /** `input + output`; the provider's own `totalTokens` stays inside `usage`. */
+  total: number;
+};
+
+/** One tool's share of a turn's executed calls (host-core `ToolCallSummary`). */
+export type TrustedExtensionToolCallSummary = {
+  /** The tool name the host's audit record carries; `""` when it carried none. */
+  toolName: string;
+  calls: number;
+  ok: number;
+  failed: number;
+  /** Distinct error codes of the failed calls, sorted; empty when none failed. */
+  errorCodes: string[];
+};
+
+/** A turn's executed tool calls, counted from the host's audit records. */
+export type TrustedExtensionToolCallFacts = {
+  total: number;
+  ok: number;
+  failed: number;
+  /** One entry per tool, ordered by tool name. */
+  byTool: TrustedExtensionToolCallSummary[];
+};
+
+/**
+ * One file a turn touched (host-core `Artifact`, ADR 0291 rule 8).
+ *
+ * A touch is the unit, so a file changed in three turns appears once per turn.
+ * `op` is `create | write | edit | download | delete` and is exposed verbatim,
+ * so a row written by a build with a wider vocabulary is not dropped here.
+ */
+export type TrustedExtensionTurnFile = {
+  sessionId: string;
+  sessionTitle: string | null;
+  path: string;
+  op: string;
+  /** The turn that touched the file; `null` when the host recorded it outside a turn. */
+  turnId: string | null;
+  /** Time of this touch, not of the file's first appearance. */
+  updatedAt: string;
+};
+
+/**
+ * One turn's facts: the host's own answer for `turn.facts` (ADR 0291 rule 8,
+ * slot 9 `runtime.turn.facts`), passed to a plugin unchanged.
+ *
+ * Every number comes from a host table and "this turn" means exactly one
+ * thing — the rows carrying that turn's id — so nothing here is reconstructed
+ * from what a plugin observed, and no conversation text is included. A turn
+ * the host never recorded is not answered with zeroes: the call fails instead.
+ */
+export type TrustedExtensionTurnFacts = {
+  sessionId: string;
+  turnId: string;
+  /** `running | completed | aborted | error`; an unknown status is exposed verbatim. */
+  status: string;
+  providerId: string | null;
+  modelId: string | null;
+  /** The turn's own terminal error, not a tool's. */
+  errorCode: string | null;
+  startedAt: string;
+  /** `null` while the turn is still running. */
+  endedAt: string | null;
+  /** `endedAt - startedAt` in milliseconds; `null` while running. */
+  durationMs: number | null;
+  tokens: TrustedExtensionTurnTokens;
+  /** The provider usage record exactly as the host stored it, or `null`. */
+  usage: unknown;
+  /**
+   * The turn's plugin-tool spend: the `pluginToolUsage` member of the recorded
+   * usage, exposed on its own because it is spend a plugin reported and never
+   * part of the model's tokens (ADR 0291 slot 5).
+   */
+  pluginToolUsage: unknown;
+  toolCalls: TrustedExtensionToolCallFacts;
+  /** The files the turn touched, oldest touch first. */
+  files: TrustedExtensionTurnFile[];
+  /** The file list hit the requested limit; `false` means it is the complete history. */
+  filesTruncated: boolean;
+};
+
+/**
+ * What a slot-8 recap read answered.
+ *
+ * `scope: "turn"` returns the turn's facts — the only per-turn answer the host
+ * has today. Conversation *text* for a single turn has no host read path yet:
+ * the host exposes one turn's numbers (`turn.facts`, with `artifacts` carrying
+ * `turn_id`) but no per-turn message read, so `messages` is `null` and
+ * `messagesUnavailable` says why instead of the turn looking empty.
+ *
+ * `scope: "session"` returns the newest transcript rows and needs
+ * `runtime.session.read` as well as the slot's own permission (rule 7).
+ */
+export type TrustedExtensionTurnRecap =
+  | {
+      scope: "turn";
+      sessionId: string;
+      turnId: string;
+      facts: TrustedExtensionTurnFacts;
+      /** Always `null`: no host read returns one turn's conversation text. */
+      messages: null;
+      messagesUnavailable: "no-host-turn-read";
+    }
+  | {
+      scope: "session";
+      sessionId: string;
+      /** Newest rows last, as host-core returns them. */
+      messages: ReadonlyArray<unknown>;
+      /** Older rows exist outside the returned window. */
+      truncated: boolean;
+    };
+
+/**
+ * The request a slot-10 continuation carries to the host (ADR 0291 rule 9).
+ *
+ * `pluginId` and `pluginLabel` travel with the message so the host can
+ * attribute the continuation to the plugin that asked for it (ADR 0289). They
+ * are part of the request rather than inferred later from the session.
+ */
+export type TrustedExtensionContinuationRequest = {
+  /** Text of the turn the host starts after the current one ends. */
+  message: string;
+  pluginId: string;
+  pluginLabel: string;
+};
+
+/**
+ * What a continuation did: the host queued a real, durable turn for it.
+ *
+ * `queuedTurnId` is the queued turn's own id. The agent turn that actually runs
+ * from it is created by the host at the next turn boundary and carries its own
+ * durable turn id, so this id is not a `turn.facts` key.
+ *
+ * ADR 0291 rule 9 asks for the continuation to be persisted as a visible row
+ * naming the plugin, and for it to be unbounded. There is no quota here. The
+ * visible-row half is not complete yet: host-core's `turn_queue` and `messages`
+ * rows carry no plugin provenance column, so the queued turn is real and
+ * visible but does not yet name the plugin.
+ */
+export type TrustedExtensionContinuation = {
+  queuedTurnId: string;
+};

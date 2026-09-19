@@ -1,11 +1,12 @@
 //! Diff-level audit of what a plugin changed in what the model receives
 //! (ADR 0291 rule 5; 04-data-storage §4.15).
 //!
-//! Slot #1 (`runtime.send.before`) and slot #6 (`runtime.request.before`) are
-//! the producers this table exists for, and neither is built yet. This module
-//! ships the storage, the caps, and the reads those slots will call, so the
-//! audit surface is in place *before* a plugin can rewrite anything — the ADR
-//! makes the audit a prerequisite of the rewrite capability, not a follow-up.
+//! Slot #1 (`runtime.send.before`) is the first producer: the agent runtime
+//! hands a rewrite it performed to the host, and `plugin.rewrites.record`
+//! stores it here — the one write boundary. Slot #6 (`runtime.request.before`)
+//! is not built yet, but the storage, the caps, and the reads are in place
+//! because the ADR makes the audit a prerequisite of the rewrite capability,
+//! not a follow-up.
 //!
 //! A record is a fact, like an `artifacts` touch: which characters, which
 //! messages, or which payload fields changed, who changed them, and in which
@@ -299,7 +300,9 @@ impl RewriteDiff {
     /// common case — a plugin edits part of the message — and cheap for the
     /// common non-case — a plugin returns the text unchanged, which yields no
     /// edits at all.
-    #[allow(dead_code)] // No producer yet: slot #1 is not built.
+    /// The one constructor the current producer uses: the runtime's send hook
+    /// hands over both texts, and the changed span is computed here so the
+    /// algorithm stays in one place.
     pub fn outgoing_message(target_message_id: &str, original: &str, rewritten: &str) -> Self {
         RewriteDiff::OutgoingMessage {
             target_message_id: target_message_id.to_string(),
@@ -375,9 +378,9 @@ pub struct RewriteRecord {
 /// one record cannot blow up the database. What was clipped or dropped is
 /// stored with the record as `truncated` / `dropped_edits`.
 ///
-/// Callers are slot #1 (`runtime.send.before`) and slot #6
-/// (`runtime.request.before`); neither is wired yet.
-#[allow(dead_code)] // No producer yet: slots #1 and #6 are not built.
+/// Callers reach this through the host-core RPC writer `plugin.rewrites.record`,
+/// which slot #1's handler (`extensions.rewrites.record`) calls; slot #6 is not
+/// wired yet. Nothing else writes this table.
 pub fn record(
     db: &Database,
     session_id: &str,

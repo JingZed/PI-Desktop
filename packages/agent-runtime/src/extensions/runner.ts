@@ -23,9 +23,16 @@ import {
 import {
   trustedExtensionAgentProviderId,
   trustedExtensionApiPermission,
+  trustedExtensionApiScopePermission,
   trustedExtensionEventPermission,
+  TRUSTED_EXTENSION_RECAP_DEFAULT_LIMIT,
+  TRUSTED_EXTENSION_RECAP_MAX_LIMIT,
   type TrustedExtensionAgentModelConfig,
   type TrustedExtensionApiCall,
+  type TrustedExtensionContinuation,
+  type TrustedExtensionContinuationRequest,
+  type TrustedExtensionTurnFacts,
+  type TrustedExtensionTurnRecap,
 } from "@pi-desktop/shared";
 import {
   createVirtualModules,
@@ -250,6 +257,34 @@ export interface TrustedExtensionBridge {
   waitForIdle(): Promise<void>;
   newSession(): Promise<{ cancelled: boolean }>;
   fork(entryId: string): Promise<{ cancelled: boolean }>;
+  /**
+   * Slot 9: the host's own facts for one turn (`turn.facts`, ADR 0291 rule 8).
+   * `turnId` absent means the turn running now. `undefined` means the host
+   * holds no such turn — a turn it never recorded is never answered with
+   * zeroes, and the caller reports the failure rather than inventing one.
+   */
+  turnFacts(input: {
+    turnId?: string;
+    limit?: number;
+  }): Promise<TrustedExtensionTurnFacts | undefined>;
+  /**
+   * Slot 8: a session's newest transcript rows, windowed and attributed by the
+   * host (`session.get`), never by this process. `limit` is a positive window
+   * size; `truncated` says older rows exist outside it.
+   */
+  recapSession(input: { limit: number }): Promise<{
+    messages: ReadonlyArray<unknown>;
+    truncated: boolean;
+  }>;
+  /**
+   * Slot 10: queue a real, durable turn for this plugin's continuation (ADR
+   * 0291 rule 9). `undefined` means the host refused or could not queue it.
+   * The request carries the plugin's identity, because only the caller knows
+   * which plugin asked for the continuation (ADR 0289).
+   */
+  continueTurn(
+    input: TrustedExtensionContinuationRequest,
+  ): Promise<TrustedExtensionContinuation | undefined>;
   requestUi(
     extension: TrustedExtensionSpec,
     request: TrustedExtensionUiRequest,
@@ -398,6 +433,24 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
       },
     );
   });
+}
+
+/**
+ * Transcript window one `recap` read asks the host for.
+ *
+ * An absent or unusable value falls back to the shared default; a real number
+ * is clamped, so a plugin cannot ask one call to pull an unbounded history
+ * into its process. The host still decides what the window means and reports
+ * truncation itself.
+ */
+function recapLimit(value: number | undefined): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return TRUSTED_EXTENSION_RECAP_DEFAULT_LIMIT;
+  }
+  return Math.min(
+    Math.max(1, Math.floor(value)),
+    TRUSTED_EXTENSION_RECAP_MAX_LIMIT,
+  );
 }
 
 export type TrustedExtensionRunnerOptions = {
@@ -683,6 +736,162 @@ export class TrustedExtensionRunner {
       member,
     );
     return true;
+  }
+
+  /**
+   * Report and refuse `apiCall` in `scope` for `extension` when the scope
+   * needs a permission the plugin does not hold; `true` means the call may
+   * proceed. Only one scope needs a second right, and it is a property of the
+   * scope rather than of the call: a whole-session recap reads conversation
+   * content, so it needs `runtime.session.read` on top of the slot's own name
+   * (ADR 0291 rule 7). The refusal is reported like every other one.
+   */
+  private refuseApiScope(
+    extension: LoadedExtension,
+    apiCall: TrustedExtensionApiCall,
+    scope: string,
+    member: string,
+  ): boolean {
+    const refused = this.refusedPermission(
+      extension,
+      trustedExtensionApiScopePermission(apiCall, scope),
+    );
+    if (!refused) return false;
+    this.report(
+      extension.spec.id,
+      "permission_denied",
+      `${member} was refused: the plugin does not hold ${refused}`,
+      member,
+    );
+    return true;
+  }
+
+  /**
+   * Report a host read or write that failed for `apiCall`'s member and answer
+   * `undefined` to the plugin.
+   *
+   * A call that could not be answered is visible, never a silent no-op: the
+   * plugin row shows the host's own message. `handler_error` is the
+   * diagnostic kind for it because the failure is the plugin's request, not
+   * its load.
+   */
+  private reportCallFailure(extension: LoadedExtension, member: string, error: unknown): void {
+    this.report(extension.spec.id, "handler_error", errorMessage(error), member);
+  }
+
+  /**
+   * Slot 9: hand one turn's host facts to the plugin exactly as the host
+   * answered them.
+   *
+   * `undefined` is the answer for every failure, and each one is reported: the
+   * plugin does not hold `runtime.turn.facts`, or the host has no such turn (a
+   * turn it never recorded is an error, not zeroes), or the read itself
+   * failed. Nothing here is counted, derived or cached from what the plugin
+   * observed — the plugin's own event stream is best-effort and is not the
+   * host's numbers.
+   */
+  private async extensionTurnFacts(
+    extension: LoadedExtension,
+    input?: { turnId?: string; limit?: number },
+  ): Promise<TrustedExtensionTurnFacts | undefined> {
+    if (this.refuseApi(extension, "turnFacts", "turnFacts")) return undefined;
+    const turnId = typeof input?.turnId === "string" ? input.turnId.trim() : "";
+    try {
+      return await this.bridge.turnFacts({
+        ...(turnId ? { turnId } : {}),
+        ...(typeof input?.limit === "number" ? { limit: input.limit } : {}),
+      });
+    } catch (error) {
+      this.reportCallFailure(extension, "turnFacts", error);
+      return undefined;
+    }
+  }
+
+  /**
+   * Slot 8: read what a turn contained.
+   *
+   * One turn answers with the host's facts for it — the numbers are the host's
+   * (`turn.facts`), and the conversation text of that one turn is named as
+   * unavailable rather than returned empty, because the host exposes no
+   * per-turn message read yet. A whole session answers with the newest
+   * transcript rows windowed by the host (`session.get`), which is conversation
+   * content and therefore needs `runtime.session.read` on top of the slot's own
+   * `runtime.turn.recap` (rule 7). Reads are not recorded one by one.
+   */
+  private async extensionRecap(
+    extension: LoadedExtension,
+    input?: { scope?: "turn" | "session"; turnId?: string; limit?: number },
+  ): Promise<TrustedExtensionTurnRecap | undefined> {
+    const scope = input?.scope === "session" ? "session" : "turn";
+    if (this.refuseApi(extension, "recap", "recap")) return undefined;
+    if (this.refuseApiScope(extension, "recap", scope, `recap:${scope}`)) return undefined;
+    const limit = recapLimit(input?.limit);
+    try {
+      if (scope === "session") {
+        const read = await this.bridge.recapSession({ limit });
+        return {
+          scope: "session" as const,
+          sessionId: this.bridge.sessionId,
+          messages: read.messages,
+          truncated: read.truncated,
+        };
+      }
+      const turnId = typeof input?.turnId === "string" ? input.turnId.trim() : "";
+      const facts = await this.bridge.turnFacts({
+        ...(turnId ? { turnId } : {}),
+        limit,
+      });
+      if (!facts) return undefined;
+      return {
+        scope: "turn" as const,
+        sessionId: facts.sessionId,
+        turnId: facts.turnId,
+        facts,
+        messages: null,
+        messagesUnavailable: "no-host-turn-read" as const,
+      };
+    } catch (error) {
+      this.reportCallFailure(extension, `recap:${scope}`, error);
+      return undefined;
+    }
+  }
+
+  /**
+   * Slot 10: start another turn after this one ends.
+   *
+   * The host owns the queue, so the continuation is a real, durable turn that
+   * survives a restart and is drained at the next turn boundary — the same
+   * mechanism a user message uses. There is no numeric quota (ADR 0291 rule
+   * 9): what replaces it is the visible row ADR 0289 asks for, which is why the
+   * request carries the plugin's id and label. The queued row is real and
+   * visible today; it does not yet *name* the plugin, because host-core's queue
+   * and transcript rows carry no plugin provenance — a host gap this call
+   * reports rather than hides.
+   */
+  private async extensionContinueTurn(
+    extension: LoadedExtension,
+    input: string | { message?: string },
+  ): Promise<TrustedExtensionContinuation | undefined> {
+    if (this.refuseApi(extension, "continueTurn", "continueTurn")) return undefined;
+    const message = typeof input === "string" ? input : input?.message;
+    if (typeof message !== "string" || !message.trim()) {
+      this.reportCallFailure(
+        extension,
+        "continueTurn",
+        new Error("continueTurn needs a message to continue with"),
+      );
+      return undefined;
+    }
+    try {
+      return await this.bridge.continueTurn({
+        message,
+        pluginId: extension.spec.id,
+        pluginLabel: extension.spec.label,
+      });
+    } catch (error) {
+      this.reportCallFailure(extension, "continueTurn", error);
+      return undefined;
+    }
   }
 
   /**
@@ -1094,6 +1303,33 @@ export class TrustedExtensionRunner {
         bridge.abort();
         return true;
       },
+      /**
+       * Slot 9: the host's own facts for one turn (`runtime.turn.facts`). The
+       * answer is the host's `turn.facts` payload, passed through unchanged —
+       * nothing is re-derived from the events this plugin saw. `turnId` absent
+       * means the turn running now. A plugin without the grant — or a turn the
+       * host never recorded — gets `undefined` plus a diagnostic, never a
+       * throw and never a silent empty answer.
+       */
+      turnFacts: (input?: { turnId?: string; limit?: number }) =>
+        this.extensionTurnFacts(extension, input),
+      /**
+       * Slot 8: read what a turn contained (`runtime.turn.recap`). The default
+       * scope is one turn; `scope: "session"` reads the whole session and
+       * needs `runtime.session.read` as well (ADR 0291 rule 7). Reads are not
+       * logged one by one.
+       */
+      recap: (input?: { scope?: "turn" | "session"; turnId?: string; limit?: number }) =>
+        this.extensionRecap(extension, input),
+      /**
+       * Slot 10: start another turn after this one ends
+       * (`runtime.turn.continue`). The host owns the queue, so the
+       * continuation is a real durable turn and there is no numeric quota
+       * (ADR 0291 rule 9). Without the grant the plugin gets `undefined` and a
+       * `permission_denied` diagnostic.
+       */
+      continueTurn: (input: string | { message?: string }) =>
+        this.extensionContinueTurn(extension, input),
       sendUserMessage: (content: string | unknown[], options?: { deliverAs?: "steer" | "followUp" }) =>
         bridge.sendUserMessage(content, options),
       events: {

@@ -14,6 +14,7 @@ import {
   IconChevronLeft,
   IconChevronRight,
   IconPencil,
+  IconPlug,
   IconTrash,
 } from "../../../components/icons";
 import { TooltipButton } from "../../../components/ui";
@@ -27,6 +28,11 @@ import {
   LinkifiedText,
   MessageAttachmentImage,
 } from "./shared";
+import {
+  outgoingRewriteForMessage,
+  rewritePluginName,
+  rewrittenMessageText,
+} from "../../../lib/plugin-rewrites";
 
 export const MessageRow = memo(function MessageRow({
   message,
@@ -91,6 +97,21 @@ export const MessageRow = memo(function MessageRow({
     );
     return attachments.filter((attachment) => !inline.has(attachment.ref));
   }, [message.attachments, message.content, workspaceRoot]);
+  // Slot #1 (ADR 0291 rule 5): a plugin may rewrite the outgoing message on the
+  // way to the model. The row keeps the text the user typed; the record marks it
+  // and its changed span is what the expansion shows. No record, no badge.
+  const sessionPluginRewrites = useAppStore((state) =>
+    sessionId ? state.pluginRewrites?.[sessionId] : undefined,
+  );
+  const rewrite =
+    isUser && !isSessionMessage
+      ? outgoingRewriteForMessage(sessionPluginRewrites, message.id)
+      : undefined;
+  const rewriteModelText = useMemo(
+    () => (rewrite ? rewrittenMessageText(String(message.content || ""), rewrite) : null),
+    [message.content, rewrite],
+  );
+  const rewriteName = rewrite ? rewritePluginName(rewrite, plugins) : "";
   const cancelEdit = () => {
     setEditValue(editSeed);
     setEditing(false);
@@ -193,6 +214,47 @@ export const MessageRow = memo(function MessageRow({
                       ),
                     )}
                   </div>
+                ) : null}
+                {rewrite ? (
+                  // Slot #1 (ADR 0291 rule 5): the user's own words stay on the
+                  // row, and this is where the plugin that changed what the
+                  // model read is named — expanded to the text the model
+                  // received, or to the changed spans when the record was
+                  // capped and cannot rebuild it exactly.
+                  <details
+                    className="message-rewrite"
+                    data-rewrite-plugin={rewrite.pluginId}
+                    data-rewrite-truncated={rewrite.truncated ? "true" : undefined}
+                  >
+                    <summary className="message-rewrite-summary">
+                      <IconPlug size={13} />
+                      <span>{t("chat.rewrittenByPlugin", { name: rewriteName })}</span>
+                    </summary>
+                    <div className="message-rewrite-body">
+                      <span className="message-rewrite-label">
+                        {t("chat.rewriteModelVersion")}
+                      </span>
+                      {rewriteModelText !== null ? (
+                        <div className="message-rewrite-text selectable">
+                          {rewriteModelText}
+                        </div>
+                      ) : (
+                        <ul className="message-rewrite-spans selectable">
+                          {(rewrite.diff.characterEdits ?? []).map((edit, index) => (
+                            <li key={index}>
+                              <del>{edit.before}</del>
+                              <ins>{edit.after}</ins>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      {rewrite.truncated || rewriteModelText === null ? (
+                        <p className="message-rewrite-note">
+                          {t("chat.rewritePartial")}
+                        </p>
+                      ) : null}
+                    </div>
+                  </details>
                 ) : null}
                 {message.content ? (
                   <div className="message-user-text selectable">

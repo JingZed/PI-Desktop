@@ -57,6 +57,7 @@ import {
   type TrustedExtensionSessionLifecycleNotice,
   type TrustedExtensionSessionLifecyclePayload,
   type TrustedExtensionSpec,
+  type TrustedExtensionTurnFacts,
   type TrustedExtensionUiRequest,
   type TrustedExtensionUiResponse,
 } from "@pi-desktop/shared";
@@ -2788,6 +2789,55 @@ Delegation rules:
         } catch {
           return { cancelled: true };
         }
+      },
+      /**
+       * Slot 9: the host's own facts for one turn, straight from `turn.facts`
+       * (ADR 0291 rule 8). The sidecar already reaches host-core through the
+       * same reverse proxy its other calls use — `turn.facts` is allowlisted
+       * there like `session.get`, so no second path is invented. `turnId`
+       * absent means the current turn; before any prompt there is none, so the
+       * host is never asked a turn-less question.
+       */
+      turnFacts: async ({ turnId, limit }) => {
+        const target = (turnId ?? runtime.turnId ?? "").trim();
+        if (!target) return undefined;
+        const result = await runtime.host.call<{ facts?: TrustedExtensionTurnFacts }>("turn.facts", {
+          sessionId: runtime.sessionId,
+          turnId: target,
+          ...(typeof limit === "number" ? { limit } : {}),
+        });
+        return result?.facts;
+      },
+      /**
+       * Slot 8: a session's newest transcript rows, windowed by the host
+       * (`session.get` with `messageLimit`, which host-core takes from the end
+       * of the transcript and flags with `hasMoreBefore`). This is the sidecar's
+       * established session read, not a second conversation store.
+       */
+      recapSession: async ({ limit }) => {
+        const detail = await runtime.host.call<{
+          session?: { messages?: unknown[]; hasMoreBefore?: boolean } | null;
+        }>("session.get", { id: runtime.sessionId, messageLimit: Math.max(1, limit) });
+        const messages = Array.isArray(detail?.session?.messages) ? detail.session.messages : [];
+        return { messages, truncated: detail?.session?.hasMoreBefore === true };
+      },
+      /**
+       * Slot 10: a plugin's continuation takes the host-owned queue, the same
+       * path the desktop's own send uses (`session.queuePush`), so the turn is
+       * real, durable and drained at the next turn boundary — there is no quota
+       * (ADR 0291 rule 9). The plugin identity travels with the request so the
+       * host can attribute the row ADR 0289 asks for.
+       */
+      continueTurn: async ({ message, pluginId, pluginLabel }) => {
+        const pushed = await runtime.host.call<{ id?: string }>("session.queuePush", {
+          sessionId: runtime.sessionId,
+          idempotencyKey: randomUUID(),
+          content: message,
+          pluginId,
+          pluginLabel,
+        });
+        const queuedTurnId = typeof pushed?.id === "string" ? pushed.id : "";
+        return queuedTurnId ? { queuedTurnId } : undefined;
       },
       requestUi: (extension, request) =>
         runtime.host.call<TrustedExtensionUiResponse>("extensions.ui.request", {

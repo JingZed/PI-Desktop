@@ -528,10 +528,13 @@ export const api = {
   getSearchContext: (request: SessionSearchContextRequest) =>
     invoke<SessionSearchContext>(IPC.invoke.sessionSearchContext, request),
   getSession: (id: string, options?: SessionHistoryReadOptions) =>
-    invoke<{ session: SessionDetail | null }>(IPC.invoke.sessionGet, {
-      id,
-      ...(options ?? {}),
-    }).then((result) => ({
+    invoke<{ session: SessionDetail | null; rewrites?: unknown }>(
+      IPC.invoke.sessionGet,
+      {
+        id,
+        ...(options ?? {}),
+      },
+    ).then((result) => ({
       ...result,
       session: normalizeSessionDetail(result.session),
     })),
@@ -1450,11 +1453,15 @@ export const api = {
   },
 
   onPluginChanged: (
-    listener: (event: { reason?: string; pluginId?: string }) => void,
+    listener: (event: { reason?: string; pluginId?: string; sessionId?: string }) => void,
   ) => {
     if (!bridge?.on) return () => undefined;
     return bridge.on(IPC.event.pluginChanged, (payload) =>
-      listener((payload ?? {}) as { reason?: string; pluginId?: string }),
+      listener((payload ?? {}) as {
+        reason?: string;
+        pluginId?: string;
+        sessionId?: string;
+      }),
     );
   },
   onSettingsChanged: (listener: (patch: Record<string, unknown>) => void) => {

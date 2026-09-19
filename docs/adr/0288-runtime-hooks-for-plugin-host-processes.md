@@ -10,18 +10,21 @@
   [13-plugin-permissions-matrix](../spec/07-plugins/13-plugin-permissions-matrix.md) ·
   [16-trusted-extensions](../spec/07-plugins/16-trusted-extensions.md)
 
-**Implementation status: not started.** This record fixes the accepted design,
-and none of it is built yet. There is no registration IPC, no registration
-table, no 2 s deadline, no circuit breaker, and no per-slot permission check in
-the code. The only `runtime.*` names that exist today are
-`runtime.send.before`, `runtime.turn.abort` and `runtime.turn.closing` (plugin
-SDK, desktop risk table, devkit mirror, locales), and none of them is consulted
-before a hook runs. The slot set, the per-slot permissions and the order of the
-work are in [ADR 0291](0291-runtime-slots-and-their-permissions.md); this record
-remains the accepted shape of the broker channel.
+**Implementation status: partial.** This record fixes the accepted design of the
+broker channel, and that channel is not built: there is no registration IPC, no
+registration table, no 2 s deadline, and no circuit breaker. What is built is
+the slot model around it ([ADR 0291](0291-runtime-slots-and-their-permissions.md)):
+the twelve `runtime.*` names are registered (plugin SDK, desktop risk table,
+devkit mirror, eight locales), the agent sidecar resolves a wired event's slot
+permission before a handler runs and reports a skip as a `permission_denied`
+diagnostic, and nine slots have a wired entry point — Before Send (1), Turn
+Watch (2), Turn Abort (3), Tool Gate (4), Tool Extend (5), the request hooks of
+Before Request (6), Turn Closing (7), Turn Facts (9) and Session Lifecycle (11).
+The remaining slots carry a registered name without a plugin-facing path yet,
+and #12 (Approval Before) is not built at all. This record remains the accepted
+shape of the broker channel.
 
 ## Context
-
 Issue #561 names twelve runtime slots: points inside a running turn where a
 plugin is consulted and may change what happens. Today a plugin can only be
 consulted if it is an **agent extension** (`contributes.agentExtensions`),

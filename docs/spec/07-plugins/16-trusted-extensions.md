@@ -489,9 +489,11 @@ are honored where the event type defines a result.
 | `tool_result` | `afterToolCall` | Yes, replacement result |
 | `model_select`, `thinking_level_select` | v1 note: not emitted; a binding change retires the runtime | No |
 | `session_before_compact`, `session_compact`, `session_compact_failed` | Compaction pipeline | Yes for `session_before_compact` |
-| `session_before_fork` | v1 note: not emitted; fork runs in Electron main | n/a |
-| `input` | v1 note: not emitted; Host queue admission is not wired yet | n/a |
-| `user_bash`, `session_before_switch`, `session_before_tree`, `session_tree`, `ui_prompt_start`, `ui_prompt_end` | Not emitted in v1 | n/a |
+| `input` | After Electron main persisted the message, before it is queued for the model (runtime slot 1, issue #561; gated by `runtime.send.before` — spec 13 §2C) | Yes: `{ action: "continue" \| "transform" \| "handled", text?, reason? }`; `transform` replaces what the model reads and is recorded at diff level (ADR 0291 rule 5) |
+| `session_before_switch` | Session switch: the session being left, announced before the new one is opened (runtime slot 11, informed-only — ADR 0291 rule 11) | No |
+| `session_before_fork` | Session fork: the source session, announced before the child exists (runtime slot 11, informed-only) | No |
+| `session_lifecycle` | Session created / deleted — the two moments the kernel has no hook for, announced by the host (runtime slot 11, informed-only) | No |
+| `user_bash`, `session_before_tree`, `session_tree`, `ui_prompt_start`, `ui_prompt_end` | Not emitted in v1 | n/a |
 
 A handler runs only when the extension's plugin holds the slot permission behind
 its event (ADR 0291 rule 2): `turn_closing` needs `runtime.turn.closing`,
@@ -501,10 +503,12 @@ wired event that changes a turn; `session_start`, `session_shutdown` and
 `session_info_changed` have no slot. Every slot permission is registered, so the
 gate is strict for every plugin: `agent.extension` says where the code runs and
 never implies a grant, not even for the high-trust tier. An event mapped to a
-slot the desktop does not emit yet (`input`, `project_trust`,
-`resources_discover`, `session_before_fork`, `model_select`,
-`thinking_level_select`) keeps the gate on the mapping, so no handler runs from
-a hook point that never fires.
+slot the desktop does not emit yet (`project_trust`, `resources_discover`,
+`model_select`, `thinking_level_select`) keeps the gate on the mapping, so no
+handler runs from a hook point that never fires. The lifecycle notices are
+informed-only: `session_before_switch`, `session_before_fork` and
+`session_lifecycle` are emitted and never awaited, so a plugin cannot delay a
+switch, a fork or a delete (ADR 0291 rule 11).
 
 Two calls an extension makes for itself are not events, so the same contract
 names the call instead of an event name (`TRUSTED_EXTENSION_API_PERMISSIONS` in

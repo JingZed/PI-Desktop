@@ -24,6 +24,7 @@ import {
   type TrustedExtensionCommand,
   type TrustedExtensionDiagnostic,
   type TrustedExtensionLoadReport,
+  type TrustedExtensionRewriteRecord,
   type TrustedExtensionStatusEvent,
   type TrustedExtensionUiPrompt,
   type TrustedExtensionUiRequestEnvelope,
@@ -50,6 +51,13 @@ export type AgentExtensionBridgeOptions = {
   onPrompt: (prompt: TrustedExtensionUiPrompt) => void;
   onToast: (message: string, level: "info" | "warning" | "error") => void;
   onStatus: (event: TrustedExtensionStatusEvent) => void;
+  /**
+   * Slot #1 (ADR 0291 rule 5): persist one outgoing-message rewrite through
+   * host-core, which owns `plugin_rewrites`. The bridge validates the record at
+   * this boundary and forwards it; a host without a store refuses the record
+   * loudly instead of accepting an audit write that goes nowhere.
+   */
+  recordRewrite?: (record: TrustedExtensionRewriteRecord) => Promise<{ id: number }>;
   promptTimeoutMs?: number;
 };
 
@@ -133,7 +141,38 @@ export class AgentExtensionBridge {
 
   // --- UI bridge ------------------------------------------------------------------
 
-  async requestUi(envelope: TrustedExtensionUiRequestEnvelope): Promise<TrustedExtensionUiResponse> {
+  /**
+   * The writer behind slot #1 (`extensions.rewrites.record`, ADR 0291 rule 5).
+   *
+   * The runtime's send hook hands over the two texts it saw; the diff itself is
+   * computed by the process that owns `plugin_rewrites`, so this boundary only
+   * validates the record and forwards it. A malformed record is a coded error —
+   * never a silent drop, because an un-audited rewrite is exactly what rule 5
+   * forbids — and a host with no store refuses it the same way.
+   */
+  async recordRewrite(record: TrustedExtensionRewriteRecord): Promise<{ id: number }> {
+    const sink = this.options.recordRewrite;
+    if (!sink) {
+      throw Object.assign(
+        new Error("this host has no rewrite audit store"),
+        { errorCode: ErrorCodes.UNSUPPORTED },
+      );
+    }
+    return sink(record);
+  }
+
+  async requestUi(
+    envelope: TrustedExtensionUiRequestEnvelope,
+  ): Promise<TrustedExtensionUiResponse | RecordRewriteResponse> {
+    // The reverse extension proxy routes every `extensions.*` method without a
+    // dedicated dispatch through here, and slot #1's audit write
+    // (`extensions.rewrites.record`) is one of them today. A record-shaped
+    // payload is routed to the writer instead of being read as a UI envelope;
+    // a malformed one still fails loudly (see `rewriteRecordFrom`).
+    if (isRewriteRecordPayload(envelope)) {
+      const result = await this.recordRewrite(rewriteRecordFrom(envelope));
+      return { kind: "rewriteRecorded", id: result?.id };
+    }
     const { request } = envelope;
     switch (request.kind) {
       case "notify":
@@ -241,6 +280,88 @@ export class AgentExtensionBridge {
     }
     return state;
   }
+}
+
+/** What a record-shaped proxy call answers: the id host-core stored it under. */
+export type RecordRewriteResponse = { kind: "rewriteRecorded"; id?: number };
+
+/**
+ * Is one reverse-proxy payload the runtime's `extensions.rewrites.record`
+ * record rather than a UI envelope? The two shapes cannot be confused: a UI
+ * envelope always carries a `request` object, while a record carries the slot
+ * #1 `kind` or the fields that identify it. The check is deliberately loose so
+ * a *malformed* record is routed to the writer and rejected there with a coded
+ * error, instead of being misread as a UI request and dropped with a type
+ * error.
+ */
+function isRewriteRecordPayload(payload: unknown): boolean {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
+  const candidate = payload as Record<string, unknown>;
+  if (candidate.request !== undefined) return false;
+  return (
+    candidate.kind === "outgoing_message" ||
+    typeof candidate.targetMessageId === "string" ||
+    (typeof candidate.before === "string" && typeof candidate.after === "string")
+  );
+}
+
+/**
+ * Validate the record at this boundary. Every fault names the field it is
+ * about and fails with `INVALID_ARGUMENT`; the store re-validates and applies
+ * the caps, so nothing here can store an unattributable row.
+ */
+function rewriteRecordFrom(payload: unknown): TrustedExtensionRewriteRecord {
+  const candidate = (payload ?? {}) as Record<string, unknown>;
+  const required = (field: string): string => {
+    const value = candidate[field];
+    if (typeof value !== "string" || !value.trim()) {
+      throw Object.assign(
+        new Error(`extensions.rewrites.record: ${field} must be a non-empty string`),
+        { errorCode: ErrorCodes.INVALID_ARGUMENT },
+      );
+    }
+    return value;
+  };
+  const text = (field: string): string => {
+    const value = candidate[field];
+    if (typeof value !== "string") {
+      throw Object.assign(
+        new Error(`extensions.rewrites.record: ${field} must be a string`),
+        { errorCode: ErrorCodes.INVALID_ARGUMENT },
+      );
+    }
+    return value;
+  };
+  const kind = required("kind");
+  if (kind !== "outgoing_message") {
+    throw Object.assign(
+      new Error("extensions.rewrites.record: kind must be 'outgoing_message'"),
+      { errorCode: ErrorCodes.INVALID_ARGUMENT },
+    );
+  }
+  if (candidate.turnId !== undefined && typeof candidate.turnId !== "string") {
+    throw Object.assign(
+      new Error("extensions.rewrites.record: turnId must be a string"),
+      { errorCode: ErrorCodes.INVALID_ARGUMENT },
+    );
+  }
+  const pluginId = required("pluginId");
+  const pluginLabel =
+    typeof candidate.pluginLabel === "string" && candidate.pluginLabel.trim()
+      ? candidate.pluginLabel
+      : pluginId;
+  return {
+    sessionId: required("sessionId"),
+    ...(typeof candidate.turnId === "string" && candidate.turnId.trim()
+      ? { turnId: candidate.turnId }
+      : {}),
+    pluginId,
+    pluginLabel,
+    kind: "outgoing_message",
+    targetMessageId: required("targetMessageId"),
+    before: text("before"),
+    after: text("after"),
+  };
 }
 
 

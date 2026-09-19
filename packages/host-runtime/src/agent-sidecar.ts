@@ -64,6 +64,10 @@ const HOST_PROXY_ALLOWED = new Set([
   "provider.resolveAuth",
   "provider.resolveSubagentModel",
   "app.health",
+  // Slot 9 (ADR 0291 rule 8): one turn's authoritative facts, answered by
+  // host-core from its own tables. A read of host data the session is already
+  // part of — no path, no secret, no write.
+  "turn.facts",
   // Trusted extensions (D387): answered by the embedding host, plus the
   // session methods the ExtensionAPI reaches (spec 16 §10.1).
   "extensions.commands.publish",

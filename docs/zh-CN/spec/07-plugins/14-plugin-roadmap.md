@@ -97,10 +97,12 @@ Local plugins usable → developer-friendly → marketplace distribution → sig
 - Turn Closing (7) 仍经 `shouldStopAfterTurn` 到达内核；此前已接线的钩子 —— Turn
   Watch (2)、Tool Gate (4) 与 Before Request (6) 的请求类钩子 —— 行为保持不变；
   桌面当前触发哪些钩子点，规格 13 §2C 按事件逐一说明。
-- 尚未交付：Before Send (1) —— `runtime.send.before` 已注册，并按映射对 `input`
-  事件受门禁，但桌面尚未触发该钩子点，所以轮次运行期间还没有东西咨询它；Turn Recap
-  (8) 与 Turn Continue (10) —— 只有已注册的名字，背后没有钩子或调用；Approval
-  Before (12) —— 未实现。
+- 已交付：Before Send (1) —— 运行时的 `input` 钩子在 Electron main 持久化用户消息之后、
+  进入队列之前触发，三种内核动作全部采纳；插件所做的每次改写都经 `plugin.rewrites.record`
+  RPC 按差异级别存入（04-data-storage §4.15）并在消息行上标出（ADR 0291 规则 5）——
+  以及 Session Lifecycle (11) —— 创建、切换、删除与 fork 均以仅告知方式通告，压缩交接保留其取消。
+- 尚未交付：Turn Recap (8) 与 Turn Continue (10) —— 只有已注册的名字，背后没有钩子或调用；
+  Approval Before (12) —— 未实现。
 - Before Request (6) 按 ADR 0291 的分期仍排除在本轮之外；槽位集合、逐槽位权限与实施
   顺序都由
   [ADR 0291](../../../adr/0291-runtime-slots-and-their-permissions.md) 固定。

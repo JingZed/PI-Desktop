@@ -15,7 +15,7 @@ use crate::audit;
 use crate::notifications;
 use crate::permissions::{PermissionDecision, PermissionEvaluationParams, PermissionManager};
 use crate::plans;
-use crate::plugin_rewrites::{self, RewriteKind};
+use crate::plugin_rewrites::{self, RewriteDiff, RewriteKind};
 use crate::plugin_sessions;
 use crate::providers::{self, DiscoveredModelInput, ProviderCreateInput, ProviderUpdateInput};
 use crate::review;
@@ -476,6 +476,31 @@ fn provider_rpc_err(error: impl ToString) -> JsonRpcError {
         return rpc_err(1002, message, "MODEL_ALIAS_TOO_LONG");
     }
     rpc_err(1000, message, "INTERNAL")
+}
+
+/// A required, non-empty string argument; a missing, non-string, or blank
+/// value is an `INVALID_PARAMS` naming the field.
+fn required_string_param<'a>(params: &'a Value, name: &str) -> Result<&'a str, JsonRpcError> {
+    params
+        .get(name)
+        .and_then(|value| value.as_str())
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            rpc_err(
+                1002,
+                format!("{name} must be a non-empty string"),
+                "INVALID_PARAMS",
+            )
+        })
+}
+
+/// A string argument that must be present and a string, but may be empty: an
+/// edited message can legitimately rewrite a span into nothing.
+fn string_param<'a>(params: &'a Value, name: &str) -> Result<&'a str, JsonRpcError> {
+    params
+        .get(name)
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| rpc_err(1002, format!("{name} must be a string"), "INVALID_PARAMS"))
 }
 
 fn session_collaboration_rpc_err(error: impl ToString) -> JsonRpcError {
@@ -2761,6 +2786,56 @@ async fn handle_request(
             }
             .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?;
             Ok(json!({ "rewrites": rewrites }))
+        }
+
+        "plugin.rewrites.record" => {
+            // The writer behind slot #1 (`runtime.send.before`, ADR 0291 rule 5).
+            // The runtime's send hook hands over the text as the user sent it
+            // and the text the model received; the character diff is computed
+            // here, in the module that owns `plugin_rewrites`, and stored
+            // through the caps in `plugin_rewrites::record`. The payload is
+            // exactly the shape `extensions.rewrites.record` carries, so the
+            // Electron handler forwards it without reinterpreting anything.
+            let session_id = required_string_param(&params, "sessionId")?;
+            let plugin_id = required_string_param(&params, "pluginId")?;
+            let target_message_id = required_string_param(&params, "targetMessageId")?;
+            let kind = required_string_param(&params, "kind")?;
+            // The one kind slot #1 produces. A wider vocabulary belongs to a
+            // build that also writes it, and a record stored under the wrong
+            // kind would read back as a rewrite that never happened.
+            if kind != "outgoing_message" {
+                return Err(rpc_err(
+                    1002,
+                    "kind must be 'outgoing_message'",
+                    "INVALID_PARAMS",
+                ));
+            }
+            let before = string_param(&params, "before")?;
+            let after = string_param(&params, "after")?;
+            let turn_id = match params.get("turnId") {
+                None | Some(Value::Null) => None,
+                Some(_) => Some(required_string_param(&params, "turnId")?),
+            };
+            let st = state.lock().await;
+            let id = plugin_rewrites::record(
+                &st.db,
+                session_id,
+                turn_id,
+                plugin_id,
+                RewriteDiff::outgoing_message(target_message_id, before, after),
+            )
+            .map_err(|error| {
+                // An identifier past the cap is the caller's fault, not an
+                // internal failure; every other store error stays an INTERNAL
+                // so a broken database is not reported as a bad request.
+                let message = error.to_string();
+                if message.starts_with("LIMIT_EXCEEDED") {
+                    rpc_err(1002, message, "LIMIT_EXCEEDED")
+                } else {
+                    rpc_err(1000, message, "INTERNAL")
+                }
+            })?;
+            Ok(json!({ "id": id }))
         }
 
         "turn.facts" => {
@@ -8488,6 +8563,199 @@ mod tests {
             assert_eq!(error.code, 1002);
             assert_eq!(error.data.unwrap()["errorCode"], json!("INVALID_PARAMS"));
         }
+    }
+
+    /// The writer behind slot #1: the runtime's `extensions.rewrites.record`
+    /// payload is accepted, stored through the caps in `plugin_rewrites::record`,
+    /// and readable through the existing reader; a malformed payload is refused
+    /// with a coded error and never silently dropped (ADR 0291 rule 5).
+    #[tokio::test]
+    async fn plugin_rewrites_record_round_trips_through_the_reader() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let mut app_state = AppState::open(data_dir.path()).unwrap();
+        app_state.handshook = true;
+        let session =
+            sessions::create_session(&app_state.db, None, None, None, None, None).unwrap();
+        let state = Arc::new(Mutex::new(app_state));
+        let (tx, _rx) = mpsc::unbounded_channel();
+
+        let written = handle_request(
+            state.clone(),
+            "plugin.rewrites.record",
+            json!({
+                "sessionId": session.id,
+                "turnId": "turn-1",
+                "pluginId": "acme.sender",
+                "pluginLabel": "Acme Sender",
+                "kind": "outgoing_message",
+                "targetMessageId": "m-7",
+                "before": "hello world",
+                "after": "hello brave world"
+            }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        let first_id = written["id"].as_i64().unwrap();
+        assert!(first_id > 0);
+
+        // The record is stored exactly at diff level: the reader returns the
+        // changed span the writer derived from the two texts the runtime sent.
+        let listed = handle_request(
+            state.clone(),
+            "plugin.rewrites.list",
+            json!({ "sessionId": session.id, "kind": "outgoing_message" }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        let rewrites = listed["rewrites"].as_array().unwrap();
+        assert_eq!(rewrites.len(), 1);
+        assert_eq!(rewrites[0]["id"], json!(first_id));
+        assert_eq!(rewrites[0]["pluginId"], json!("acme.sender"));
+        assert_eq!(rewrites[0]["kind"], json!("outgoing_message"));
+        assert_eq!(rewrites[0]["truncated"], json!(false));
+        assert_eq!(rewrites[0]["turnId"], json!("turn-1"));
+        assert_eq!(rewrites[0]["diff"]["targetMessageId"], json!("m-7"));
+        assert_eq!(
+            rewrites[0]["diff"]["characterEdits"][0]["after"],
+            json!("brave ")
+        );
+
+        // A record outside any turn stays honest: slot #1 runs after send but
+        // before queueing, so the turn row may not exist yet.
+        let turnless = handle_request(
+            state.clone(),
+            "plugin.rewrites.record",
+            json!({
+                "sessionId": session.id,
+                "pluginId": "acme.sender",
+                "kind": "outgoing_message",
+                "targetMessageId": "m-8",
+                "before": "ship it",
+                "after": "ship it tomorrow"
+            }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        assert!(turnless["id"].as_i64().unwrap() > first_id);
+
+        // Malformed payloads are refused with a code that names the fault, so a
+        // producer that mis-reads the contract sees the failure instead of an
+        // un-audited rewrite.
+        let oversized = "p".repeat(257);
+        for (params, error_code) in [
+            (
+                json!({
+                    "pluginId": "acme.sender",
+                    "kind": "outgoing_message",
+                    "targetMessageId": "m-7",
+                    "before": "a",
+                    "after": "b"
+                }),
+                "INVALID_PARAMS",
+            ),
+            (
+                json!({
+                    "sessionId": session.id,
+                    "kind": "outgoing_message",
+                    "targetMessageId": "m-7",
+                    "before": "a",
+                    "after": "b"
+                }),
+                "INVALID_PARAMS",
+            ),
+            (
+                json!({
+                    "sessionId": session.id,
+                    "pluginId": "acme.sender",
+                    "kind": "outgoing_message",
+                    "before": "a",
+                    "after": "b"
+                }),
+                "INVALID_PARAMS",
+            ),
+            (
+                json!({
+                    "sessionId": session.id,
+                    "pluginId": "acme.sender",
+                    "kind": "outgoing_message",
+                    "targetMessageId": "m-7",
+                    "before": "a",
+                    "after": 7
+                }),
+                "INVALID_PARAMS",
+            ),
+            (
+                json!({
+                    "sessionId": "   ",
+                    "pluginId": "acme.sender",
+                    "kind": "outgoing_message",
+                    "targetMessageId": "m-7",
+                    "before": "a",
+                    "after": "b"
+                }),
+                "INVALID_PARAMS",
+            ),
+            // A kind this writer does not produce must not be stored under a
+            // diff shape it does not describe.
+            (
+                json!({
+                    "sessionId": session.id,
+                    "pluginId": "acme.sender",
+                    "kind": "system_prompt",
+                    "targetMessageId": "m-7",
+                    "before": "a",
+                    "after": "b"
+                }),
+                "INVALID_PARAMS",
+            ),
+            // A turn id that is not a string is a broken record, not a reason
+            // to store it without one.
+            (
+                json!({
+                    "sessionId": session.id,
+                    "turnId": 12,
+                    "pluginId": "acme.sender",
+                    "kind": "outgoing_message",
+                    "targetMessageId": "m-7",
+                    "before": "a",
+                    "after": "b"
+                }),
+                "INVALID_PARAMS",
+            ),
+            // An identifier past the cap is refused by the write boundary, not
+            // clipped into an unattributable row.
+            (
+                json!({
+                    "sessionId": session.id,
+                    "pluginId": oversized,
+                    "kind": "outgoing_message",
+                    "targetMessageId": "m-7",
+                    "before": "a",
+                    "after": "b"
+                }),
+                "LIMIT_EXCEEDED",
+            ),
+        ] {
+            let error = handle_request(state.clone(), "plugin.rewrites.record", params, tx.clone())
+                .await
+                .unwrap_err();
+            assert_eq!(error.code, 1002, "{error:?}");
+            assert_eq!(error.data.unwrap()["errorCode"], json!(error_code));
+        }
+
+        // None of the refused payloads left a row behind.
+        let after = handle_request(
+            state.clone(),
+            "plugin.rewrites.list",
+            json!({ "sessionId": session.id, "limit": 50 }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(after["rewrites"].as_array().unwrap().len(), 2);
     }
 
     /// `turn.facts` is the host's own answer for one turn — the numbers come

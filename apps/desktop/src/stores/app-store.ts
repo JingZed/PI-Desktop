@@ -180,6 +180,7 @@ import { createProjectSlice } from "./slices/project-slice";
 import { createCatalogSlice } from "./slices/catalog-slice";
 import { createEventsSlice } from "./slices/events-slice";
 import { createInteractionSlice } from "./slices/interaction-slice";
+import { createPluginRewritesSlice } from "./slices/plugin-rewrites-slice";
 import {
   createCatalogRuntime,
   type CatalogRuntime,
@@ -522,6 +523,8 @@ export const useAppStore = create<AppState>((set, get) => {
     assistantErrorMessage,
     withCompactionMark,
   }),
+
+  ...createPluginRewritesSlice({ get, set }),
 
   ...createInteractionSlice({
     get,

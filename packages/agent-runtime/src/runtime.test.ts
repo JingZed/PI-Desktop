@@ -9288,3 +9288,212 @@ describe("DesktopAgentRuntime send-before and session-lifecycle slots (#561 item
     await runtime.dispose();
   });
 });
+
+/**
+ * Runtime slots 8, 9 and 10 (ADR 0291): the calls a plugin makes for itself
+ * reach host-core through the same reverse proxy every other sidecar call uses,
+ * so what is under test here is the wiring — which host method is asked, with
+ * which arguments, and what the plugin receives back.
+ */
+describe("DesktopAgentRuntime turn slot calls (#561 slots 8, 9, 10)", () => {
+  let extensionRoot: string;
+
+  beforeEach(() => {
+    extensionRoot = mkdtempSync(join(tmpdir(), "pi-turn-slots-"));
+    clearTrustedExtensionCache();
+    for (const key of ["__slotFacts", "__slotRecapSession", "__slotRecapTurn", "__slotContinued"]) {
+      delete (globalThis as Record<string, unknown>)[key];
+    }
+  });
+
+  afterEach(() => {
+    rmSync(extensionRoot, { recursive: true, force: true });
+  });
+
+  const ALL_TURN_GRANTS = [
+    "agent.extension",
+    "runtime.turn.facts",
+    "runtime.turn.recap",
+    "runtime.session.read",
+    "runtime.turn.continue",
+  ] as const;
+
+  function spec(name: string, source: string): TrustedExtensionSpec {
+    const entry = join(extensionRoot, `${name}.ts`);
+    writeFileSync(entry, source);
+    return { id: entry, entry, label: name, source: "user", root: extensionRoot, permissions: ALL_TURN_GRANTS };
+  }
+
+  it("asks host-core for the turn's facts and hands the answer through", async () => {
+    const facts = {
+      sessionId: "session-1",
+      turnId: "turn-9",
+      status: "completed",
+      providerId: "local",
+      modelId: "local-model",
+      errorCode: null,
+      startedAt: "2026-09-18T10:00:00.000Z",
+      endedAt: "2026-09-18T10:00:02.000Z",
+      durationMs: 2_000,
+      tokens: { input: 120, output: 30, total: 150 },
+      usage: null,
+      pluginToolUsage: { totalTokens: 12 },
+      toolCalls: { total: 2, ok: 2, failed: 0, byTool: [] },
+      files: [],
+      filesTruncated: false,
+    };
+    const ext = spec(
+      "slot-facts",
+      `export default function (pi: any) {
+  pi.on("session_start", async () => {
+    (globalThis as any).__slotFacts = await pi.turnFacts();
+  });
+}`,
+    );
+    const host = {
+      call: vi.fn(async (method: string) =>
+        method === "turn.facts" ? { facts } : undefined,
+      ),
+      onNotification: vi.fn(() => () => {}),
+    };
+    const runtime = createRuntime({ host, trustedExtensions: [ext], turnId: "turn-9" });
+    await runtime.loadTrustedExtensions();
+
+    // The plugin's answer is the host's object, not a re-derived count.
+    expect((globalThis as Record<string, unknown>).__slotFacts).toBe(facts);
+    expect(host.call).toHaveBeenCalledWith("turn.facts", {
+      sessionId: "session-1",
+      turnId: "turn-9",
+    });
+    await runtime.dispose();
+  });
+
+  it("never asks for facts when no turn is running", async () => {
+    // `turnId` absent means the current turn; before any prompt there is none,
+    // so the host is not asked a turn-less question.
+    const ext = spec(
+      "slot-facts-idle",
+      `export default function (pi: any) {
+  pi.on("session_start", async () => {
+    (globalThis as any).__slotFacts = await pi.turnFacts();
+  });
+}`,
+    );
+    const host = {
+      call: vi.fn(async (_method: string) => undefined),
+      onNotification: vi.fn(() => () => {}),
+    };
+    const runtime = createRuntime({ host, trustedExtensions: [ext] });
+    await runtime.loadTrustedExtensions();
+
+    expect((globalThis as Record<string, unknown>).__slotFacts).toBeUndefined();
+    expect(host.call.mock.calls.map((call) => call[0])).not.toContain("turn.facts");
+    await runtime.dispose();
+  });
+
+  it("reads a whole session through host-core and reports truncation from the host", async () => {
+    const messages = [
+      { id: "u1", role: "user", content: "hello", createdAt: "2026-09-18T10:00:00.000Z" },
+    ];
+    const ext = spec(
+      "slot-recap-session",
+      `export default function (pi: any) {
+  pi.on("session_start", async () => {
+    const g = globalThis as any;
+    g.__slotRecapSession = await pi.recap({ scope: "session", limit: 50 });
+    g.__slotRecapTurn = await pi.recap();
+  });
+}`,
+    );
+    const host = {
+      call: vi.fn(async (method: string) => {
+        if (method === "session.get") {
+          return { session: { messages, hasMoreBefore: true } };
+        }
+        if (method === "turn.facts") {
+          return {
+            facts: {
+              sessionId: "session-1",
+              turnId: "turn-9",
+              status: "running",
+              providerId: null,
+              modelId: null,
+              errorCode: null,
+              startedAt: "2026-09-18T10:00:00.000Z",
+              endedAt: null,
+              durationMs: null,
+              tokens: { input: 0, output: 0, total: 0 },
+              usage: null,
+              pluginToolUsage: null,
+              toolCalls: { total: 0, ok: 0, failed: 0, byTool: [] },
+              files: [],
+              filesTruncated: false,
+            },
+          };
+        }
+        return undefined;
+      }),
+      onNotification: vi.fn(() => () => {}),
+    };
+    const runtime = createRuntime({ host, trustedExtensions: [ext], turnId: "turn-9" });
+    await runtime.loadTrustedExtensions();
+
+    expect((globalThis as Record<string, any>).__slotRecapSession).toEqual({
+      scope: "session",
+      sessionId: "session-1",
+      messages,
+      truncated: true,
+    });
+    // `session.get` windows the transcript itself: the newest rows and
+    // `hasMoreBefore`, not a copy this process slices.
+    expect(host.call).toHaveBeenCalledWith("session.get", {
+      id: "session-1",
+      messageLimit: 50,
+    });
+    // A turn recap answers with the host's facts and names the missing text.
+    expect((globalThis as Record<string, any>).__slotRecapTurn).toEqual({
+      scope: "turn",
+      sessionId: "session-1",
+      turnId: "turn-9",
+      facts: expect.objectContaining({ turnId: "turn-9" }),
+      messages: null,
+      messagesUnavailable: "no-host-turn-read",
+    });
+    await runtime.dispose();
+  });
+
+  it("continues through the host-owned queue and carries the plugin's identity", async () => {
+    const ext = spec(
+      "slot-continue",
+      `export default function (pi: any) {
+  pi.on("session_start", async () => {
+    (globalThis as any).__slotContinued = await pi.continueTurn({ message: "finish the check" });
+  });
+}`,
+    );
+    const host = {
+      call: vi.fn(async (method: string) =>
+        method === "session.queuePush" ? { id: "queued-turn-7" } : undefined,
+      ),
+      onNotification: vi.fn(() => () => {}),
+    };
+    const runtime = createRuntime({ host, trustedExtensions: [ext], turnId: "turn-9" });
+    await runtime.loadTrustedExtensions();
+
+    expect((globalThis as Record<string, any>).__slotContinued).toEqual({
+      queuedTurnId: "queued-turn-7",
+    });
+    // The same host-owned queue a desktop send uses, with the plugin named in
+    // the request so the host can attribute the continuation (ADR 0289).
+    expect(host.call).toHaveBeenCalledWith(
+      "session.queuePush",
+      expect.objectContaining({
+        sessionId: "session-1",
+        content: "finish the check",
+        pluginId: ext.id,
+        pluginLabel: "slot-continue",
+      }),
+    );
+    await runtime.dispose();
+  });
+});

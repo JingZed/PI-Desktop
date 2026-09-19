@@ -41,6 +41,11 @@ function fakeHost(calls: Array<{ method: string; params: unknown }>, projectPath
           return { projects: [{ id: 7, path: projectPath, name: "proj" }] } as T;
         case "projects.create":
           return { project: { id: 8, path: params.path, name: "app" } } as T;
+        case "session.fork": {
+          const forked = { id: "s3", title: params.title ?? "Fork", mode: "agent", permissionMode: "ask", projectPath };
+          sessions.set("s3", forked);
+          return { session: forked } as T;
+        }
         default:
           throw new Error(`unexpected ${method}`);
       }
@@ -104,5 +109,39 @@ describe("pi-host operations over host-core", () => {
     await expect(operations.workspace.list("s9", "")).rejects.toBeInstanceOf(RacpError);
     const diff = await operations.workspace.diff("s1");
     expect(diff.repo).toBe(false);
+  });
+
+  it("announces the session moments it owns, informed-only", async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), "pi-host-ops-")));
+    dirs.push(root);
+    const notices: Array<Record<string, unknown>> = [];
+    const operations = createHostOperations({
+      getHost: () => fakeHost([], root),
+      runtime: { compact: async () => ({ accepted: true }), isBusy: () => false },
+      notifyLifecycle: (notice) => notices.push(notice),
+    });
+    const created = await operations.sessions.create({}, { subject: "d", roles: ["owner"] });
+    await operations.sessions.fork("s1", { throughMessageId: "m-9" });
+    await operations.sessions.delete(created.id);
+
+    // A headless Host has create / fork / delete moments; a switch is not one
+    // of them, because RACP has no "open session" operation to observe
+    // (ADR 0291 rule 11).
+    expect(notices).toEqual([
+      { change: "created", sessionId: "s2" },
+      { change: "fork", sessionId: "s1", entryId: "m-9", position: "before" },
+      { change: "deleted", sessionId: "s2" },
+    ]);
+  });
+
+  it("works with no lifecycle sink at all", async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), "pi-host-ops-")));
+    dirs.push(root);
+    const operations = createHostOperations({
+      getHost: () => fakeHost([], root),
+      runtime: { compact: async () => ({ accepted: true }), isBusy: () => false },
+    });
+    await expect(operations.sessions.create({}, { subject: "d", roles: ["owner"] })).resolves.toMatchObject({ id: "s2" });
+    await expect(operations.sessions.delete("s1")).resolves.toBeUndefined();
   });
 });

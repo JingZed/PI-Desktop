@@ -385,18 +385,22 @@ main、渲染层或插件宿主进程中。
 | `tool_result` | `afterToolCall` | 是，替换结果 |
 | `model_select`、`thinking_level_select` | v1 说明：不触发；绑定变更会重建运行时 | 否 |
 | `session_before_compact`、`session_compact`、`session_compact_failed` | 压缩流水线 | `session_before_compact` 为是 |
-| `session_before_fork` | v1 说明：不触发；fork 在 Electron main 执行 | 不适用 |
-| `input` | v1 说明：不触发；Host 队列准入尚未接入 | 不适用 |
-| `user_bash`、`session_before_switch`、`session_before_tree`、`session_tree`、`ui_prompt_start`、`ui_prompt_end` | v1 不触发 | 不适用 |
+| `input` | Electron main 持久化消息之后、进入模型队列之前（运行时槽 1，issue #561；由 `runtime.send.before` 门禁 —— 规格 13 §2C） | 是：`{ action: "continue" \| "transform" \| "handled", text?, reason? }`；`transform` 替换模型读到的内容，并按差异级别记录（ADR 0291 规则 5） |
+| `session_before_switch` | 会话切换：被离开的会话，在新会话打开之前通告（运行时槽 11，仅告知 —— ADR 0291 规则 11） | 否 |
+| `session_before_fork` | 会话 fork：源会话，在子会话存在之前通告（运行时槽 11，仅告知） | 否 |
+| `session_lifecycle` | 会话创建/删除 —— 内核没有 hook 的两个时刻，由宿主通告（运行时槽 11，仅告知） | 否 |
+| `user_bash`、`session_before_tree`、`session_tree`、`ui_prompt_start`、`ui_prompt_end` | v1 不触发 | 不适用 |
 
 处理器只有在扩展所属插件持有其事件背后的槽位权限时才会运行（ADR 0291 规则 2）：
 `turn_closing` 需要 `runtime.turn.closing`，`tool_call` 与 `tool_result` 需要
 `runtime.tool.gate`，上表中其他写明槽位的事件同理。该映射覆盖每一个会改变轮次的已接线
 事件；`session_start`、`session_shutdown` 与 `session_info_changed` 没有槽位。所有槽位
 权限都已注册，因此门禁对所有插件都是严格的：`agent.extension` 只说明代码在哪里运行，
-绝不隐含授权，高信任层级也不例外。映射到桌面尚未触发的事件（`input`、`project_trust`、
-`resources_discover`、`session_before_fork`、`model_select`、`thinking_level_select`）
-按映射保留门禁，因此不会从不触发的钩子点运行任何处理器。
+绝不隐含授权，高信任层级也不例外。映射到桌面尚未触发的事件（`project_trust`、
+`resources_discover`、`model_select`、`thinking_level_select`）按映射保留门禁，
+因此不会从不触发的钩子点运行任何处理器。生命周期通告均为仅告知：
+`session_before_switch`、`session_before_fork` 与 `session_lifecycle` 会被发出且从不等待，
+因此插件无法拖延切换、fork 或删除（ADR 0291 规则 11）。
 
 runner 会拿到该插件被授予的权限清单 —— 没有记录授权的扩展不持有任何权限 —— 对无权运行的
 处理器直接跳过，并把跳过作为插件行上 kind 为 `permission_denied`、写明权限名的扩展诊断

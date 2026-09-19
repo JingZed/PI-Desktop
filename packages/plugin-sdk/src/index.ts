@@ -747,6 +747,217 @@ export type PluginToolExecContext = {
 };
 
 /**
+ * One turn's model tokens, as the host recorded them for that turn. `total` is
+ * `input + output`; a provider's own total (which may count reasoning tokens
+ * differently) stays inside {@link PluginTurnFacts.usage}.
+ */
+export type PluginTurnTokens = {
+  input: number;
+  output: number;
+  total: number;
+};
+
+/** One tool's share of a turn's executed calls. */
+export type PluginToolCallSummary = {
+  /** Tool name as the host's audit record carries it. */
+  toolName: string;
+  calls: number;
+  ok: number;
+  failed: number;
+  /** Distinct error codes of the failed calls, sorted; empty when none failed. */
+  errorCodes: string[];
+};
+
+/** A turn's executed tool calls; `total` is `ok + failed` for every turn. */
+export type PluginToolCallFacts = {
+  total: number;
+  ok: number;
+  failed: number;
+  /** One entry per tool, ordered by tool name. */
+  byTool: PluginToolCallSummary[];
+};
+
+/** One file a turn touched, with the operation that turn performed on it. */
+export type PluginTurnFile = {
+  sessionId: string;
+  sessionTitle: string | null;
+  path: string;
+  /** `create | write | edit | download | delete`. */
+  op: string;
+  /** The turn that touched the file; `null` when the touch belonged to no turn. */
+  turnId: string | null;
+  updatedAt: string;
+};
+
+/**
+ * The facts about one turn, exactly as the host assembled them — what
+ * `pi.turnFacts()` answers (ADR 0291 slot 9, permission
+ * `runtime.turn.facts`).
+ *
+ * Every number comes from the host's own tables for that turn. This is **not**
+ * the plugin's view of the event stream: `runtime.turn.watch` delivers events
+ * best-effort, with no receipt and no redelivery, so counting what a plugin
+ * happened to see is a different number — which is why slot 9 exists. Nothing
+ * here is conversation text either; use `pi.recap()` for content.
+ */
+export type PluginTurnFacts = {
+  sessionId: string;
+  turnId: string;
+  /** `running | completed | aborted | error`. */
+  status: string;
+  providerId: string | null;
+  modelId: string | null;
+  /** The turn's own terminal error code, not a tool's. */
+  errorCode: string | null;
+  startedAt: string;
+  /** `null` while the turn is still running. */
+  endedAt: string | null;
+  /** `endedAt - startedAt` in milliseconds; `null` while running. */
+  durationMs: number | null;
+  tokens: PluginTurnTokens;
+  /** The provider's usage record as the host stored it, or `null`. */
+  usage: unknown;
+  /**
+   * Spend the turn's plugin tools reported (`runtime.tool.extend`). It is its
+   * own component and never part of `tokens`.
+   */
+  pluginToolUsage: unknown;
+  toolCalls: PluginToolCallFacts;
+  /** The files the turn touched, oldest touch first. */
+  files: PluginTurnFile[];
+  /** True when `files` hit the requested limit and holds only the first touches. */
+  filesTruncated: boolean;
+};
+
+/**
+ * What `pi.recap()` answered (ADR 0291 slot 8, permission
+ * `runtime.turn.recap`; a whole-session read additionally needs
+ * `runtime.session.read`, rule 7).
+ *
+ * The two scopes answer different things, and the turn scope says plainly what
+ * the host cannot answer yet: one turn's numbers are host-owned
+ * (`pi.turnFacts()`), while one turn's conversation text has no host read path
+ * — the transcript is not queryable per turn. `messages` is therefore `null`
+ * with `messagesUnavailable`, never an empty list that could be mistaken for a
+ * turn that said nothing. The whole session's rows are readable, and that is
+ * what `scope: "session"` returns.
+ */
+export type PluginTurnRecap =
+  | {
+      /** One turn. */
+      scope: "turn";
+      sessionId: string;
+      turnId: string;
+      /** The same facts `pi.turnFacts()` returns for that turn. */
+      facts: PluginTurnFacts;
+      /** Always `null`: no host read returns one turn's conversation text. */
+      messages: null;
+      /** Why `messages` is absent, so an empty turn is never implied. */
+      messagesUnavailable: "no-host-turn-read";
+    }
+  | {
+      /** The whole session. */
+      scope: "session";
+      sessionId: string;
+      /** Newest last, in the host's transcript shape. */
+      messages: ReadonlyArray<unknown>;
+      /** True when older rows exist outside the returned window. */
+      truncated: boolean;
+    };
+
+/**
+ * What `pi.continueTurn()` did (ADR 0291 slot 10, permission
+ * `runtime.turn.continue`).
+ *
+ * The continuation is a real, durable turn queued on the host — the same queue
+ * a message the user types goes through — so it survives a restart and runs
+ * after the current turn ends, or right away when the session is idle. There
+ * is no numeric quota: what replaces one is visibility (a row in the
+ * transcript) and the audit trail, not a budget a plugin has to guess.
+ */
+export type PluginTurnContinuation = {
+  /**
+   * The queued turn's id. The agent turn that actually runs from it is created
+   * at the next turn boundary and carries its own durable turn id, so this is
+   * not a `pi.turnFacts()` key.
+   */
+  queuedTurnId: string;
+};
+
+/** Text of the turn to continue with, either bare or as `{ message }`. */
+export type PluginTurnContinueInput = string | { message?: string };
+
+/**
+ * The three runtime-slot calls an agent extension makes for itself (ADR 0291).
+ * They are declared here because the upstream `ExtensionAPI` type has no member
+ * for them; the agent sidecar's `pi` object implements them, and each one is
+ * separately granted.
+ *
+ * Every call reports a refusal instead of throwing: a plugin that does not hold
+ * the permission gets `undefined` **and** a `permission_denied` diagnostic on
+ * the plugin row naming the permission and the call. `undefined` is also the
+ * answer when the host cannot answer at all — an unknown turn, or a failed
+ * read — and that failure is reported the same way, so a missing answer is
+ * never silent.
+ */
+export type PluginTurnApi = {
+  /**
+   * Slot 9 facts about one turn — status, provider and model, tokens, the
+   * turn's own plugin-tool spend, duration, executed tool calls with their
+   * outcomes and error codes, and the files it touched with their operations.
+   *
+   * Permission: `runtime.turn.facts` (low risk — numbers, no conversation
+   * text). Returns `undefined` when refused, when the turn is unknown (a turn
+   * the host never recorded is not answered with zeroes), or when the read
+   * failed.
+   *
+   * `turnId` defaults to the running turn. `limit` caps the file list
+   * (default 200, ceiling 499); `filesTruncated` says whether the cap was hit.
+   * Cost: one host read per call, cheap next to a provider request, but a real
+   * read — do not poll it from a per-message handler.
+   */
+  turnFacts(input?: { turnId?: string; limit?: number }): Promise<PluginTurnFacts | undefined>;
+  /**
+   * Slot 8 read of what a turn contained.
+   *
+   * Permission: `runtime.turn.recap`. `scope: "session"` reads conversation
+   * content and therefore **also** needs `runtime.session.read` (rule 7):
+   * without it the call is refused and the diagnostic names that permission.
+   * Reads are not recorded one by one — the install review and the plugin row
+   * are the consent surface.
+   *
+   * Returns `undefined` when refused or when the read failed. `scope: "turn"`
+   * (the default) answers with that turn's facts and says
+   * `messagesUnavailable: "no-host-turn-read"`, because one turn's text has no
+   * host read path yet. `scope: "session"` answers with the newest `limit`
+   * transcript rows (default 200, ceiling 500) plus `truncated`.
+   *
+   * Risk: the session scope hands the plugin what was said. Ask for the
+   * narrowest scope that answers the question, and read what the plugin needs
+   * rather than archiving a transcript.
+   */
+  recap(input?: {
+    scope?: "turn" | "session";
+    turnId?: string;
+    limit?: number;
+  }): Promise<PluginTurnRecap | undefined>;
+  /**
+   * Slot 10 continuation: start another turn after this one ends.
+   *
+   * Permission: `runtime.turn.continue`. Returns `undefined` when refused or
+   * when the host could not queue it.
+   *
+   * Risk: the continuation costs a full provider request the user did not type,
+   * and there is no quota (rule 9), so asking for a turn where it adds nothing
+   * spends the user's money and attention. The queued turn is a real, visible
+   * row; it does not yet **name** the plugin — the host's queue and transcript
+   * rows carry no plugin provenance yet, which is a host gap, not something a
+   * plugin should work around.
+   */
+  continueTurn(input: PluginTurnContinueInput): Promise<PluginTurnContinuation | undefined>;
+};
+
+/**
  * The `input` event's payload (ADR 0291 slot 1, permission
  * `runtime.send.before`).
  *

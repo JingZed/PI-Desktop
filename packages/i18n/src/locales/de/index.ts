@@ -298,6 +298,10 @@ export const de = {
     "revisionPrev": "Vorherige Version",
     "revisionNext": "Nächste Version",
     "revisionPager": "{{current}} / {{total}}",
+    "rewrittenByPlugin": "Von {{name}} umgeschrieben",
+    "rewriteModelVersion": "Das hat das Modell erhalten",
+    "rewritePartial":
+      "Der Eintrag wurde gekürzt, ein Teil der Änderung wird nicht angezeigt.",
     "usageContextLabel": "Kontext",
     "usageContextLeft": "{{count}} Token übrig",
     "usageContextSpent": "{{count}} Token verwendet",
