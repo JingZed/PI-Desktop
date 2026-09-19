@@ -172,15 +172,23 @@ CREATE TRIGGER messages_au AFTER UPDATE OF text ON messages
       SELECT new.mid, new.text WHERE new.text IS NOT NULL;
   END;
 
+-- One row per recorded touch, not one row per file (schema v19, ADR 0291
+-- rule 8): a file changed in three turns must stay attributable to all three,
+-- so `turn_id` is part of the exposed shape and `op` names the effect that
+-- turn had (`create | write | edit | download | delete`; the vocabulary is
+-- enforced by the typed write path in `artifacts.rs`, so no stored row needs
+-- rewriting when it grows).
 CREATE TABLE artifacts (
+  id         INTEGER PRIMARY KEY,
   session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
   path       TEXT NOT NULL,
   op         TEXT NOT NULL,
   turn_id    TEXT,
-  updated_at INTEGER NOT NULL,
-  PRIMARY KEY (session_id, path)
-) WITHOUT ROWID;
+  updated_at INTEGER NOT NULL
+);
 CREATE INDEX idx_artifacts_time ON artifacts(updated_at DESC);
+CREATE INDEX idx_artifacts_session_turn
+  ON artifacts(session_id, turn_id, updated_at);
 
 CREATE TABLE message_revisions (
   id              TEXT PRIMARY KEY,

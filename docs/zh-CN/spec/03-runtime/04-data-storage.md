@@ -814,27 +814,32 @@ CREATE INDEX idx_message_revisions_root
 
 ### 4.10 artifacts — 会话生成的文件
 
-支持工件表面（基准§3.7）。 v1 计划从中得出这个
-`audit_log`，但审计有效负载从未记录文件路径；明确的
-预测是精确的、有索引的，并且能够经受审计修剪。
+支撑工件表面（基准 §3.7），也是"这一回合改了哪些文件"的 host 侧答案
+（ADR 0291 规则 8）。v1 计划从 `audit_log` 推导出它，但审计有效负载从未记录
+文件路径；显式的投影精确、有索引，并且能够经受审计修剪。
 
 ```sql
 CREATE TABLE artifacts (
+  id         INTEGER PRIMARY KEY,         -- one row per recorded touch
   session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
   path       TEXT NOT NULL,               -- absolute, workspace-resolved
-  op         TEXT NOT NULL,               -- write | edit | delete
-  turn_id    TEXT,
-  updated_at INTEGER NOT NULL,
-  PRIMARY KEY (session_id, path)
-) WITHOUT ROWID;
+  op         TEXT NOT NULL,               -- create | write | edit | download | delete
+  turn_id    TEXT,                        -- turn that touched the file
+  updated_at INTEGER NOT NULL             -- time of this touch
+);
 CREATE INDEX idx_artifacts_time ON artifacts(updated_at DESC);
+CREATE INDEX idx_artifacts_session_turn
+  ON artifacts(session_id, turn_id, updated_at);
 ```
 
-由 host-core 在与 `tool_execute` 审计行相同的事务中更新插入
-每当 Write/Edit（或声明文件效果的插件工具）成功时 -
-重复编辑更新 Write/Edit/`op`，每个会话每个文件保留一行。
-写入会话暂存目录 (D114) 被排除：工件列表
-仅工作区可交付成果。
+行是事实而不是按文件的缓存：一个文件在三个回合被改动就有三行，三个回合都能
+归属，去重不会隐藏任何一次触碰。Write/Edit（或声明自身文件效果的工具）成功
+时 host-core 为每次触碰插入一行 —— 调用前路径不存在记 `create`，否则记
+`write` / `edit`，调用删除了文件记 `delete`，下载或生成产生的文件记
+`download`。词表位于带类型的写入路径（`artifacts.rs`）而不是 SQL `CHECK`，
+因此更宽词表的构建写下的行仍按原样读出。`turn_id` 属于对外形状，
+`artifacts.list { sessionId, turnId }` 是按回合读取。写入会话暂存目录 (D114)
+被排除：工件列表仅工作区可交付成果。
 
 ### 4.11 scheduled_tasks + task_runs — 自动化
 
@@ -991,7 +996,7 @@ CREATE INDEX idx_notifications_unread
 | assistant/tool 消息结束 | 附加消息行；id 匹配时移除进行中检查点 | 索引行+触摸会话 |
 | 流式回复检查点（`session.saveInflightMessage`，D299） | 原子替换 `<id>.inflight.json`；空消息或已索引的 id 为空操作 | — |
 | 上下文检查点（`session.appendCompaction`） | 在其引用的消息边界之后附加类型化检查点行 | —（检查点是不可搜索的转录本内容） |
-| 工具成功（Write/Edit） | — | upsert `artifacts` + `audit_log` 行，与结果持久化相同的 tx |
+| 工具成功（Write/Edit） | — | 每个被改动的文件插入一行 `artifacts` 触碰行 + `tool_execute` `audit_log` 行 |
 | 通过 `session.endTurn` 打开终端 | `completed`/`error`：仅当该 id 已索引时才移除进行中检查点，否则留给 outbox 或启动恢复（D327）。`recoverInflight`：最终行从未落盘时，回合已 `completed` 则追加为 `complete`，否则为 `aborted` | 更新 `turns`；对于 completed/error，在同一交易中插入一个通知并修剪至 200 个；中止插入 无；被提升的检查点在该回合下获得一个索引行 |
 | plan/goal 提交 | 主机将准确的 Markdown 字节写入新的唯一 `<workspaceRoot>/.pi/<kind>/*.md` 文件 | 在发出批准请求之前插入一个 `plan_approvals(pending)` 行，其中包含类型、结构化 title/question、工件 path/hash/size 和到期时间 |
 | plan/goal 批准 | 验证不可变工件 path/hash/size | 原子地解析 `plan_approvals`，更新 `sessions.mode` 和显式 `permission_mode`，并设置 `execution_state = 'queued'`； reject/expiry 保持合约模式 |
@@ -1070,7 +1075,7 @@ outbox 排空。渲染器侧的停止绝不重写已有已开始回复的转录
   - 会话列表 → `idx_sessions_updated`
   - 按项目分组 → `idx_sessions_project`
   - badges/cost 汇总 → `idx_turns_session`（每个会话的最新回合）
-  - 按会话分类的工件 → PK；全球最近的工件 → `idx_artifacts_time`
+  - 某个会话或某个回合的工件 → `idx_artifacts_session_turn`；全局最近的工件 → `idx_artifacts_time`
   - 运行历史记录 → `idx_task_runs`
   - 审核 forensics/pruning → `idx_audit_session` / `idx_audit_ts`
   - 通知收件箱 → `idx_notifications_created`；未读 filter/count →
@@ -1103,6 +1108,13 @@ outbox 排空。渲染器侧的停止绝不重写已有已开始回复的转录
   —— 所有 v17 之前的行保持 NULL 归属。该步骤之前保留 `pi.sqlite.v16.bak` 副本。
   v15→v16 会话协作步骤现在写入 `16`（它自己的版本）而不是最新的架构常量，
   因此 v15 文件可以在一次启动中走完两个步骤。
+- **架构 v19 把 `artifacts` 重建为每次记录的触碰一行。** 旧的 `(session_id, path)`
+  主键被去掉，新增代理列 `id` 和 `idx_artifacts_session_turn` 索引，于是 `turn_id`
+  能把文件归属到每一个改动它的回合，`artifacts.list { sessionId, turnId }` 直接回答
+  "这一回合"（ADR 0291 规则 8）。所有已有行连同 `path`、`op`、`turn_id` 和
+  `updated_at` 原样保留 —— 旧形状每个文件只能有一行，因此不会发生合并 —— `op`
+  在 SQL 中不受约束，所以不需要重写任何已存值。该步骤之前保留
+  `pi.sqlite.v18.bak` 副本。
 - **架构 v7 首先到达 v8，然后使用受保护的路径。** v7→v8
   迁移之后是相同的受保护的 v8→v15 迁移；架构-v9 和
   schema-v10 数据库采用相同的受保护路径并接收精确的可读数据

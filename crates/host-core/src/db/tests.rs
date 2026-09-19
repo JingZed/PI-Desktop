@@ -1446,3 +1446,127 @@ fn a_v16_file_gains_the_provider_owner_column() {
         .unwrap();
     assert!(owner.is_none());
 }
+
+/// Schema v19 turns `artifacts` from one row per `(session, path)` into one row
+/// per recorded touch (ADR 0291 rule 8). Build a v18 file with real rows —
+/// including a row without a turn — then reopen it: every row keeps its path,
+/// op, turn, and timestamp, the per-touch shape is in place, the path can be
+/// touched again, and the pre-migration copy exists.
+#[test]
+fn a_v18_file_keeps_its_artifact_rows_when_they_become_one_row_per_touch() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("pi.sqlite");
+    let session_id;
+    {
+        let db = Database::open(&path).unwrap();
+        let session = crate::sessions::create_session(&db, None, None, None, None, None).unwrap();
+        session_id = session.id;
+        db.conn()
+            .execute_batch(
+                "DROP TABLE artifacts;
+                 CREATE TABLE artifacts (
+                   session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                   path       TEXT NOT NULL,
+                   op         TEXT NOT NULL,
+                   turn_id    TEXT,
+                   updated_at INTEGER NOT NULL,
+                   PRIMARY KEY (session_id, path)
+                 ) WITHOUT ROWID;
+                 CREATE INDEX idx_artifacts_time ON artifacts(updated_at DESC);",
+            )
+            .unwrap();
+        for (artifact_path, op, turn_id, updated_at) in [
+            (
+                "/w/notes.txt",
+                "write",
+                Some("turn-7"),
+                1_700_000_000_000_i64,
+            ),
+            (
+                "/w/draft.txt",
+                "edit",
+                Some("turn-9"),
+                1_700_000_001_000_i64,
+            ),
+            ("/w/plan.md", "write", None, 1_700_000_002_000_i64),
+        ] {
+            db.conn()
+                .execute(
+                    "INSERT INTO artifacts (session_id, path, op, turn_id, updated_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                    params![session_id, artifact_path, op, turn_id, updated_at],
+                )
+                .unwrap();
+        }
+        db.conn().pragma_update(None, "user_version", 18).unwrap();
+    }
+
+    let db = Database::open(&path).unwrap();
+    assert_eq!(schema_version(db.conn()), SCHEMA_VERSION);
+    assert!(migration_backup_path(&path, 18).exists());
+    let per_touch: bool = db
+        .conn()
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM pragma_table_info('artifacts') WHERE name = 'id')",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(per_touch);
+    // A v18 file could only hold one row per path, so the reopening must not
+    // have dropped or merged anything.
+    let rows: Vec<(String, String, Option<String>, i64)> = {
+        let mut stmt = db
+            .conn()
+            .prepare("SELECT path, op, turn_id, updated_at FROM artifacts ORDER BY updated_at, id")
+            .unwrap();
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })
+            .unwrap();
+        rows.collect::<rusqlite::Result<Vec<_>>>().unwrap()
+    };
+    assert_eq!(
+        rows,
+        vec![
+            (
+                "/w/notes.txt".to_string(),
+                "write".to_string(),
+                Some("turn-7".to_string()),
+                1_700_000_000_000_i64
+            ),
+            (
+                "/w/draft.txt".to_string(),
+                "edit".to_string(),
+                Some("turn-9".to_string()),
+                1_700_000_001_000_i64
+            ),
+            (
+                "/w/plan.md".to_string(),
+                "write".to_string(),
+                None,
+                1_700_000_002_000_i64
+            ),
+        ]
+    );
+    let turn_seven = crate::artifacts::list_for_turn(&db, &session_id, "turn-7", 50).unwrap();
+    assert_eq!(turn_seven.len(), 1);
+    assert_eq!(turn_seven[0].path, "/w/notes.txt");
+    assert_eq!(turn_seven[0].op, "write");
+    // The rebuilt table takes new touches per turn, not per file.
+    crate::artifacts::record(
+        &db,
+        &session_id,
+        "/w/notes.txt",
+        crate::artifacts::ArtifactOp::Delete,
+        Some("turn-11"),
+    )
+    .unwrap();
+    assert_eq!(
+        crate::artifacts::list_for_turn(&db, &session_id, "turn-11", 50)
+            .unwrap()
+            .len(),
+        1
+    );
+}

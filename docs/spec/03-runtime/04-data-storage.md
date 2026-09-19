@@ -904,27 +904,36 @@ CREATE INDEX idx_message_revisions_root
 
 ### 4.10 artifacts — files a session produced
 
-Backs the Artifacts surface (benchmark §3.7). v1 planned to derive this from
-`audit_log`, but audit payloads never recorded file paths; an explicit
-projection is precise, indexed, and survives audit pruning.
+Backs the Artifacts surface (benchmark §3.7) and is the host-owned answer to
+"which files did this turn change?" (ADR 0291 rule 8). v1 planned to derive
+this from `audit_log`, but audit payloads never recorded file paths; an
+explicit projection is precise, indexed, and survives audit pruning.
 
 ```sql
 CREATE TABLE artifacts (
+  id         INTEGER PRIMARY KEY,         -- one row per recorded touch
   session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
   path       TEXT NOT NULL,               -- absolute, workspace-resolved
-  op         TEXT NOT NULL,               -- write | edit | delete
-  turn_id    TEXT,
-  updated_at INTEGER NOT NULL,
-  PRIMARY KEY (session_id, path)
-) WITHOUT ROWID;
+  op         TEXT NOT NULL,               -- create | write | edit | download | delete
+  turn_id    TEXT,                        -- turn that touched the file
+  updated_at INTEGER NOT NULL             -- time of this touch
+);
 CREATE INDEX idx_artifacts_time ON artifacts(updated_at DESC);
+CREATE INDEX idx_artifacts_session_turn
+  ON artifacts(session_id, turn_id, updated_at);
 ```
 
-Upserted by host-core in the same transaction as the `tool_execute` audit row
-whenever Write/Edit (or a plugin tool declaring file effects) succeeds —
-repeat edits update `op`/`updated_at`, keeping one row per file per session.
-Writes into the session scratch directory (D114) are excluded: artifacts list
-workspace deliverables only.
+Rows are facts, not a per-file cache: a file changed in three turns has three
+rows, so all three stay attributable and no touch is hidden by deduplication.
+host-core inserts one row per recorded touch when Write/Edit (or a tool
+declaring its file effect) succeeds — `create` when the path did not exist
+before the call, `write` / `edit` otherwise, `delete` when the call removed
+it, `download` for a downloaded or generated artifact. The vocabulary lives in
+the typed write path (`artifacts.rs`), not in a SQL `CHECK`, so a row a build
+with a wider vocabulary wrote still reads back verbatim. `turn_id` is part of
+the exposed shape and `artifacts.list { sessionId, turnId }` is the per-turn
+read. Writes into the session scratch directory (D114) are excluded: artifacts
+list workspace deliverables only.
 
 ### 4.11 scheduled_tasks + task_runs — automations
 
@@ -1084,7 +1093,7 @@ is the source of truth, the index is derived and self-healing.
 | assistant/tool message end | append message line; remove the in-flight checkpoint when its id matches | index row + touch session |
 | streaming reply checkpoint (`session.saveInflightMessage`, D299) | atomically replace `<id>.inflight.json`; no-op for an empty message or an id already indexed | — |
 | context checkpoint (`session.appendCompaction`) | append typed checkpoint line after its referenced message boundary | — (checkpoint is not searchable transcript content) |
-| tool succeeded (Write/Edit) | — | upsert `artifacts` + `audit_log` row, same tx as result persistence |
+| tool succeeded (Write/Edit) | — | insert one `artifacts` touch row per changed file + the `tool_execute` `audit_log` row |
 | turn terminal via `session.endTurn` | `completed`/`error`: remove the in-flight checkpoint only when its id is already indexed; otherwise leave it for the outbox or boot (D327). `recoverInflight`: append the leftover as `complete` when the turn is `completed`, otherwise as `aborted`, when its final row never landed | update `turns`; for completed/error insert one notification and prune to 200 in the same tx; aborted inserts none; a promoted checkpoint gets an index row under the turn |
 | plan/goal submission | host writes the exact Markdown bytes to a new unique `<workspaceRoot>/.pi/<kind>/*.md` file | insert one `plan_approvals(pending)` row with the kind, structured title/question, artifact path/hash/size, and expiry before emitting the approval request |
 | plan/goal approval | verify the immutable artifact path/hash/size | atomically resolve `plan_approvals`, update `sessions.mode` and explicit `permission_mode`, and set `execution_state = 'queued'`; reject/expiry stay in the contract mode |
@@ -1191,7 +1200,8 @@ truncating at a guessed position.
   - group-by-project → `idx_sessions_project`
   - badges/cost rollup → `idx_turns_session` (latest turn per session)
   - global token history → `idx_turns_ended_at` (completed turns by end time)
-  - artifacts by session → PK; global recent artifacts → `idx_artifacts_time`
+  - artifacts of one session or one turn → `idx_artifacts_session_turn`; global
+    recent artifacts → `idx_artifacts_time`
   - run history → `idx_task_runs`
   - audit forensics/pruning → `idx_audit_session` / `idx_audit_ts`
   - notification inbox → `idx_notifications_created`; unread filter/count →
@@ -1267,6 +1277,15 @@ truncating at a guessed position.
   step. The v15→v16 session-collaboration step now stamps `16` (its own version)
   instead of the latest schema constant, so a v15 file can walk both steps in one
   launch.
+- **Schema v19 rebuilds `artifacts` as one row per recorded touch.** The
+  `(session_id, path)` primary key is dropped and the surrogate `id` plus the
+  `idx_artifacts_session_turn` index are added, so `turn_id` can attribute a
+  file to every turn that changed it and `artifacts.list { sessionId, turnId }`
+  answers "this turn" directly (ADR 0291 rule 8). Every existing row is carried
+  over with its `path`, `op`, `turn_id`, and `updated_at` intact — the old
+  shape could hold only one row per file, so nothing merges — and `op` stays
+  unconstrained in SQL, which is why no stored value has to be rewritten. A
+  `pi.sqlite.v18.bak` copy precedes the step.
 - **Schema v14 is additive.** It adds nullable `sessions.deleted_at`, the
   partial deletion index, and `session_import_origins`. Existing sessions stay
   active and have no origin rows. The migration runs in the same guarded

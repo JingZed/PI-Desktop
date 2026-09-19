@@ -673,7 +673,13 @@ activation-scope filtering (`CAPABILITY_INVALID` for an unknown scope).
   bodies, thinking, and attachments are omitted. Missing/deleted targets return
   `NOT_FOUND`; invalid directions or identifiers return `INVALID_ARGUMENT`.
   See [ADR session-content-search](../../adr/session-content-search.md).
-- `artifacts.list` — Plan/Goal checkpoint artifacts for a session
+- `artifacts.list` — recorded file touches, filtered to one session or (with
+  `turnId`, which requires `sessionId`) to the single turn that changed them.
+  Each row carries `path`, `op` (`create | write | edit | download | delete`),
+  `turnId`, and `updatedAt`; a path touched in several turns appears once per
+  touch, newest first for a session and in touch order for a turn. A `turnId`
+  without a `sessionId` returns `INVALID_ARGUMENT`. Additive RPC; no protocol
+  version bump (ADR 0291 rule 8).
 - `keyboard.setGlobalShortcut` — host-owned native fallback for the plugin
   launcher chord where Electron cannot register it
 

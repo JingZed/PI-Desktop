@@ -2695,10 +2695,25 @@ async fn handle_request(
 
         "artifacts.list" => {
             let session_id = params.get("sessionId").and_then(|v| v.as_str());
+            // `turnId` narrows the list to one turn: the host-owned answer to
+            // "which files did this turn change?" (ADR 0291 rule 8).
+            let turn_id = params.get("turnId").and_then(|v| v.as_str());
             let limit = params.get("limit").and_then(|v| v.as_i64()).unwrap_or(200);
             let st = state.lock().await;
-            let artifacts = artifacts::list(&st.db, session_id, limit)
-                .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?;
+            let artifacts = match turn_id {
+                Some(turn_id) => {
+                    let Some(session_id) = session_id else {
+                        return Err(rpc_err(
+                            1001,
+                            "sessionId is required with turnId",
+                            "INVALID_ARGUMENT",
+                        ));
+                    };
+                    artifacts::list_for_turn(&st.db, session_id, turn_id, limit)
+                }
+                None => artifacts::list(&st.db, session_id, limit),
+            }
+            .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?;
             Ok(json!({ "artifacts": artifacts }))
         }
 
@@ -3570,6 +3585,12 @@ async fn handle_request(
                     );
                     None
                 });
+                // The pre-tool snapshot is the only place that knows whether a
+                // Write created the file or replaced it; carry the fact forward
+                // before the snapshot itself is consumed (ADR 0291 rule 8).
+                let artifact_path_existed = pending_review
+                    .as_ref()
+                    .map(|pending| pending.before_exists());
                 let mut bash_options = None;
                 if p.tool_name == "Bash" {
                     let (shell_id, cancellation) = {
@@ -3694,10 +3715,18 @@ async fn handle_request(
                             Some(root) => root.join(rel).to_string_lossy().to_string(),
                             None => rel.to_string(),
                         };
-                        let op = if p.tool_name == "Write" {
-                            "write"
-                        } else {
-                            "edit"
+                        // The op is a fact, not a guess (ADR 0291 rule 8): the
+                        // pre-tool snapshot decided `create`, and the Edit
+                        // result names its own deletion.
+                        let deleted =
+                            result.content.get("deleted").and_then(Value::as_bool) == Some(true);
+                        let op = match (p.tool_name.as_str(), deleted) {
+                            ("Edit", true) => artifacts::ArtifactOp::Delete,
+                            ("Edit", false) => artifacts::ArtifactOp::Edit,
+                            (_, _) if artifact_path_existed == Some(false) => {
+                                artifacts::ArtifactOp::Create
+                            }
+                            (_, _) => artifacts::ArtifactOp::Write,
                         };
                         let _ = artifacts::record(
                             &st.db,

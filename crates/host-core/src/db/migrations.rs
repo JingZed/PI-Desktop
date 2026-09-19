@@ -573,6 +573,62 @@ pub(crate) fn migrate_v17_to_v18_tx(tx: &rusqlite::Transaction<'_>) -> Result<()
     Ok(())
 }
 
+/// v19 makes `artifacts` one row per recorded touch instead of one row per
+/// `(session, path)` (ADR 0291 rule 8). A file changed in three turns becomes
+/// three rows, so "which files did this turn change?" is an indexed per-turn
+/// query and no touch is hidden by deduplication. Existing rows keep their
+/// `path`, `op`, `turn_id`, and `updated_at` verbatim; the rebuild only adds
+/// the surrogate `id` and drops the old primary key. `op` stays unconstrained
+/// in SQL — the vocabulary lives in the typed write path — so no stored value
+/// has to be rewritten for old rows to stay valid.
+pub(crate) fn migrate_v18_to_v19_tx(tx: &rusqlite::Transaction<'_>) -> Result<()> {
+    let has_artifacts: bool = tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'artifacts')",
+        [],
+        |row| row.get(0),
+    )?;
+    // Probing the surrogate column keeps the step idempotent for a file that
+    // already created `artifacts` from the current DDL.
+    let already_per_touch: bool = tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM pragma_table_info('artifacts') WHERE name = 'id')",
+        [],
+        |row| row.get(0),
+    )?;
+    if has_artifacts && !already_per_touch {
+        tx.execute_batch(
+            r#"
+            CREATE TABLE artifacts_v19 (
+              id         INTEGER PRIMARY KEY,
+              session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+              path       TEXT NOT NULL,
+              op         TEXT NOT NULL,
+              turn_id    TEXT,
+              updated_at INTEGER NOT NULL
+            );
+            -- Only rows whose session still exists are carried over: every read
+            -- path joins `sessions`, and the sessions cascade means an orphan
+            -- row is already unreachable.
+            INSERT INTO artifacts_v19 (session_id, path, op, turn_id, updated_at)
+              SELECT a.session_id, a.path, a.op, a.turn_id, a.updated_at
+                FROM artifacts a
+               WHERE EXISTS (SELECT 1 FROM sessions s WHERE s.id = a.session_id)
+               ORDER BY a.session_id, a.path;
+            DROP TABLE artifacts;
+            ALTER TABLE artifacts_v19 RENAME TO artifacts;
+            "#,
+        )?;
+    }
+    tx.execute_batch(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_artifacts_time ON artifacts(updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_artifacts_session_turn
+          ON artifacts(session_id, turn_id, updated_at);
+        "#,
+    )?;
+    tx.pragma_update(None, "user_version", 19i64)?;
+    Ok(())
+}
+
 pub(crate) fn migration_backup_path(path: &Path, version: i64) -> PathBuf {
     path.with_extension(format!("sqlite.v{version}.bak"))
 }
@@ -776,6 +832,19 @@ pub(crate) fn migrate_v17_to_v18(conn: &Connection, path: &Path) -> Result<()> {
     tx.commit().with_context(|| {
         format!(
             "commit schema v17 to v18 migration; backup {} remains",
+            backup.display()
+        )
+    })?;
+    Ok(())
+}
+
+pub(crate) fn migrate_v18_to_v19(conn: &Connection, path: &Path) -> Result<()> {
+    let backup = create_migration_backup(conn, path, 18)?;
+    let tx = conn.unchecked_transaction()?;
+    migrate_v18_to_v19_tx(&tx)?;
+    tx.commit().with_context(|| {
+        format!(
+            "commit schema v18 to v19 migration; backup {} remains",
             backup.display()
         )
     })?;

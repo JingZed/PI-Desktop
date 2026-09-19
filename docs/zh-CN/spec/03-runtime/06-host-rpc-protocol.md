@@ -460,7 +460,12 @@ off | minimal | low | medium | high | xhigh | max
 
 ### 搜索、工件、键盘
 - `search.query` — 跨会话、项目和设置目的地的全局搜索（ADR 0034）
-- `artifacts.list` — 某会话的 Plan/Goal 检查点工件
+- `artifacts.list` — 已记录的文件触碰，可按某个会话过滤，或（配合 `turnId`，
+  它需要 `sessionId`）只取改动过文件的单个回合。每行带有 `path`、`op`
+  （`create | write | edit | download | delete`）、`turnId` 和 `updatedAt`；
+  被多个回合触碰过的路径每次触碰各出现一次，会话视图按最新在前，回合视图按触碰
+  顺序。只有 `turnId` 而没有 `sessionId` 返回 `INVALID_ARGUMENT`。增量 RPC；
+  不提升协议版本（ADR 0291 规则 8）。
 - `keyboard.setGlobalShortcut` — 在 Electron 无法注册插件启动器快捷键时，
   由宿主持有的原生回退
 
