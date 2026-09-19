@@ -9497,3 +9497,284 @@ describe("DesktopAgentRuntime turn slot calls (#561 slots 8, 9, 10)", () => {
     await runtime.dispose();
   });
 });
+
+describe("DesktopAgentRuntime before-request slot (#561 item 6)", () => {
+  let extensionRoot: string;
+
+  beforeEach(() => {
+    extensionRoot = mkdtempSync(join(tmpdir(), "pi-slot-6-"));
+    clearTrustedExtensionCache();
+    for (const key of ["__slotContext", "__slotLevel", "__slotModel"]) {
+      delete (globalThis as Record<string, unknown>)[key];
+    }
+  });
+
+  afterEach(() => {
+    rmSync(extensionRoot, { recursive: true, force: true });
+  });
+
+  /** Slot 6's grant, plus the tier grant that places the code in the sidecar. */
+  const REQUEST_GRANTS = ["agent.extension", "runtime.request.before"] as const;
+
+  function spec(
+    name: string,
+    source: string,
+    permissions: readonly string[] = REQUEST_GRANTS,
+  ): TrustedExtensionSpec {
+    const entry = join(extensionRoot, `${name}.ts`);
+    writeFileSync(entry, source);
+    return { id: entry, entry, label: name, source: "user", root: extensionRoot, permissions };
+  }
+
+  /** One plain assistant text turn, so a prompt ends without a tool batch. */
+  function fauxTurn() {
+    const stream = createAssistantMessageEventStream();
+    const message = assistantMessage({
+      content: [{ type: "text", text: "done" }],
+    }) as unknown as AssistantMessage;
+    queueMicrotask(() => {
+      stream.push({ type: "done", reason: "stop", message });
+      stream.end(message);
+    });
+    return stream;
+  }
+
+  async function startRuntime(specs: TrustedExtensionSpec[]) {
+    const host = {
+      call: vi.fn(async (_method: string, _params?: unknown) => undefined as unknown),
+      onNotification: vi.fn(() => () => {}),
+    };
+    const runtime = createRuntime({ host, trustedExtensions: specs });
+    await runtime.loadTrustedExtensions();
+    const models = {
+      streamSimple: vi.fn((_model: unknown, _context: { messages: unknown[] }) => fauxTurn()),
+    };
+    (runtime as any).models = models;
+    return { runtime, models, host };
+  }
+
+  /** The context the kernel hands `prepareNextTurn` when a run continues. */
+  function nextTurn(runtime: DesktopAgentRuntime) {
+    const agent = (runtime as any).agent;
+    return {
+      context: { systemPrompt: "sys", messages: [], tools: agent.state.tools },
+      messages: [],
+      newMessages: [],
+      toolResults: [],
+    };
+  }
+
+  /** Records the runtime published to the audit sink (ADR 0295 rule 5). */
+  function rewriteRecords(host: { call: { mock: { calls: unknown[][] } } }) {
+    return host.call.mock.calls.filter((call) => call[0] === "extensions.rewrites.record");
+  }
+
+  it("rewrites the message list before a provider request and records the diff", async () => {
+    const ext = spec(
+      "context-rewrite",
+      `export default function (pi: any) {
+  pi.on("context", (event: any) => {
+    (globalThis as any).__slotContext = event.messages.length;
+    return { messages: event.messages.slice(1) };
+  });
+}`,
+    );
+    const { runtime, models, host } = await startRuntime([ext]);
+
+    await runtime.prompt("go", "user-1", "turn-1");
+
+    // The handler saw the list the request would have carried: the prompt.
+    expect((globalThis as Record<string, unknown>).__slotContext).toBe(1);
+    // The request itself carried what the plugin answered — a rewrite that used
+    // to be impossible for the first request of a prompt.
+    expect(models.streamSimple).toHaveBeenCalledTimes(1);
+    expect(models.streamSimple.mock.calls[0]?.[1]?.messages).toEqual([]);
+    // Diff level: both lists travel, so the host computes the diff.
+    expect(host.call).toHaveBeenCalledWith(
+      "extensions.rewrites.record",
+      expect.objectContaining({
+        sessionId: "session-1",
+        turnId: "turn-1",
+        pluginId: ext.id,
+        pluginLabel: "context-rewrite",
+        kind: "message_list",
+        before: expect.stringContaining('"go"'),
+        after: "[]",
+      }),
+    );
+    expect((runtime as any).extensionRunner.getDiagnostics()).toEqual([]);
+    await runtime.dispose();
+  });
+
+  it("refuses a context answer that is not a message list", async () => {
+    const ext = spec(
+      "context-malformed",
+      `export default function (pi: any) {
+  pi.on("context", () => ({ messages: "everything" }));
+}`,
+    );
+    const { runtime, models, host } = await startRuntime([ext]);
+
+    await runtime.prompt("keep me", "user-1", "turn-1");
+
+    // The request kept the list it would have carried, and the refusal is
+    // visible on the plugin row instead of the answer being ignored.
+    expect(models.streamSimple.mock.calls[0]?.[1]?.messages).toHaveLength(1);
+    expect(rewriteRecords(host)).toEqual([]);
+    expect((runtime as any).extensionRunner.getDiagnostics()).toEqual([
+      expect.objectContaining({
+        kind: "handler_error",
+        member: "context",
+        message: "context was refused: `messages` must be a list of messages",
+      }),
+    ]);
+    await runtime.dispose();
+  });
+
+  it("routes the next request to a level the model supports and records it", async () => {
+    const ext = spec(
+      "level-route",
+      `export default function (pi: any) {
+  pi.on("thinking_level_select", (event: any) => {
+    (globalThis as any).__slotLevel = [event.level, event.supported];
+    return { level: "high" };
+  });
+}`,
+    );
+    const { runtime, host } = await startRuntime([ext]);
+
+    const update = await (runtime as any).prepareNextTurn(nextTurn(runtime));
+
+    // The handler is asked with the level the request would use and with the
+    // ladder it may ask for.
+    expect((globalThis as Record<string, any>).__slotLevel).toEqual([
+      "medium",
+      ["off", "low", "medium", "high"],
+    ]);
+    // `prepareNextTurn` hands the kernel the level the plugin asked for; the
+    // desktop used to return the context alone and drop it.
+    expect(update.thinkingLevel).toBe("high");
+    expect(update.context).toBeDefined();
+    expect(host.call).toHaveBeenCalledWith(
+      "extensions.rewrites.record",
+      expect.objectContaining({
+        pluginId: ext.id,
+        pluginLabel: "level-route",
+        kind: "request_payload",
+        before: expect.stringContaining('"thinkingLevel":"medium"'),
+        after: expect.stringContaining('"thinkingLevel":"high"'),
+      }),
+    );
+    expect((runtime as any).extensionRunner.getDiagnostics()).toEqual([]);
+    await runtime.dispose();
+  });
+
+  it("refuses a thinking level the model does not support instead of clamping it", async () => {
+    const ext = spec(
+      "level-refused",
+      `export default function (pi: any) {
+  pi.on("thinking_level_select", () => ({ level: "max" }));
+}`,
+    );
+    const { runtime, host } = await startRuntime([ext]);
+
+    const update = await (runtime as any).prepareNextTurn(nextTurn(runtime));
+
+    expect(update.thinkingLevel).toBeUndefined();
+    expect(rewriteRecords(host)).toEqual([]);
+    expect((runtime as any).extensionRunner.getDiagnostics()).toEqual([
+      expect.objectContaining({
+        kind: "handler_error",
+        member: "thinking_level_select",
+        message:
+          'thinking_level_select was refused: "max" is not a level this model supports (off, low, medium, high)',
+      }),
+    ]);
+    await runtime.dispose();
+  });
+
+  it("refuses a model this session cannot request", async () => {
+    const ext = spec(
+      "model-refused",
+      `export default function (pi: any) {
+  pi.on("model_select", (event: any) => {
+    (globalThis as any).__slotModel = event.requestable;
+    return { model: "openai/gpt-5" };
+  });
+}`,
+    );
+    const { runtime, host } = await startRuntime([ext]);
+
+    const update = await (runtime as any).prepareNextTurn(nextTurn(runtime));
+
+    // The payload names what this run can request, so the refusal is never a
+    // guess, and the answer is not passed through to fail in the lookup.
+    expect((globalThis as Record<string, unknown>).__slotModel).toEqual([
+      { provider: "local", id: "local-model" },
+    ]);
+    expect(update.model).toBeUndefined();
+    expect(rewriteRecords(host)).toEqual([]);
+    expect((runtime as any).extensionRunner.getDiagnostics()).toEqual([
+      expect.objectContaining({
+        kind: "handler_error",
+        member: "model_select",
+        message:
+          'model_select was refused: "openai/gpt-5" is not a model this session can request; ' +
+          'the runtime is bound to "local/local-model"',
+      }),
+    ]);
+    await runtime.dispose();
+  });
+
+  it("honours an answer naming the model this session is bound to", async () => {
+    const ext = spec(
+      "model-confirmed",
+      `export default function (pi: any) {
+  pi.on("model_select", () => ({ model: { provider: "local", id: "local-model" } }));
+}`,
+    );
+    const { runtime, host } = await startRuntime([ext]);
+
+    const update = await (runtime as any).prepareNextTurn(nextTurn(runtime));
+
+    expect(update.model).toBe((runtime as any).model);
+    // Nothing changed, so nothing is recorded as a rewrite.
+    expect(rewriteRecords(host)).toEqual([]);
+    expect((runtime as any).extensionRunner.getDiagnostics()).toEqual([]);
+    await runtime.dispose();
+  });
+
+  it("skips a slot-6 handler the plugin holds no grant for", async () => {
+    // The tier grant places the code in the sidecar and grants no slot
+    // (ADR 0295 rule 2): both handlers are skipped and reported.
+    const ext = spec(
+      "tier-only",
+      `export default function (pi: any) {
+  pi.on("context", () => ({ messages: [] }));
+  pi.on("thinking_level_select", () => ({ level: "high" }));
+}`,
+      ["agent.extension"],
+    );
+    const { runtime, models, host } = await startRuntime([ext]);
+
+    await runtime.prompt("untouched", "user-1", "turn-1");
+    const update = await (runtime as any).prepareNextTurn(nextTurn(runtime));
+
+    expect(models.streamSimple.mock.calls[0]?.[1]?.messages).toHaveLength(1);
+    expect(update.thinkingLevel).toBeUndefined();
+    expect(rewriteRecords(host)).toEqual([]);
+    expect((runtime as any).extensionRunner.getDiagnostics()).toEqual([
+      expect.objectContaining({
+        kind: "permission_denied",
+        member: "context",
+        message: expect.stringContaining("runtime.request.before"),
+      }),
+      expect.objectContaining({
+        kind: "permission_denied",
+        member: "thinking_level_select",
+        message: expect.stringContaining("runtime.request.before"),
+      }),
+    ]);
+    await runtime.dispose();
+  });
+});

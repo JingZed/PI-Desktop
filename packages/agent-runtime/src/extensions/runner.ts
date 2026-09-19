@@ -895,6 +895,24 @@ export class TrustedExtensionRunner {
   }
 
   /**
+   * Slot 10's second entry point: queue a message the plugin wants sent.
+   *
+   * `sendUserMessage` reaches the same host-owned queue a continuation does
+   * (`session.queuePush`), so it starts a real turn exactly as `continueTurn`
+   * does and needs the same grant, `runtime.turn.continue`. A plugin without
+   * it is refused with a `permission_denied` diagnostic and nothing is queued —
+   * a refusal is never a quiet message the user never sees.
+   */
+  private extensionSendUserMessage(
+    extension: LoadedExtension,
+    content: string | unknown[],
+    options?: { deliverAs?: "steer" | "followUp" },
+  ): void | Promise<void> {
+    if (this.refuseApi(extension, "sendUserMessage", "sendUserMessage")) return;
+    return this.bridge.sendUserMessage(content, options);
+  }
+
+  /**
    * The slot permission that refuses this extension, or `undefined` when it
    * holds the permission and may proceed (ADR 0295 rule 2).
    *
@@ -926,6 +944,20 @@ export class TrustedExtensionRunner {
     );
     if (!owner) return undefined;
     return !this.refuseApi(owner, "toolResult", `toolResult:${toolName}`);
+  }
+
+  /**
+   * Report an answer a slot accepted but the host will not honour (ADR 0295
+   * rules 2 and 5).
+   *
+   * The plugin holds the grant, so this is not a permission refusal: its hook
+   * ran and answered, and the answer itself cannot be applied — a model this
+   * run cannot request, or a message list that is not a message list. The host
+   * says so on the plugin row instead of quietly passing the answer through,
+   * which is the same rule that makes a skipped handler a diagnostic.
+   */
+  rejectSlotAnswer(extensionId: string, member: string, message: string): void {
+    this.report(extensionId, "handler_error", message, member);
   }
 
   private errorReport(extensionId: string): TrustedExtensionLoadReport {
@@ -1099,8 +1131,10 @@ export class TrustedExtensionRunner {
       fork: (entryId: string) => bridge.fork(entryId),
       navigateTree: this.inert(extension, "navigateTree", Promise.resolve({ cancelled: true })),
       switchSession: this.inert(extension, "switchSession", Promise.resolve({ cancelled: true })),
-      sendUserMessage: (content: string | unknown[], options?: { deliverAs?: "steer" | "followUp" }) =>
-        bridge.sendUserMessage(content, options),
+      sendUserMessage: (
+        content: string | unknown[],
+        options?: { deliverAs?: "steer" | "followUp" },
+      ) => this.extensionSendUserMessage(extension, content, options),
     };
   }
 
@@ -1331,7 +1365,7 @@ export class TrustedExtensionRunner {
       continueTurn: (input: string | { message?: string }) =>
         this.extensionContinueTurn(extension, input),
       sendUserMessage: (content: string | unknown[], options?: { deliverAs?: "steer" | "followUp" }) =>
-        bridge.sendUserMessage(content, options),
+        this.extensionSendUserMessage(extension, content, options),
       events: {
         on: () => () => {},
         emit: () => {},

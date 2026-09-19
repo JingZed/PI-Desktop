@@ -45,6 +45,13 @@ export type AgentIpcDependencies = {
   dispatchApprovedPlan: (execution: unknown) => Promise<void>;
   dispatchExecutionForProposal: (proposalId: string) => Promise<void>;
   emitAgentEvent: (envelope: AgentEventEnvelope) => void;
+  /**
+   * Slot #10 (ADR 0295 rule 9): a queue-drained continuation just wrote the
+   * durable user row that names its plugin. Main tells the renderer, which
+   * re-reads that session's attributions so the row's badge appears without
+   * waiting for the next session read; a row nobody asked for never fires it.
+   */
+  notePluginContinuation?: (sessionId: string, pluginId: string) => void;
   setNotificationViewingSessionId: (sessionId: string | null) => void;
   optionalWorkspaceRoot: () => Promise<string | null>;
   composerCommandService: Pick<ComposerCommandService, "buildComposerCommands">;
@@ -88,6 +95,7 @@ export function registerAgentIpc({
   dispatchApprovedPlan,
   dispatchExecutionForProposal,
   emitAgentEvent,
+  notePluginContinuation,
   setNotificationViewingSessionId,
   optionalWorkspaceRoot,
   composerCommandService,

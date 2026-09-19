@@ -119,7 +119,15 @@ CREATE TABLE turn_queue (
   permission_mode  TEXT NOT NULL,
   position         INTEGER NOT NULL,
   priority         INTEGER,
-  created_at       INTEGER NOT NULL
+  created_at       INTEGER NOT NULL,
+  -- Provenance of a continuation a plugin asked for (schema v22, ADR 0295
+  -- rule 9 / slot #10 `runtime.turn.continue`): the plugin id plus the display
+  -- name as of the request, snapshotted for the same reason a transcript row
+  -- snapshots it — the queue entry stays readable after the plugin is
+  -- uninstalled. NULL is a queue entry the user (or the Host) made: a row
+  -- without provenance keeps behaving exactly as before.
+  plugin_id        TEXT,
+  plugin_label     TEXT
 );
 CREATE INDEX idx_turn_queue_session ON turn_queue(session_id, position);
 CREATE UNIQUE INDEX idx_turn_queue_idempotency
@@ -151,8 +159,18 @@ CREATE TABLE messages (
   is_error     INTEGER NOT NULL DEFAULT 0,
   text         TEXT,
   created_at   INTEGER NOT NULL,
+  -- Per-row plugin provenance (schema v22, ADR 0293/0295 rule 9): the plugin
+  -- id and display name a continuation row was written with, snapshotted at
+  -- append time. NULL is an ordinary row the user typed, which is why the
+  -- transcript draws a badge only for rows that carry it. Appended last so a
+  -- migrated file and a fresh one hold the same column order.
+  plugin_id    TEXT,
+  plugin_label TEXT,
   UNIQUE (session_id, seq)
 );
+-- The per-turn message read (`turn.messages`, ADR 0295 slot #8) orders one
+-- turn's rows through this partial index instead of scanning the session.
+CREATE INDEX idx_messages_turn ON messages(turn_id, seq) WHERE turn_id IS NOT NULL;
 
 CREATE VIRTUAL TABLE messages_fts USING fts5(
   text,

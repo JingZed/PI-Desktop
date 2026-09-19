@@ -668,6 +668,63 @@ pub(crate) fn migrate_v20_to_v21_tx(tx: &rusqlite::Transaction<'_>) -> Result<()
     Ok(())
 }
 
+/// v22 stores plugin provenance where a queued continuation and the message it
+/// becomes are created (ADR 0293 / ADR 0295 rule 9, slot #10
+/// `runtime.turn.continue`): `turn_queue` gains the nullable
+/// `plugin_id` / `plugin_label` the push request already carried, and
+/// `messages` gains the same pair so the row a plugin asked for can say who
+/// asked. Additive: every existing row keeps its content and stays valid with
+/// NULL provenance, which is exactly "a row the user typed"; nothing is
+/// backfilled from a guess. `idx_messages_turn` is the index behind the
+/// per-turn message read (`turn.messages`, slot #8). Both columns are appended
+/// last because `ALTER TABLE` appends, which keeps a migrated file and the
+/// fresh DDL in `schema.rs` at the same column order. Probing
+/// `pragma_table_info` keeps the step idempotent for a file that already
+/// created the tables from the current DDL.
+pub(crate) fn migrate_v21_to_v22_tx(tx: &rusqlite::Transaction<'_>) -> Result<()> {
+    let has_queue_plugin: bool = tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM pragma_table_info('turn_queue') WHERE name = 'plugin_id')",
+        [],
+        |row| row.get(0),
+    )?;
+    if !has_queue_plugin {
+        tx.execute_batch(
+            "ALTER TABLE turn_queue ADD COLUMN plugin_id TEXT;
+             ALTER TABLE turn_queue ADD COLUMN plugin_label TEXT;",
+        )?;
+    }
+    let has_message_plugin: bool = tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM pragma_table_info('messages') WHERE name = 'plugin_id')",
+        [],
+        |row| row.get(0),
+    )?;
+    if !has_message_plugin {
+        tx.execute_batch(
+            "ALTER TABLE messages ADD COLUMN plugin_id TEXT;
+             ALTER TABLE messages ADD COLUMN plugin_label TEXT;",
+        )?;
+    }
+    tx.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_messages_turn
+           ON messages(turn_id, seq) WHERE turn_id IS NOT NULL;",
+    )?;
+    tx.pragma_update(None, "user_version", 22i64)?;
+    Ok(())
+}
+
+pub(crate) fn migrate_v21_to_v22(conn: &Connection, path: &Path) -> Result<()> {
+    let backup = create_migration_backup(conn, path, 21)?;
+    let tx = conn.unchecked_transaction()?;
+    migrate_v21_to_v22_tx(&tx)?;
+    tx.commit().with_context(|| {
+        format!(
+            "commit schema v21 to v22 migration; backup {} remains",
+            backup.display()
+        )
+    })?;
+    Ok(())
+}
+
 pub(crate) fn migration_backup_path(path: &Path, version: i64) -> PathBuf {
     path.with_extension(format!("sqlite.v{version}.bak"))
 }

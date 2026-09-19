@@ -40,6 +40,14 @@ export type TurnStartRequest = {
   attachments?: AgentPromptAttachment[];
   effectivePermissionMode: RacpPermissionMode;
   idempotencyKey?: string;
+  /**
+   * Provenance of a continuation a plugin asked for (ADR 0293 / ADR 0295 rule
+   * 9, slot #10): the plugin id and the display name as of the request, which
+   * the durable user row is written with so it can name the plugin. Absent for
+   * every prompt the user made.
+   */
+  pluginId?: string;
+  pluginLabel?: string;
   principal: Principal;
 };
 
@@ -83,6 +91,9 @@ export type QueuedTurnRecord = {
   attachments?: AgentPromptAttachment[];
   effectivePermissionMode: RacpPermissionMode;
   idempotencyKey?: string;
+  /** Plugin provenance of a plugin-started continuation (schema v22, ADR 0293). */
+  pluginId?: string;
+  pluginLabel?: string;
   /** Stable hash of the input, so a reused key with different input is a conflict. */
   inputHash: string;
   /** Set only for promoted entries; the delivery order puts them first, in

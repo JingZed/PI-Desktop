@@ -382,26 +382,28 @@ export function createSidecarRuntime({
     /**
      * Slot 10 (ADR 0295 rule 9): a plugin's continuation is queued as a real,
      * durable turn through the same host-owned queue a desktop send uses. The
-     * request names the plugin that asked, because only the sidecar knows it —
-     * but host-core's `turn_queue` and `messages` rows carry no plugin
-     * provenance column yet, so the identity stops here: the row the user sees
-     * is real and visible, and the log line below is the only record naming the
-     * plugin until the host schema and the row badge catch up.
+     * request names the plugin that asked, and the identity now travels the
+     * whole way — the queue row stores it (schema v22), the drained turn
+     * carries it into the durable user row, and that row's badge says which
+     * plugin asked for the extra turn (ADR 0293).
      */
     queuePush: async (params) => {
       if (!runtimeState.agentHostBridge) throw new Error("agent host unavailable");
+      const pluginId = typeof params.pluginId === "string" ? params.pluginId : "";
+      const pluginLabel = typeof params.pluginLabel === "string" ? params.pluginLabel : "";
       const result = await runtimeState.agentHostBridge.queue.push({
         sessionId: String(params.sessionId ?? ""),
         content: String(params.content ?? ""),
         ...(typeof params.idempotencyKey === "string" ? { idempotencyKey: params.idempotencyKey } : {}),
+        ...(pluginId ? { pluginId } : {}),
+        ...(pluginLabel ? { pluginLabel } : {}),
       });
-      const pluginId = typeof params.pluginId === "string" ? params.pluginId : "";
       if (pluginId) {
         logger.app("plugin", "info", "plugin continuation queued", {
           sessionId: String(params.sessionId ?? ""),
           pluginId,
           data: {
-            pluginLabel: typeof params.pluginLabel === "string" ? params.pluginLabel : "",
+            pluginLabel,
             queuedTurnId: result?.id,
           },
         });

@@ -264,10 +264,21 @@ export type TrustedExtensionInputResult = {
  * (`outgoing_message` with character edits) and `plugin.rewrites.list` reads
  * it back. The diff itself is computed by the host, so `before` / `after` are
  * the full texts rather than a second implementation of the same algorithm.
- * `targetMessageId` is the transcript row the user sees, which is what makes
- * "rewritten by plugin X" attachable to that row.
+ *
+ * Two producers exist, one per rewrite slot, and they do not carry the same
+ * rows: slot 1 (send-before) rewrites one message the user can be shown, so
+ * its record names that message; slot 6 (before-request) rewrites what the
+ * model receives — the message list, or the request's model and thinking
+ * level — and has no single transcript row to attach to. `before`/`after` stay
+ * the full texts in both cases, so the owner of `plugin_rewrites` still
+ * computes the diff.
  */
-export type TrustedExtensionRewriteRecord = {
+export type TrustedExtensionRewriteRecord =
+  | TrustedExtensionSendRewriteRecord
+  | TrustedExtensionRequestRewriteRecord;
+
+/** Slot 1: the outgoing message, on the row the user sees. */
+export type TrustedExtensionSendRewriteRecord = {
   sessionId: string;
   /** The durable turn the rewrite belongs to, when it is known. */
   turnId?: string;
@@ -282,6 +293,36 @@ export type TrustedExtensionRewriteRecord = {
   /** The text as the user sent it. */
   before: string;
   /** The text the model received instead. */
+  after: string;
+};
+
+/**
+ * Slot 6: a rewrite of what the request carries, recorded at diff level.
+ *
+ * `message_list` is the context transform: `before`/`after` are the message
+ * list the request would have carried and the list it carried instead, in the
+ * host's own message shape, serialized. `request_payload` is the model and
+ * thinking-level route: `before`/`after` are the request's `model` and
+ * `thinkingLevel` fields serialized, so the walk the host already describes
+ * for that kind finds exactly what the plugin changed.
+ *
+ * Host-side reader note: `plugin.rewrites.record` accepts `outgoing_message`
+ * today and host-core already names the wider vocabulary. A slot-6 rewrite
+ * therefore records its diff through the same sink and the runtime reports a
+ * sink that cannot take it (`publishRewrite`), rather than applying the
+ * rewrite with no record attempted at all.
+ */
+export type TrustedExtensionRequestRewriteRecord = {
+  sessionId: string;
+  /** The durable turn the rewrite belongs to, when it is known. */
+  turnId?: string;
+  pluginId: string;
+  pluginLabel: string;
+  /** `message_list` for the context transform; `request_payload` for the route. */
+  kind: "message_list" | "request_payload";
+  /** The text before the rewrite: the message list, or the model/level fields. */
+  before: string;
+  /** The text the request carried instead. */
   after: string;
 };
 
@@ -406,6 +447,10 @@ export const PLUGIN_TOOL_EXTEND_PERMISSION = "runtime.tool.extend";
  * property of the requested scope rather than of the call — see
  * {@link trustedExtensionApiScopePermission}.
  * `continueTurn` is slot 10: start another turn after one ends.
+ * `sendUserMessage` is slot 10 too, under the same name: it queues through the
+ * same host-owned queue (`session.queuePush`) a desktop send and a continuation
+ * both use, so it starts a turn exactly as `continueTurn` does. One capability
+ * keeps one permission (D1); the map simply lets two call names resolve to it.
  */
 export const TRUSTED_EXTENSION_API_PERMISSIONS = {
   requestTurnAbort: "runtime.turn.abort",
@@ -413,6 +458,7 @@ export const TRUSTED_EXTENSION_API_PERMISSIONS = {
   turnFacts: "runtime.turn.facts",
   recap: "runtime.turn.recap",
   continueTurn: "runtime.turn.continue",
+  sendUserMessage: "runtime.turn.continue",
 } as const satisfies Record<string, string>;
 
 /**

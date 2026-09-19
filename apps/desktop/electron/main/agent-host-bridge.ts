@@ -46,6 +46,16 @@ type HostLike = {
   call<T = unknown>(method: string, params?: Record<string, unknown>): Promise<T>;
 };
 
+/**
+ * Provenance of a continuation a plugin asked for (ADR 0293 / ADR 0295 rule 9,
+ * slot #10). It is not part of the shared IPC contract: the renderer never
+ * sends it, and only the sidecar's queue push and the queue drain carry it.
+ **/
+type PluginContinuationOrigin = {
+  pluginId?: string;
+  pluginLabel?: string;
+};
+
 export type AgentHostBridgeOptions = {
   invoke: IpcInvoke;
   channels: typeof IPC.invoke;
@@ -125,6 +135,12 @@ export function createAgentHostBridge(options: AgentHostBridgeOptions) {
             ...(request.sessionMessageId ? { sessionMessageId: request.sessionMessageId } : {}),
             ...(request.attachments ? { attachments: request.attachments } : {}),
             ...(permissionModeOverride ? { permissionMode: permissionModeOverride } : {}),
+            // A queued continuation a plugin asked for keeps naming it on the
+            // durable user row the prompt handler writes (ADR 0293 / ADR 0295
+            // rule 9). The renderer never sends these: they exist only on the
+            // queue-drain path this bridge drives.
+            ...(request.pluginId ? { pluginId: request.pluginId } : {}),
+            ...(request.pluginLabel ? { pluginLabel: request.pluginLabel } : {}),
           },
         ])) as { accepted?: boolean; turnId: string };
         return { turnId: result.turnId };
@@ -250,8 +266,16 @@ export function createAgentHostBridge(options: AgentHostBridgeOptions) {
   });
 
   /** The desktop's queue operations, all under the owner principal. */
+  /**
+   * A continuation a plugin asked for (ADR 0293 / ADR 0295 rule 9, slot #10):
+   * the provenance the sidecar hands over at push time, carried through the
+   * queue record, the drain and the durable user row so the row can name the
+   * plugin. Absent on every request the desktop's own send makes.
+   */
   const queue = {
-    async push(request: AgentQueuePushRequest): Promise<QueuedTurnSummary> {
+    async push(
+      request: AgentQueuePushRequest & PluginContinuationOrigin,
+    ): Promise<QueuedTurnSummary> {
       const result = await forIpc(() =>
         agentHost.startTurn(DESKTOP_PRINCIPAL, {
           sessionId: request.sessionId,
@@ -261,11 +285,15 @@ export function createAgentHostBridge(options: AgentHostBridgeOptions) {
             text: request.content,
             ...(request.sessionMessageId ? { sessionMessageId: request.sessionMessageId } : {}),
             ...(request.attachments ? { attachments: request.attachments } : {}),
+            ...(request.pluginId ? { pluginId: request.pluginId } : {}),
+            ...(request.pluginLabel ? { pluginLabel: request.pluginLabel } : {}),
           },
           context: { requestId: `desktop-queue-${Date.now().toString(36)}` },
         }),
       );
-      const entry = agentHost.queueEntries(request.sessionId).find((candidate) => candidate.turn.id === result.turn.id);
+      const entry = agentHost
+        .queueEntries(request.sessionId)
+        .find((candidate) => candidate.turn.id === result.turn.id);
       return entry
         ? toQueueSummary(entry)
         : {

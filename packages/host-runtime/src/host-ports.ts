@@ -108,6 +108,9 @@ export type HostQueueEntry = {
   permissionMode: string;
   position: number;
   priority?: number;
+  /** Plugin provenance of a plugin-started continuation (schema v22, ADR 0293). */
+  pluginId?: string;
+  pluginLabel?: string;
   createdAt: string;
 };
 
@@ -125,6 +128,8 @@ export function fromHostQueueEntry(entry: HostQueueEntry): QueuedTurnRecord {
     ...(entry.idempotencyKey ? { idempotencyKey: entry.idempotencyKey } : {}),
     inputHash: entry.inputHash,
     ...(entry.priority !== undefined ? { priority: entry.priority } : {}),
+    ...(entry.pluginId ? { pluginId: entry.pluginId } : {}),
+    ...(entry.pluginLabel ? { pluginLabel: entry.pluginLabel } : {}),
     createdAt: Date.parse(entry.createdAt) || 0,
   };
 }
@@ -148,6 +153,8 @@ export function createHostQueueStore(getHost: () => HostRpc | null): QueueStore 
         content: record.content,
         ...(record.sessionMessageId ? { sessionMessageId: record.sessionMessageId } : {}),
         ...(record.attachments ? { attachments: record.attachments } : {}),
+        ...(record.pluginId ? { pluginId: record.pluginId } : {}),
+        ...(record.pluginLabel ? { pluginLabel: record.pluginLabel } : {}),
         permissionMode: record.effectivePermissionMode,
       });
     },

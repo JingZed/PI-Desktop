@@ -1061,6 +1061,132 @@ export type PluginInputResult = {
 };
 
 /**
+ * The `context` event's payload (ADR 0295 slot 6, permission
+ * `runtime.request.before`).
+ *
+ * It fires before **every** provider request of a run — the first one of a
+ * prompt included — and hands over the message list that request would carry.
+ * This is the kernel's `transformContext` point, so it is the one place a
+ * plugin may delete, replace, or reorder history for the model.
+ *
+ * ```ts
+ * pi.on("context", (event) => {
+ *   // Drop stale tool noise, keep everything else.
+ *   return { messages: event.messages.filter((message) => !isStale(message)) };
+ * });
+ * ```
+ */
+export type PluginContextEvent = {
+  type: "context";
+  /** The message list the request would carry, in the kernel's message shape. */
+  messages: ReadonlyArray<unknown>;
+};
+
+/**
+ * What a `context` handler answers. Returning `{ messages }` replaces the list
+ * the model reads for this request only: the transcript and the run's own
+ * context keep the messages you dropped, so the change is invisible in the
+ * conversation and every answer that differs from what the handler received is
+ * recorded at diff level (`plugin_rewrites`, kind `message_list`) — which is
+ * what makes the rewrite answerable for afterwards (rule 5).
+ *
+ * Handlers do not chain here: each one is handed the list the request would
+ * have carried, and the last answer that is a list is the one that reaches the
+ * model. Returning nothing (or `{}`) means "no opinion". A `messages` field
+ * that is not a list is refused with a diagnostic instead of being ignored,
+ * because the request cannot carry it.
+ *
+ * Cost: this runs before every provider request of a run, so keep the handler
+ * cheap; walking a large transcript on each request is real work.
+ */
+export type PluginContextResult = {
+  messages?: ReadonlyArray<unknown>;
+};
+
+/** One model as the runtime names it: provider id plus model id. */
+export type PluginModelRef = {
+  provider: string;
+  id: string;
+};
+
+/**
+ * The `model_select` event's payload (ADR 0295 slot 6, permission
+ * `runtime.request.before`): asked before each follow-up provider request of a
+ * run, with the model that request would use.
+ *
+ * ```ts
+ * pi.on("model_select", (event) => ({
+ *   // Only if the session is already bound to the model this plugin wants.
+ *   model: event.requestable.find((ref) => ref.id === "claude-sonnet-4-5"),
+ * }));
+ * ```
+ */
+export type PluginModelSelectEvent = {
+  type: "model_select";
+  /** The model the next provider request would use without an answer here. */
+  model: PluginModelRef;
+  /**
+   * The models this run can actually put on the request. Ask for one of these.
+   *
+   * PI-Desktop binds a session to one host-resolved provider/model per run:
+   * Electron main owns provider resolution, credentials and the catalog, and it
+   * rebuilds the session runtime when the binding changes. The runtime
+   * therefore holds exactly one requestable model — the session's own binding,
+   * or the plugin agent the session is bound to — and a `model_select` answer
+   * naming any other model is **refused** with a diagnostic on the plugin row
+   * instead of being passed through to fail inside the provider lookup. A model
+   * the user has not configured for this session is exactly that case; to
+   * change the session's binding, use `pi.setModel()` between turns (idle only,
+   * the host persists it).
+   */
+  requestable: ReadonlyArray<PluginModelRef>;
+};
+
+/**
+ * What a `model_select` handler answers, or nothing for no opinion: the model
+ * the next request in this run should use.
+ *
+ * Both spellings `pi.setModel` uses are accepted: `{ provider, id }` (or the
+ * same pair nested under `model`) and the `"provider/id"` text. An answer that
+ * names a model outside {@link PluginModelSelectEvent.requestable} is refused
+ * with a diagnostic naming it; an unreadable answer is refused the same way. A
+ * route changes this run's requests only — the session binding is untouched.
+ */
+export type PluginModelSelectResult = {
+  model: PluginModelRef | string;
+};
+
+/**
+ * The `thinking_level_select` event's payload (ADR 0295 slot 6, permission
+ * `runtime.request.before`): asked before each follow-up provider request of a
+ * run, with the level that request would use.
+ *
+ * `supported` is the ladder this model can actually request, so an answer
+ * outside it is **refused** with a diagnostic rather than clamped — a clamp
+ * would be a rewrite neither the plugin asked for nor the user can see. `"off"`
+ * is a level like any other: it turns reasoning off for the route.
+ */
+export type PluginThinkingLevelSelectEvent = {
+  type: "thinking_level_select";
+  /** The level the next provider request would use without an answer here. */
+  level: string;
+  /** The levels this model supports; anything else is refused by name. */
+  supported: ReadonlyArray<string>;
+};
+
+/**
+ * What a `thinking_level_select` handler answers, or nothing for no opinion.
+ *
+ * An honoured level that differs from the current one is recorded at diff level
+ * like every other slot-6 rewrite (`plugin_rewrites`, kind `request_payload`),
+ * and it applies to the rest of this run: the session's own thinking level is
+ * untouched.
+ */
+export type PluginThinkingLevelSelectResult = {
+  level: string;
+};
+
+/**
  * A session lifecycle notice the kernel has no hook for (ADR 0295 slot 11,
  * permission `runtime.session.lifecycle`): the desktop created or deleted a
  * session. Informed-only — nothing can be vetoed, and the delete or create

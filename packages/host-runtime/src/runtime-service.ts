@@ -336,7 +336,15 @@ export class RuntimeService implements RuntimePort {
       ...(command ? { command } : {}),
     };
     try {
-      await host.call("session.appendMessage", { sessionId, message: userMessage, turnId });
+      await host.call("session.appendMessage", {
+        sessionId,
+        message: userMessage,
+        turnId,
+        // A queued continuation a plugin asked for keeps naming it on the row
+        // it becomes (ADR 0293 / ADR 0295 rule 9); a user prompt sends neither.
+        ...(request.pluginId ? { pluginId: request.pluginId } : {}),
+        ...(request.pluginLabel ? { pluginLabel: request.pluginLabel } : {}),
+      });
     } catch (error) {
       await this.finishTurn(sessionId, "error", errorCodeOf(error), { turnId });
       // A turn whose user message could not be appended must not be started:

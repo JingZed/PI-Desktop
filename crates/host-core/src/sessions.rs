@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 use crate::db::{ms_to_ts, now_ms, ts_to_ms, Database};
 use crate::notifications::{self, Notification};
+use crate::plugin_provenance::PluginAttribution;
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
@@ -136,8 +137,7 @@ pub struct MessageAttachment {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub size: Option<i64>,
 }
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UiMessage {
     pub id: String,
@@ -694,7 +694,7 @@ fn cap_record_blocks_for_display(record: &mut MessageRecord, limit: usize) {
     }
 }
 
-fn record_to_ui_for_display(mut record: MessageRecord, limit: usize) -> UiMessage {
+pub(crate) fn record_to_ui_for_display(mut record: MessageRecord, limit: usize) -> UiMessage {
     // Bound the canonical block values before record_to_ui concatenates text
     // blocks or clones tool payloads. This keeps a 50 MB selected line from
     // producing another 50 MB temporary UI string on the host.
@@ -886,13 +886,15 @@ pub(crate) fn insert_index_row(
     session_id: &str,
     seq: i64,
     turn_id: Option<&str>,
+    origin: Option<&PluginAttribution>,
     record: &MessageRecord,
     text: Option<&str>,
 ) -> Result<()> {
     let mut stmt = conn.prepare_cached(
         "INSERT INTO messages (
-            id, session_id, turn_id, seq, role, tool_name, is_error, text, created_at
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            id, session_id, turn_id, seq, role, tool_name, is_error, text, created_at,
+            plugin_id, plugin_label
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
     )?;
     stmt.execute(params![
         record.id,
@@ -904,8 +906,43 @@ pub(crate) fn insert_index_row(
         record.is_error,
         text,
         ts_to_ms(&record.created_at),
+        origin.map(|origin| origin.plugin_id.as_str()),
+        origin
+            .map(|origin| origin.label.as_str())
+            .filter(|label| !label.is_empty()),
     ])?;
     Ok(())
+}
+
+/// Provenance of a session's indexed rows that carry any, keyed by message id.
+///
+/// The rewrite paths below reseat every index row, so anything stored beside
+/// `turn_id` has to be carried across them or the row loses what made it
+/// attributable (the same reason `owning_turns` exists). Rows without
+/// provenance are simply absent, so these maps stay empty for ordinary
+/// sessions.
+fn indexed_plugin_provenance(
+    db: &Database,
+    session_id: &str,
+) -> Result<std::collections::HashMap<String, PluginAttribution>> {
+    let conn = db.conn();
+    let mut provenance = std::collections::HashMap::new();
+    let mut stmt = conn.prepare_cached(
+        "SELECT id, plugin_id, COALESCE(plugin_label, '')
+           FROM messages
+          WHERE session_id = ?1 AND plugin_id IS NOT NULL",
+    )?;
+    let rows = stmt.query_map(params![session_id], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            PluginAttribution::new(row.get::<_, String>(1)?, row.get::<_, String>(2)?),
+        ))
+    })?;
+    for row in rows {
+        let (id, origin) = row?;
+        provenance.insert(id, origin);
+    }
+    Ok(provenance)
 }
 
 fn recovered_session_title(records: &[MessageRecord]) -> String {
@@ -1013,6 +1050,7 @@ pub fn restore_orphaned_session(db: &Database, session_id: &str) -> Result<bool>
             &tx,
             session_id,
             seq as i64,
+            None,
             None,
             record,
             record_index_text(record).as_deref(),
@@ -1521,6 +1559,10 @@ pub fn fork_session_through(
         .map(|value| value.chars().take(100).collect::<String>())
         .unwrap_or_else(|| format!("{} (branch)", source.summary.title));
 
+    // Rows a plugin asked for keep saying so in the copy: a fork copies the
+    // transcript, and provenance carries no foreign key that a new session id
+    // could invalidate.
+    let owning_plugins = indexed_plugin_provenance(db, source_id)?;
     invalidate_transcript_layout(&id);
     transcripts::write_transcript_with_compactions(
         db.data_dir(),
@@ -1546,7 +1588,15 @@ pub fn fork_session_through(
             return Err(anyhow!("session not found: {source_id}"));
         }
         for (seq, record) in records.iter().enumerate() {
-            insert_index_row(&tx, &id, seq as i64, None, record, texts[seq].as_deref())?;
+            insert_index_row(
+                &tx,
+                &id,
+                seq as i64,
+                None,
+                owning_plugins.get(record.id.as_str()),
+                record,
+                texts[seq].as_deref(),
+            )?;
         }
         tx.commit()?;
         Ok(())
@@ -1740,6 +1790,24 @@ pub fn append_message(
     message: &UiMessage,
     turn_id: Option<&str>,
 ) -> Result<()> {
+    append_message_with_origin(db, session_id, message, turn_id, None)
+}
+
+/// `append_message` with the plugin provenance a continuation row carries
+/// (ADR 0293 / ADR 0295 rule 9, slot #10).
+///
+/// The snapshot is written to the SQLite index row beside `turn_id` — the same
+/// place the row's turn lives — so a row a plugin asked for can say so on every
+/// read, and `None` writes exactly the row this build wrote before schema v22.
+/// The provenance is not part of the transcript record: like `turn_id`, it is
+/// attribution of the row, not content of it.
+pub fn append_message_with_origin(
+    db: &Database,
+    session_id: &str,
+    message: &UiMessage,
+    turn_id: Option<&str>,
+    origin: Option<&PluginAttribution>,
+) -> Result<()> {
     let message = crate::session_collaboration::prepare_append(db, session_id, message, turn_id)?;
     let session_created = ensure_session_for_append(db, session_id)?;
     let (mut record, text) = ui_to_record(&message);
@@ -1791,6 +1859,7 @@ pub fn append_message(
             &record,
             text.as_deref(),
             turn_id,
+            origin,
         )?;
     }
     if message.role == "assistant" && message.status.as_deref() == Some("streaming") {
@@ -1894,7 +1963,6 @@ fn streaming_assistant_indexed(db: &Database, session_id: &str, message_id: &str
     Ok(false)
 }
 
-/// Append one canonical record: transcript line first, then the index row.
 fn append_record(
     db: &Database,
     session_id: &str,
@@ -1902,6 +1970,7 @@ fn append_record(
     record: &MessageRecord,
     text: Option<&str>,
     turn_id: Option<&str>,
+    origin: Option<&PluginAttribution>,
 ) -> Result<()> {
     // File first: the transcript is the source of truth. A crash before the
     // index commit costs one derived row (self-healed by the next rewrite),
@@ -1920,7 +1989,7 @@ fn append_record(
     let Some(seq) = seq else {
         return Err(anyhow!("session not found: {session_id}"));
     };
-    insert_index_row(&tx, session_id, seq - 1, turn_id, record, text)?;
+    insert_index_row(&tx, session_id, seq - 1, turn_id, origin, record, text)?;
     tx.commit()?;
     Ok(())
 }
@@ -2039,6 +2108,7 @@ pub fn recover_inflight_message(
             &record,
             text.as_deref(),
             inflight.turn_id.as_deref(),
+            None,
         )?;
     }
     Ok(Some(record_to_ui(record)))
@@ -2132,6 +2202,7 @@ pub fn replace_messages(db: &Database, session_id: &str, messages: &[UiMessage])
             owning_turns.insert(id, turn_id);
         }
     }
+    let owning_plugins = indexed_plugin_provenance(db, session_id)?;
     let tx = conn.unchecked_transaction()?;
     tx.prepare_cached("DELETE FROM messages WHERE session_id = ?1")?
         .execute(params![session_id])?;
@@ -2141,6 +2212,7 @@ pub fn replace_messages(db: &Database, session_id: &str, messages: &[UiMessage])
             session_id,
             seq as i64,
             owning_turns.get(&record.id).map(String::as_str),
+            owning_plugins.get(record.id.as_str()),
             record,
             texts[seq].as_deref(),
         )?;
@@ -2803,6 +2875,9 @@ pub fn activate_message_revision(
     for (id, turn_id) in archived_turns {
         owning_turns.entry(id).or_insert(turn_id);
     }
+    // A rewritten row keeps naming the plugin that asked for it: the index row
+    // is reseated here, so the snapshot has to travel with it.
+    let owning_plugins = indexed_plugin_provenance(db, session_id)?;
     let tx = conn.unchecked_transaction()?;
     tx.prepare_cached(
         "UPDATE message_revisions
@@ -2818,6 +2893,7 @@ pub fn activate_message_revision(
             session_id,
             seq as i64,
             owning_turns.get(&record.id).map(String::as_str),
+            owning_plugins.get(record.id.as_str()),
             record,
             texts[seq].as_deref(),
         )?;
@@ -2892,6 +2968,7 @@ pub fn import_session(
                 &tx,
                 &summary.id,
                 seq as i64,
+                None,
                 None,
                 record,
                 texts[seq].as_deref(),

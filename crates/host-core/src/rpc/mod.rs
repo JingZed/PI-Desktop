@@ -15,6 +15,7 @@ use crate::audit;
 use crate::notifications;
 use crate::permissions::{PermissionDecision, PermissionEvaluationParams, PermissionManager};
 use crate::plans;
+use crate::plugin_provenance;
 use crate::plugin_rewrites::{self, RewriteDiff, RewriteKind};
 use crate::plugin_sessions;
 use crate::plugin_usage;
@@ -27,6 +28,7 @@ use crate::state::{AppState, HOST_VERSION, PROTOCOL_VERSION};
 use crate::tools::{self, ToolsExecuteParams};
 use crate::transcripts::CompactionRecord;
 use crate::turn_facts;
+use crate::turn_messages;
 use crate::turn_queue;
 use crate::workspace;
 
@@ -502,6 +504,79 @@ fn string_param<'a>(params: &'a Value, name: &str) -> Result<&'a str, JsonRpcErr
         .get(name)
         .and_then(|value| value.as_str())
         .ok_or_else(|| rpc_err(1002, format!("{name} must be a string"), "INVALID_PARAMS"))
+}
+
+/// Most characters accepted for a plugin id or display name on one row.
+///
+/// The same 256-byte ceiling `plugin_rewrites::record` enforces: a longer
+/// identifier is a caller error (`INVALID_PARAMS`), never a silently stored
+/// value nobody can attribute.
+const MAX_ORIGIN_FIELD_CHARS: usize = 256;
+
+/// The plugin provenance an `appendMessage` request carries (ADR 0293 / ADR
+/// 0295 rule 9, slot #10): `pluginId` names the plugin that asked for the row,
+/// `pluginLabel` is the display name snapshotted with it.
+///
+/// Both absent is the ordinary user row — not an error, but the case the
+/// transcript has always drawn, and the row stays byte-for-byte what this host
+/// wrote before schema v22. A label without an id cannot be attributed and is
+/// refused rather than stored as an anonymous claim; an empty label falls back
+/// to the id, exactly as the rewrite writer does, so a badge always has a name.
+fn plugin_origin_from_params(
+    params: &Value,
+) -> Result<Option<plugin_provenance::PluginAttribution>, JsonRpcError> {
+    let plugin_id = match params.get("pluginId") {
+        None | Some(Value::Null) => {
+            if params
+                .get("pluginLabel")
+                .is_some_and(|value| !value.is_null())
+            {
+                return Err(rpc_err(
+                    1002,
+                    "pluginLabel requires pluginId",
+                    "INVALID_PARAMS",
+                ));
+            }
+            return Ok(None);
+        }
+        Some(value) => value
+            .as_str()
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+            .ok_or_else(|| {
+                rpc_err(
+                    1002,
+                    "pluginId must be a non-empty string",
+                    "INVALID_PARAMS",
+                )
+            })?,
+    };
+    if plugin_id.chars().count() > MAX_ORIGIN_FIELD_CHARS {
+        return Err(rpc_err(
+            1002,
+            format!("pluginId must be at most {MAX_ORIGIN_FIELD_CHARS} characters"),
+            "INVALID_PARAMS",
+        ));
+    }
+    let label = match params.get("pluginLabel") {
+        None | Some(Value::Null) => String::new(),
+        Some(value) => value
+            .as_str()
+            .ok_or_else(|| rpc_err(1002, "pluginLabel must be a string", "INVALID_PARAMS"))?
+            .trim()
+            .to_string(),
+    };
+    if label.chars().count() > MAX_ORIGIN_FIELD_CHARS {
+        return Err(rpc_err(
+            1002,
+            format!("pluginLabel must be at most {MAX_ORIGIN_FIELD_CHARS} characters"),
+            "INVALID_PARAMS",
+        ));
+    }
+    Ok(Some(plugin_provenance::PluginAttribution::new(
+        plugin_id,
+        if label.is_empty() { plugin_id } else { &label },
+    )))
 }
 
 fn session_collaboration_rpc_err(error: impl ToString) -> JsonRpcError {
@@ -2153,7 +2228,28 @@ async fn handle_request(
                 },
             )
             .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?;
-            Ok(json!({ "session": session }))
+            // Rows a plugin asked for (ADR 0293 / ADR 0295 rule 9) ride the
+            // read the transcript already comes from: the badge needs no second
+            // round trip, and a row without provenance is simply absent from
+            // the list, so it keeps looking exactly as it always did.
+            let message_ids: Vec<String> = session
+                .as_ref()
+                .map(|detail| {
+                    detail
+                        .messages
+                        .iter()
+                        .map(|message| message.id.clone())
+                        .collect()
+                })
+                .unwrap_or_default();
+            let continuations = plugin_provenance::for_messages(&st.db, id, &message_ids)
+                .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?;
+            let mut response = json!({ "session": session });
+            if !continuations.is_empty() {
+                response["pluginContinuations"] = serde_json::to_value(&continuations)
+                    .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?;
+            }
+            Ok(response)
         }
         "session.configure" => {
             let id = params
@@ -2231,9 +2327,20 @@ async fn handle_request(
                 .get("turnId")
                 .and_then(|v| v.as_str())
                 .map(str::to_string);
+            // Slot #10 provenance (ADR 0293 / ADR 0295 rule 9): who asked for
+            // this row. Absent is the ordinary user row and stores exactly what
+            // this host stored before schema v22; a supplied id has to be a
+            // usable identifier, and a missing label falls back to the id.
+            let origin = plugin_origin_from_params(&params)?;
             let st = state.lock().await;
-            sessions::append_message(&st.db, session_id, &message, turn_id.as_deref())
-                .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?;
+            sessions::append_message_with_origin(
+                &st.db,
+                session_id,
+                &message,
+                turn_id.as_deref(),
+                origin.as_ref(),
+            )
+            .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?;
             Ok(json!({ "ok": true }))
         }
         "session.saveInflightMessage" => {
@@ -2954,6 +3061,61 @@ async fn handle_request(
                 .ok_or_else(|| rpc_err(1007, "turn not found", "TURN_NOT_FOUND"))?;
             serde_json::to_value(facts)
                 .map(|facts| json!({ "facts": facts }))
+                .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))
+        }
+
+        "turn.messages" => {
+            // Slot #8's per-turn read (`runtime.turn.recap`, ADR 0295 rule 8 /
+            // rule 7): the conversation one turn owned, oldest first, from the
+            // indexed `messages.turn_id` rows and the transcript bodies.
+            // `sessionId` is required with `turnId` for the same reason
+            // `turn.facts` requires it: the turn must be attributed to that
+            // session rather than to whichever session happens to own the id.
+            let session_id = params
+                .get("sessionId")
+                .and_then(|value| value.as_str())
+                .filter(|id| !id.trim().is_empty())
+                .ok_or_else(|| rpc_err(1002, "sessionId required", "INVALID_PARAMS"))?;
+            let turn_id = params
+                .get("turnId")
+                .and_then(|value| value.as_str())
+                .filter(|id| !id.trim().is_empty())
+                .ok_or_else(|| rpc_err(1002, "turnId required", "INVALID_PARAMS"))?;
+            let limit = match params.get("limit") {
+                None | Some(Value::Null) => turn_messages::DEFAULT_MESSAGE_LIMIT,
+                Some(value) => value.as_i64().filter(|limit| *limit > 0).ok_or_else(|| {
+                    rpc_err(1002, "limit must be a positive integer", "INVALID_PARAMS")
+                })?,
+            };
+            let content_limit = params
+                .get("contentLimit")
+                .and_then(|v| v.as_u64())
+                .map(|limit| limit.min(256 * 1024) as usize);
+            if params
+                .get("contentLimit")
+                .and_then(|value| value.as_u64())
+                .is_some_and(|value| value == 0)
+            {
+                return Err(rpc_err(
+                    1002,
+                    "turn contentLimit must be positive",
+                    "INVALID_PARAMS",
+                ));
+            }
+            let st = state.lock().await;
+            let session_exists = sessions::session_mode(&st.db, session_id)
+                .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?
+                .is_some();
+            if !session_exists {
+                return Err(rpc_err(1007, "session not found", "SESSION_NOT_FOUND"));
+            }
+            // An unknown turn is an error, not an empty conversation: an empty
+            // answer would claim the turn said nothing.
+            let read = turn_messages::for_turn(&st.db, session_id, turn_id, limit, content_limit)
+                .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?
+                .ok_or_else(|| rpc_err(1007, "turn not found", "TURN_NOT_FOUND"))?;
+            serde_json::to_value(read)
+                .map(|read| json!({ "turn": read }))
                 .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))
         }
 
@@ -9379,5 +9541,233 @@ mod tests {
             facts["toolCalls"]["byTool"][0],
             json!({ "toolName": "Read", "calls": 1, "ok": 1, "failed": 0, "errorCodes": [] })
         );
+    }
+
+    /// `session.appendMessage` stores the plugin that asked for a row, and
+    /// `session.get` answers it back for exactly the rows it returned (ADR
+    /// 0293 / ADR 0295 rule 9, slot #10); a row without provenance is absent
+    /// from the answer instead of being marked as "no plugin".
+    #[tokio::test]
+    async fn append_message_keeps_and_reports_the_plugin_that_asked_for_the_row() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let mut app_state = AppState::open(data_dir.path()).unwrap();
+        app_state.handshook = true;
+        let session =
+            sessions::create_session(&app_state.db, None, None, None, None, None).unwrap();
+        let turn = sessions::begin_turn(&app_state.db, &session.id, None, None).unwrap();
+        let state = Arc::new(Mutex::new(app_state));
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let message = |id: &str| {
+            json!({
+                "id": id,
+                "role": "user",
+                "content": "carry on",
+                "createdAt": crate::db::ms_to_ts(crate::db::now_ms())
+            })
+        };
+
+        for params in [
+            json!({
+                "sessionId": session.id,
+                "turnId": turn,
+                "message": message("row-from-plugin"),
+                "pluginId": "acme.sender",
+                "pluginLabel": "Acme Sender"
+            }),
+            // A label that is missing or empty falls back to the id, exactly as
+            // the rewrite writer does: a badge always has a name to show.
+            json!({
+                "sessionId": session.id,
+                "turnId": turn,
+                "message": message("row-without-label"),
+                "pluginId": "acme.sender"
+            }),
+            json!({
+                "sessionId": session.id,
+                "turnId": turn,
+                "message": message("row-typed-by-the-user")
+            }),
+        ] {
+            handle_request(state.clone(), "session.appendMessage", params, tx.clone())
+                .await
+                .unwrap();
+        }
+
+        let read = handle_request(
+            state.clone(),
+            "session.get",
+            json!({ "id": session.id, "messageLimit": 10 }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        let continuations = read["pluginContinuations"].as_array().unwrap();
+        assert_eq!(continuations.len(), 2);
+        assert_eq!(continuations[0]["messageId"], json!("row-from-plugin"));
+        assert_eq!(continuations[0]["pluginId"], json!("acme.sender"));
+        assert_eq!(continuations[0]["pluginLabel"], json!("Acme Sender"));
+        assert_eq!(continuations[0]["turnId"], json!(turn));
+        assert_eq!(continuations[1]["messageId"], json!("row-without-label"));
+        assert_eq!(continuations[1]["pluginLabel"], json!("acme.sender"));
+        // The transcript itself is untouched by the attribution.
+        assert_eq!(read["session"]["messages"].as_array().unwrap().len(), 3);
+
+        // A label without an id cannot be attributed, and a broken identifier
+        // is refused instead of stored: neither is a silent drop.
+        for params in [
+            json!({
+                "sessionId": session.id,
+                "message": message("row-anonymous"),
+                "pluginLabel": "Acme Sender"
+            }),
+            json!({
+                "sessionId": session.id,
+                "message": message("row-empty-id"),
+                "pluginId": "   "
+            }),
+            json!({
+                "sessionId": session.id,
+                "message": message("row-long-id"),
+                "pluginId": "x".repeat(300)
+            }),
+        ] {
+            let error = handle_request(state.clone(), "session.appendMessage", params, tx.clone())
+                .await
+                .unwrap_err();
+            assert_eq!(error.code, 1002, "{error:?}");
+            assert_eq!(error.data.unwrap()["errorCode"], json!("INVALID_PARAMS"));
+        }
+
+        // None of the refused appends left a row behind, and a session where
+        // nobody asked for anything carries no member at all.
+        let plain =
+            sessions::create_session(&state.lock().await.db, None, None, None, None, None).unwrap();
+        let read = handle_request(
+            state.clone(),
+            "session.get",
+            json!({ "id": plain.id }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        assert!(read.get("pluginContinuations").is_none());
+        let read = handle_request(
+            state,
+            "session.get",
+            json!({ "id": session.id, "messageLimit": 10 }),
+            tx,
+        )
+        .await
+        .unwrap();
+        assert_eq!(read["session"]["messages"].as_array().unwrap().len(), 3);
+    }
+
+    /// `turn.messages` answers one turn's conversation from the host's own
+    /// rows, oldest first, windowed with an exact truncation flag, and an
+    /// unknown turn is an error rather than an empty list (ADR 0295 slot #8).
+    #[tokio::test]
+    async fn turn_messages_reads_one_turn_and_rejects_unknown_input() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let mut app_state = AppState::open(data_dir.path()).unwrap();
+        app_state.handshook = true;
+        let session =
+            sessions::create_session(&app_state.db, None, None, None, None, None).unwrap();
+        let first = sessions::begin_turn(&app_state.db, &session.id, None, None).unwrap();
+        sessions::end_turn(&app_state.db, &first, "completed", None, None, false).unwrap();
+        let second = sessions::begin_turn(&app_state.db, &session.id, None, None).unwrap();
+        for (id, turn) in [
+            ("first-prompt", &first),
+            ("second-prompt", &second),
+            ("second-follow-up", &second),
+        ] {
+            sessions::append_message(
+                &app_state.db,
+                &session.id,
+                &sessions::UiMessage {
+                    id: id.to_string(),
+                    role: "user".into(),
+                    content: format!("text of {id}"),
+                    created_at: crate::db::ms_to_ts(crate::db::now_ms()),
+                    ..Default::default()
+                },
+                Some(turn),
+            )
+            .unwrap();
+        }
+        let state = Arc::new(Mutex::new(app_state));
+        let (tx, _rx) = mpsc::unbounded_channel();
+
+        let read = handle_request(
+            state.clone(),
+            "turn.messages",
+            json!({ "sessionId": session.id, "turnId": second }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        let turn = &read["turn"];
+        assert_eq!(turn["sessionId"], json!(session.id));
+        assert_eq!(turn["turnId"], json!(second));
+        assert_eq!(turn["messageCount"], json!(2));
+        assert_eq!(turn["truncated"], json!(false));
+        assert_eq!(
+            turn["messages"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|message| message["id"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            ["second-prompt", "second-follow-up"]
+        );
+        assert_eq!(
+            turn["messages"][0]["content"],
+            json!("text of second-prompt")
+        );
+
+        // A capped read returns the turn's first rows and says so.
+        let capped = handle_request(
+            state.clone(),
+            "turn.messages",
+            json!({ "sessionId": session.id, "turnId": second, "limit": 1 }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(capped["turn"]["truncated"], json!(true));
+        assert_eq!(capped["turn"]["messageCount"], json!(2));
+        assert_eq!(
+            capped["turn"]["messages"].as_array().unwrap()[0]["id"],
+            json!("second-prompt")
+        );
+
+        for (params, code, error_code) in [
+            (
+                json!({ "sessionId": session.id, "turnId": "turn-that-never-was" }),
+                1007,
+                "TURN_NOT_FOUND",
+            ),
+            (
+                json!({ "sessionId": "session-that-never-was", "turnId": second }),
+                1007,
+                "SESSION_NOT_FOUND",
+            ),
+            (
+                json!({ "sessionId": session.id, "turnId": second, "limit": 0 }),
+                1002,
+                "INVALID_PARAMS",
+            ),
+            (
+                json!({ "sessionId": session.id, "turnId": second, "contentLimit": 0 }),
+                1002,
+                "INVALID_PARAMS",
+            ),
+            (json!({ "sessionId": session.id }), 1002, "INVALID_PARAMS"),
+        ] {
+            let error = handle_request(state.clone(), "turn.messages", params, tx.clone())
+                .await
+                .unwrap_err();
+            assert_eq!(error.code, code, "{error:?}");
+            assert_eq!(error.data.unwrap()["errorCode"], json!(error_code));
+        }
     }
 }

@@ -408,7 +408,12 @@ export default function (pi: any) {
     const r = await pi.exec("node", ["-e", "process.stdout.write('out')"]);
     (globalThis as any).__exec = r;
   } });
-}`);
+}`,
+      // Slot 10's second entry point: `ctx.sendUserMessage` reaches the same
+      // host-owned queue a continuation does, so this fixture is given the
+      // grant the gate requires (ADR 0295 rule 2, D386).
+      ["agent.extension", "runtime.turn.continue"],
+    );
     const { bridge, log } = fakeBridge({
       input: { kind: "input", value: "Ann" },
       select: { kind: "select", value: "blue" },
@@ -626,11 +631,16 @@ export default function (pi: any) {
     expect(TRUSTED_EXTENSION_API_PERMISSIONS.turnFacts).toBe("runtime.turn.facts");
     expect(TRUSTED_EXTENSION_API_PERMISSIONS.recap).toBe("runtime.turn.recap");
     expect(TRUSTED_EXTENSION_API_PERMISSIONS.continueTurn).toBe("runtime.turn.continue");
+    // Slot 10 has two call names and one permission: `sendUserMessage` reaches
+    // the same host-owned queue a continuation does, so it is gated on the
+    // same grant rather than on a second name (D1).
+    expect(TRUSTED_EXTENSION_API_PERMISSIONS.sendUserMessage).toBe("runtime.turn.continue");
     expect(trustedExtensionApiPermission("requestTurnAbort")).toBe("runtime.turn.abort");
     expect(trustedExtensionApiPermission("toolResult")).toBe("runtime.tool.extend");
     expect(trustedExtensionApiPermission("turnFacts")).toBe("runtime.turn.facts");
     expect(trustedExtensionApiPermission("recap")).toBe("runtime.turn.recap");
     expect(trustedExtensionApiPermission("continueTurn")).toBe("runtime.turn.continue");
+    expect(trustedExtensionApiPermission("sendUserMessage")).toBe("runtime.turn.continue");
     expect(trustedExtensionApiPermission("not_a_call")).toBeUndefined();
     expect(trustedExtensionApiPermission("constructor")).toBeUndefined();
     // The scope, not the call, decides whether a second right is needed: a
@@ -1211,6 +1221,83 @@ export default function (pi: any) {
         member: "continueTurn",
         message: "continueTurn needs a message to continue with",
         count: 2,
+      }),
+    ]);
+  });
+
+  it("refuses sendUserMessage without runtime.turn.continue and queues nothing", async () => {
+    // Slot 10's second entry point takes the same host-owned queue a
+    // continuation does, so the same grant gates it: a refused plugin queues
+    // nothing, and the refusal is a diagnostic naming the call (rule 2).
+    const ext = spec(
+      "send-refused",
+      `export default function (pi: any) {
+  pi.on("session_start", async () => {
+    (globalThis as any).__sent = await pi.sendUserMessage("do not queue this");
+  });
+}`,
+      ["agent.extension"],
+    );
+    const { bridge, log } = fakeBridge();
+    const runner = new TrustedExtensionRunner({ specs: [ext], bridge });
+    await runner.load();
+
+    delete (globalThis as { __sent?: unknown }).__sent;
+    expect(log.userMessages).toEqual([]);
+    expect(runner.getDiagnostics()).toEqual([
+      {
+        extensionId: ext.id,
+        kind: "permission_denied",
+        message:
+          "sendUserMessage was refused: the plugin does not hold runtime.turn.continue",
+        member: "sendUserMessage",
+        count: 1,
+      },
+    ]);
+  });
+
+  it("queues a message through the host once the plugin holds runtime.turn.continue", async () => {
+    const ext = spec(
+      "send-granted",
+      `export default function (pi: any) {
+  pi.on("session_start", async () => {
+    await pi.sendUserMessage("keep going");
+  });
+}`,
+      ["agent.extension", "runtime.turn.continue"],
+    );
+    const { bridge, log } = fakeBridge();
+    const runner = new TrustedExtensionRunner({ specs: [ext], bridge });
+    await runner.load();
+
+    expect(log.userMessages).toEqual(["keep going"]);
+    expect(runner.getDiagnostics()).toEqual([]);
+  });
+
+  it("refuses a command context's sendUserMessage under the same gate", async () => {
+    // The command context carries the same member, so it is the same refusal:
+    // a plugin cannot reach the queue through `/command` without the grant.
+    const ext = spec(
+      "cmd-send-refused",
+      `export default function (pi: any) {
+  pi.registerCommand("relay", { description: "send", handler(_args: string, ctx: any) {
+    ctx.sendUserMessage("relayed");
+  } });
+}`,
+      ["agent.extension"],
+    );
+    const { bridge, log } = fakeBridge();
+    const runner = new TrustedExtensionRunner({ specs: [ext], bridge });
+    await runner.load();
+
+    expect(await runner.runCommand("relay", "")).toBe(true);
+    expect(log.userMessages).toEqual([]);
+    expect(runner.getDiagnostics()).toEqual([
+      expect.objectContaining({
+        kind: "permission_denied",
+        member: "sendUserMessage",
+        message:
+          "sendUserMessage was refused: the plugin does not hold runtime.turn.continue",
       }),
     ]);
   });
