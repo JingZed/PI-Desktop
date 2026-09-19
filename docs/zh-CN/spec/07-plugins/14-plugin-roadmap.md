@@ -86,11 +86,14 @@ Local plugins usable → developer-friendly → marketplace distribution → sig
 - 规格：[16-trusted-extensions.md](/zh-CN/spec/07-plugins/16-trusted-extensions) §2A；ADR 0287
 
 ### R9 — 运行时槽位（issue #561）
-- 批次 A ✅ —— 每个槽位都有自己的高风险权限，并在轮次运行期间被咨询：
-  Before Send (1) → `runtime.send.before`；Abort Turn (3) → `runtime.turn.abort`；
-  Turn Closing (7) → `runtime.turn.closing`
-- 其余运行时槽位受仍未关闭的 RD 决策约束，**尚未交付**；Before Request (6)
-  被明确排除在本轮之外
+- 批次 A **并未完成**。三个已声明的名称里只有 Turn Closing (7) 到达内核（经
+  `shouldStopAfterTurn`），而且没有任何代码校验 `runtime.turn.closing`：只要插件在
+  `agent.extension` 下加载，该钩子就会触发，这是对 D1 的偏离（规格 13 §2C）。
+- Before Send (1) → `runtime.send.before` 与 Abort Turn (3) → `runtime.turn.abort`
+  只是已声明的权限名，背后没有实现：轮次运行期间没有任何东西咨询它们。
+- 槽位集合、逐槽位权限与实施顺序由
+  [ADR 0291](../../../adr/0291-runtime-slots-and-their-permissions.md) 固定；其余
+  运行时槽位**尚未交付**，Before Request (6) 被明确排除在本轮之外。
 
 ## 3. 映射到产品里程碑
 

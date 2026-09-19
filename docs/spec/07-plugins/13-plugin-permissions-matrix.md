@@ -51,7 +51,7 @@ Provide a permission–capability–risk–default-policy reference table for re
 | `renderer.extension` | high | Run `manifest.renderer` as an ES module inside the host renderer and register components into host-owned slots | Explicit confirmation; by tier, never per slot | The module runs inside the app window, in the host's own realm, with no process isolation. One permission covers every component slot (spec 16 §2A, ADR 0287) |
 | `runtime.send.before` | high | Runtime slot consult: Before Send | Confirm at install | The plugin is consulted while a turn is running, after the user presses send and before the message reaches the model, and can stop the message. Declared; not yet wired to the kernel (see §2C) |
 | `runtime.turn.abort` | high | Runtime slot consult: Abort Turn | Confirm at install | The plugin can end a running turn without asking first; work already in flight is discarded. Declared; not yet wired to the kernel (see §2C) |
-| `runtime.turn.closing` | high | Runtime slot consult: Turn Closing | Confirm at install | The plugin is consulted while a turn is running and can ask the agent to keep going, which spends more tokens with no new message from the user |
+| `runtime.turn.closing` | high | Runtime slot consult: Turn Closing | Confirm at install | The plugin is consulted while a turn is running and can ask the agent to keep going, which spends more tokens with no new message from the user. The hook (`shouldStopAfterTurn`) currently fires for any extension loaded under `agent.extension`: no code consults this permission, which is a defect against D1. The permission becomes the gate when the slot is wired (ADR 0291 rule 2) |
 
 ## 2A. A permission is the switch; the manifest carries the range
 
@@ -109,10 +109,25 @@ single grant for all of them (spec 16 §2A, ADR 0287); a plugin that does not
 declare `renderer` cannot register one, and a registration attempt is skipped
 and reported as a diagnostic rather than dropped silently. The runtime
 permissions in §2 differ in shape — one name per slot, because each one changes
-a different point of a running turn — and only `runtime.turn.closing` is wired
-to the kernel so far (issue #561 item 7). `runtime.send.before` and
-`runtime.turn.abort` are declared names with no implementation behind them yet,
-and the remaining runtime slots are not shipped.
+a different point of a running turn. Only the Turn Closing slot reaches the
+kernel so far (issue #561 item 7), as the `turn_closing` event; no code consults
+`runtime.turn.closing` first, so the hook fires for any extension loaded under
+`agent.extension`. That is a defect against D1 (one slot, one permission), not a
+design choice, and the permission becomes the gate when the slot is wired
+(ADR 0291 rule 2). `runtime.send.before` and `runtime.turn.abort` are declared
+names with no implementation behind them yet, and the remaining runtime slots
+are not shipped. Modifying a tool call's arguments is not one of them and is
+permanently excluded (ADR 0291 rule 4): a `tool_call` handler can block with a
+reason, and nothing else. ADR 0291 reserves the twelve `runtime.*` names for the
+remaining slots; they register one at a time, with their slot.
+
+Separate from the permission question, the trusted-extension sidecar's
+result-bearing event set (`packages/agent-runtime/src/extensions/runner.ts:93-107`)
+gives the 30 s handler budget to events the desktop never emits (`project_trust`,
+`resources_discover`, `session_before_fork`, `input`), and it counts
+`message_end` as result-bearing although the desktop's forwarding path discards
+that result. That is a defect on the sidecar surface to fix with a code change;
+no permission or trust decision is involved.
 
 ## 3. Permission dependencies
 

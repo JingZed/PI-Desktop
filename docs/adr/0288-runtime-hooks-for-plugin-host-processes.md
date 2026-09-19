@@ -10,6 +10,16 @@
   [13-plugin-permissions-matrix](../spec/07-plugins/13-plugin-permissions-matrix.md) ·
   [16-trusted-extensions](../spec/07-plugins/16-trusted-extensions.md)
 
+**Implementation status: not started.** This record fixes the accepted design,
+and none of it is built yet. There is no registration IPC, no registration
+table, no 2 s deadline, no circuit breaker, and no per-slot permission check in
+the code. The only `runtime.*` names that exist today are
+`runtime.send.before`, `runtime.turn.abort` and `runtime.turn.closing` (plugin
+SDK, desktop risk table, devkit mirror, locales), and none of them is consulted
+before a hook runs. The slot set, the per-slot permissions and the order of the
+work are in [ADR 0291](0291-runtime-slots-and-their-permissions.md); this record
+remains the accepted shape of the broker channel.
+
 ## Context
 
 Issue #561 names twelve runtime slots: points inside a running turn where a
@@ -78,8 +88,8 @@ its failure policy, and its ordering rule.
 
 ## Consequences
 
-- Batch A and the remaining batch E₂ slots are unblocked for all three plugin
-  hosts: this was the hard prerequisite the plan called G14.
+- Once this broker ships, batch A and the remaining batch E₂ slots are unblocked
+  for all three plugin hosts: this was the hard prerequisite the plan called G14.
 - The threat surface grows in a way that must not be softened later: a plugin
   that could previously only draw a page can now influence a running turn, up
   to stopping a message or ending a turn. What stands between that and the user

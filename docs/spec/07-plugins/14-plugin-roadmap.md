@@ -94,11 +94,17 @@ Local plugins usable → developer-friendly → marketplace distribution → sig
 - Spec: [16-trusted-extensions.md](16-trusted-extensions.md) §2A; ADR 0287
 
 ### R9 — Runtime slots (issue #561)
-- Batch A ✅ — each slot has its own high-risk permission and is consulted while
-  a turn is running: Before Send (1) → `runtime.send.before`; Abort Turn (3) →
-  `runtime.turn.abort`; Turn Closing (7) → `runtime.turn.closing`
-- The remaining runtime slots are gated on the still-open RD decisions and are
-  **not shipped yet**; Before Request (6) stays out of this cycle explicitly
+- Batch A is **not complete**. Of the three declared names only Turn Closing (7)
+  reaches the kernel, through `shouldStopAfterTurn`, and it does so without a
+  permission check: the hook fires for any extension loaded under
+  `agent.extension`, which is a defect against D1 (spec 13 §2C).
+- Before Send (1) → `runtime.send.before` and Abort Turn (3) →
+  `runtime.turn.abort` are declared permission names with no implementation
+  behind them: nothing consults them while a turn is running.
+- The slot set, the per-slot permissions and the order of work are fixed in
+  [ADR 0291](../../adr/0291-runtime-slots-and-their-permissions.md); the
+  remaining runtime slots are **not shipped yet**, and Before Request (6) stays
+  out of this cycle explicitly.
 
 ## 3. Mapping to product milestones
 

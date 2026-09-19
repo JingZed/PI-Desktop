@@ -373,14 +373,14 @@ main、渲染层或插件宿主进程中。
 | `session_info_changed` | 经 `setSessionName` 的会话改名 | 否 |
 | `project_trust` | v1 说明：不触发；按项目启用即信任决定 | 否 |
 | `resources_discover` | v1 说明：不触发；skills 与提示发现留在 Electron main | 不适用 |
-| `before_agent_start` | 回合内首个 provider 请求之前 | 是，系统提示与消息编辑 |
+| `before_agent_start` | 回合内首个 provider 请求之前 | 是，但只采纳 `systemPrompt`：代码读取 `result.systemPrompt`，返回的消息会被丢弃。消息改写属于下方的 `context` 点 |
 | `context` | `prepareNextTurn` | 是，替换消息列表 |
 | `before_provider_request`、`before_provider_headers`、`after_provider_response` | provider 调用包装 | 请求与头部为是 |
 | `agent_start`、`agent_end`、`agent_settled` | Agent 循环边界 | 否 |
 | `turn_start`、`turn_end` | 回合边界 | 否 |
-| `turn_closing` | `shouldStopAfterTurn`（运行时槽 7，issue #561） | 是：`{ continue: true, message? }` 让本回合继续，按运行次数上限约束 |
+| `turn_closing` | `shouldStopAfterTurn`（运行时槽 7，issue #561；目前不校验任何槽位权限 —— 规格 13 §2C） | 是：`{ continue: true, message? }` 让本回合继续，按运行次数上限约束 |
 | `message_start`、`message_update`、`message_end` | Agent 消息事件 | v1 说明：否，pi-agent-core 不提供事后替换 |
-| `tool_call` | `beforeToolCall` | 是，可带理由阻止 |
+| `tool_call` | `beforeToolCall` | 是，可带理由阻止。修改该调用的参数不可用，且已被永久排除（ADR 0291 规则 4） |
 | `tool_execution_start`、`tool_execution_update`、`tool_execution_end` | 工具执行流 | 否 |
 | `tool_result` | `afterToolCall` | 是，替换结果 |
 | `model_select`、`thinking_level_select` | v1 说明：不触发；绑定变更会重建运行时 | 否 |
@@ -388,6 +388,11 @@ main、渲染层或插件宿主进程中。
 | `session_before_fork` | v1 说明：不触发；fork 在 Electron main 执行 | 不适用 |
 | `input` | v1 说明：不触发；Host 队列准入尚未接入 | 不适用 |
 | `user_bash`、`session_before_switch`、`session_before_tree`、`session_tree`、`ui_prompt_start`、`ui_prompt_end` | v1 不触发 | 不适用 |
+
+`pi-agent-core` 还暴露两个上下文钩子 —— `transformContext` 与 `prepareNextTurn`
+—— 插件目前都无法触及：桌面只设置了 `prepareNextTurnWithContext`，上表的
+`context` 事件就走这条路径。面向插件的入口是 ADR 0291 的 Phasing 第 3 步；那里的
+规则 3 让它面向普通插件，而不只是高信任层级。
 
 抛出异常的处理器记为诊断并视为返回 `undefined`。带返回结果的事件若处理器超过
 30 秒，则放弃并记诊断，回合以未修改的值继续。
