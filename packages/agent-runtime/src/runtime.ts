@@ -923,13 +923,22 @@ export type RuntimeMatchConfig = {
   subagentModelKeys?: string[];
 };
 
+/**
+ * Trusted extensions and the grants they were loaded with, as one digest: the
+ * set is part of the runtime match, and a revoked slot permission has to retire
+ * the runtime with it so the next prompt reloads both (spec 16 §4.3, ADR 0291
+ * rule 2).
+ */
+function trustedExtensionDigest(specs: TrustedExtensionSpec[]): string {
+  return specs
+    .map((spec) => `${spec.id}\u0000${[...(spec.permissions ?? [])].sort().join(",")}`)
+    .sort()
+    .join("\n");
+}
+
 /** Tool calls ride in the assistant content array as `type: "toolCall"`. A
  * message that requested any is never a silent turn: the loop keeps going and
  * the user sees the tool activity. */
-function trustedExtensionIds(specs: TrustedExtensionSpec[]): string {
-  return specs.map((spec) => spec.id).sort().join("\n");
-}
-
 function messageRequestsTools(message: unknown): boolean {
   const content = isRecord(message) ? message.content : undefined;
   return (
@@ -2315,10 +2324,11 @@ Delegation rules:
       safeJson(this.subagentProviders) === safeJson(config.subagentProviders ?? {}) &&
       safeJson([...this.subagentModelKeys].sort()) ===
         safeJson([...new Set(config.subagentModelKeys ?? [])].sort()) &&
-      // Enabling or disabling a trusted extension retires the runtime so the
-      // next prompt reloads the set (spec 16 §4.3).
-      trustedExtensionIds(this.trustedExtensionSpecs) ===
-        trustedExtensionIds(config.trustedExtensions ?? [])
+      // Enabling or disabling a trusted extension, and revoking a slot
+      // permission, retire the runtime so the next prompt reloads both
+      // (spec 16 §4.3, ADR 0291 rule 2).
+      trustedExtensionDigest(this.trustedExtensionSpecs) ===
+        trustedExtensionDigest(config.trustedExtensions ?? [])
     );
   }
 

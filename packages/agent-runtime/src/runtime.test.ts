@@ -8192,11 +8192,22 @@ describe("DesktopAgentRuntime turn-closing hook (#561 item 7)", () => {
     rmSync(extensionRoot, { recursive: true, force: true });
   });
 
-  /** A trusted extension module on disk, as the loader sees one. */
-  function spec(name: string, source: string): TrustedExtensionSpec {
+  /**
+   * A trusted extension module on disk, as the loader sees one.
+   *
+   * Every test in this block is about the closing hook, so the plugin holds its
+   * slot permission by default; a test that registers another event overrides
+   * the grant (ADR 0291 rule 2: the tier permission implies no slot).
+   */
+  const CLOSING_GRANT = ["agent.extension", "runtime.turn.closing"] as const;
+  function spec(
+    name: string,
+    source: string,
+    permissions: readonly string[] = CLOSING_GRANT,
+  ): TrustedExtensionSpec {
     const entry = join(extensionRoot, `${name}.ts`);
     writeFileSync(entry, source);
-    return { id: entry, entry, label: name, source: "user", root: extensionRoot };
+    return { id: entry, entry, label: name, source: "user", root: extensionRoot, permissions };
   }
 
   /** One plain assistant text turn: no tool calls, `stopReason: "stop"`. */
@@ -8259,6 +8270,8 @@ describe("DesktopAgentRuntime turn-closing hook (#561 item 7)", () => {
       `export default function (pi: any) {
   pi.on("turn_end", () => {});
 }`,
+      // Only the tier grant: this test is about a run nobody closes.
+      ["agent.extension"],
     );
     const { runtime, models } = await startRuntime([ext]);
     expect((runtime as any).extensionRunner.getLoadReports()).toEqual([
@@ -8422,5 +8435,32 @@ describe("DesktopAgentRuntime turn-closing hook (#561 item 7)", () => {
     } finally {
       writes.mockRestore();
     }
+  });
+
+  it("refuses the closing hook when the plugin holds no slot permission", async () => {
+    // The defect ADR 0291 rule 2 names: `agent.extension` used to be enough for
+    // the hook to fire. It is not, and the refusal is reported.
+    const ext = spec(
+      "tier-only",
+      `export default function (pi: any) {
+  pi.on("turn_closing", () => ({ continue: true, message: "keep going" }));
+}`,
+      ["agent.extension"],
+    );
+    const { runtime, models } = await startRuntime([ext]);
+
+    await runtime.prompt("start", "user-1", "turn-1");
+
+    // The run ends after the user's own turn: no continuation was granted.
+    expect(models.streamSimple).toHaveBeenCalledTimes(1);
+    expect((runtime as any).turnClosingContinuations).toBe(0);
+    expect((runtime as any).extensionRunner.getDiagnostics()).toEqual([
+      expect.objectContaining({
+        kind: "permission_denied",
+        member: "turn_closing",
+        message: expect.stringContaining("runtime.turn.closing"),
+      }),
+    ]);
+    await runtime.dispose();
   });
 });

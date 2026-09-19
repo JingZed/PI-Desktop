@@ -657,7 +657,8 @@ export function createSessionLaunchRuntime({
         // document body is fetched on demand through the local `Skill` tool.
         pluginSkills,
         // Trusted extensions enabled for this project (spec 16 §3.2). The set
-        // is part of the runtime match, so a toggle retires the runtime.
+        // and the grants each plugin holds are part of the runtime match, so a
+        // toggle or a revoked permission retires the runtime.
         trustedExtensions: plugins
           .getAgentExtensions()
           .filter((extension) => pluginActiveInProject(extension.pluginId, projectPath))
@@ -667,6 +668,10 @@ export function createSessionLaunchRuntime({
             label: extension.pluginName,
             source: "plugin" as const,
             root: extension.root,
+            // The permissions the plugin was loaded with, which is what the
+            // sidecar's slot gate consults (ADR 0291 rule 2): `agent.extension`
+            // says where the module runs, never what it may do to a turn.
+            permissions: [...(plugins.getLoaded(extension.pluginId)?.permissions ?? [])],
           })),
         subagents: subagentCatalog.definitions,
         subagentProviders: subagentBindings.providers,

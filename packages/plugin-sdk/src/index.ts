@@ -1273,10 +1273,13 @@ export const PLUGIN_PERMISSIONS = [
   "net.websocket",
   // Runtime slots (#561). Each one is consulted while a turn is running and can
   // change what the agent does, so they are separate, individually reviewed
-  // grants rather than one bundled switch.
+  // grants rather than one bundled switch. A name joins this list with the slot
+  // that needs it (ADR 0291).
   "runtime.send.before",
+  "runtime.tool.extend",
   "runtime.turn.abort",
   "runtime.turn.closing",
+  "runtime.turn.facts",
 ] as const;
 
 export type PluginPermission = (typeof PLUGIN_PERMISSIONS)[number];

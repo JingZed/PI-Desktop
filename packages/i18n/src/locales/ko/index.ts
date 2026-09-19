@@ -1474,6 +1474,7 @@ importConfirm: "가져온 확장은 에이전트 프로세스 안에서 에이�
         unsupported_api: "지원되지 않는 API",
         stub_symbol: "터미널 전용 기호",
         rejected_registration: "등록 거부됨",
+        permission_denied: "권한 없음",
         handler_error: "핸들러 오류",
         handler_timeout: "핸들러 시간 초과",
       },
@@ -1733,8 +1734,10 @@ importConfirm: "가져온 확장은 에이전트 프로세스 안에서 에이�
       "agent.extension": "에이전트 안에서 코드 실행",
       "renderer.extension": "앱 창 안에서 플러그인 UI 실행",
       "runtime.send.before": "메시지를 보내기 전에 검사",
+      "runtime.tool.extend": "에이전트 실행 중 도구 추가",
       "runtime.turn.abort": "실행 중인 턴 중지",
       "runtime.turn.closing": "턴이 끝나기 직전에 개입",
+      "runtime.turn.facts": "턴의 구조화된 사실 읽기",
       "provider.register": "모델 목록에 프로바이더 추가",
       "desktop.control": "데스크톱 제어",
       "models.list": "인증된 모델 목록 표시",
@@ -1782,10 +1785,14 @@ importConfirm: "가져온 확장은 에이전트 프로세스 안에서 에이�
         "이 플러그인은 앱 자체 창 안에서 실행되는 코드를 포함합니다. 앱 프로세스를 공유하고 인터페이스 어디든 그릴 수 있으며, 충돌하면 인터페이스까지 함께 종료될 수 있습니다. 플러그인 작성자를 신뢰할 때만 설치하세요.",
       "runtime.send.before":
         "전송을 누른 뒤 메시지가 모델에 도달하기 전에 플러그인에 확인합니다. 메시지를 멈출 수 있으므로 실수하면 보내려던 내용이 막힐 수 있습니다.",
+      "runtime.tool.extend":
+        "플러그인은 에이전트가 실행되는 동안 자체 도구를 도입하고 그 사용량을 보고할 수 있습니다. 추가된 도구는 다른 도구와 똑같이 도구 목록에 표시됩니다.",
       "runtime.turn.abort":
         "플러그인은 먼저 묻지 않고 실행 중인 턴을 끝낼 수 있습니다. 이미 진행 중이던 작업은 버려집니다.",
       "runtime.turn.closing":
         "턴이 아직 실행 중일 때 플러그인에 확인하며, 에이전트에게 계속 진행하도록 요청할 수 있습니다. 새 메시지 없이 토큰을 더 소비합니다.",
+      "runtime.turn.facts":
+        "플러그인은 턴에 대한 구조화된 사실을 읽을 수 있습니다: 도구 호출과 결과, 토큰, 비용, 소요 시간, 변경된 파일. 대화 본문은 포함하지 않습니다.",
       "provider.register":
         "이 플러그인이 정의한 프로바이더를 설정의 프로바이더 목록에 추가합니다. 플러그인은 엔드포인트와 모델을 제공하며, API 키는 PI-Desktop에 남습니다.",
       "desktop.control":

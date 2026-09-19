@@ -21,7 +21,9 @@ import {
   type SimpleStreamOptions,
 } from "@earendil-works/pi-ai";
 import {
+  isRegisteredSlotPermission,
   trustedExtensionAgentProviderId,
+  trustedExtensionEventPermission,
   type TrustedExtensionAgentModelConfig,
 } from "@pi-desktop/shared";
 import {
@@ -251,6 +253,8 @@ type Handler = (event: unknown, ctx: unknown) => unknown;
 
 type LoadedExtension = {
   spec: TrustedExtensionSpec;
+  /** Permissions the owning plugin holds, from {@link TrustedExtensionSpec.permissions}. */
+  permissions: ReadonlySet<string>;
   tools: Map<string, ToolDefinitionLike>;
   commands: Map<string, RegisteredCommandLike>;
   agents: Map<string, RegisteredTrustedExtensionAgent>;
@@ -395,6 +399,7 @@ export class TrustedExtensionRunner {
     for (const spec of this.specs) {
       const extension: LoadedExtension = {
         spec,
+        permissions: new Set(spec.permissions ?? []),
         tools: new Map(),
         commands: new Map(),
         agents: new Map(),
@@ -546,11 +551,12 @@ export class TrustedExtensionRunner {
   }
 
   /**
-   * Emit one event to every handler in load order. For result events the
-   * results are folded by the caller-supplied reducer; a throwing or stalled
-   * handler counts as `undefined` (spec §6). The reducer also receives the id of
-   * the extension that produced `next`, so a hook that changes control flow can
-   * name its source without a second lookup.
+   * Emit one event to every handler in load order, after the runtime slot gate
+   * (ADR 0291 rule 2). For result events the results are folded by the
+   * caller-supplied reducer; a throwing or stalled handler counts as
+   * `undefined` (spec §6). The reducer also receives the id of the extension
+   * that produced `next`, so a hook that changes control flow can name its
+   * source without a second lookup.
    */
   async emit<R = unknown>(
     event: TrustedExtensionEventName,
@@ -563,6 +569,18 @@ export class TrustedExtensionRunner {
     for (const extension of this.loaded.values()) {
       const handlers = extension.handlers.get(event);
       if (!handlers?.length) continue;
+      const refused = this.refusedSlot(extension, event);
+      if (refused) {
+        // A skip is never silent: the plugin author and the user both need to
+        // know why the hook did nothing (ADR 0291 rule 2).
+        this.report(
+          extension.spec.id,
+          "permission_denied",
+          `handler for "${event}" skipped: the plugin does not hold ${refused}`,
+          event,
+        );
+        continue;
+      }
       const ctx = this.createContext(extension);
       for (const handler of handlers) {
         try {
@@ -582,6 +600,22 @@ export class TrustedExtensionRunner {
       }
     }
     return acc;
+  }
+
+  /**
+   * The slot permission that refuses `event` for this extension, or `undefined`
+   * when its handlers may run (ADR 0291 rule 2).
+   *
+   * A mapped permission the registry does not hold yet is reserved, not
+   * enforced: no plugin can be granted it, so refusing on it would remove a
+   * working hook to answer a question nobody asked. The gate starts applying
+   * the moment the name is registered with its slot (see
+   * `REGISTERED_SLOT_PERMISSIONS` in `@pi-desktop/shared`).
+   */
+  private refusedSlot(extension: LoadedExtension, event: string): string | undefined {
+    const permission = trustedExtensionEventPermission(event);
+    if (!permission || !isRegisteredSlotPermission(permission)) return undefined;
+    return extension.permissions.has(permission) ? undefined : permission;
   }
 
   private errorReport(extensionId: string): TrustedExtensionLoadReport {

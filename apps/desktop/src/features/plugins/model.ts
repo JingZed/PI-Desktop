@@ -51,8 +51,13 @@ export const PERMISSION_RISK: Record<string, RiskTier> = {
   // run inside the user's own turn, so a fault there is the user's too.
   "renderer.extension": "high",
   "runtime.send.before": "high",
+  // Introducing a tool at runtime reaches the same catalogue the agent's own
+  // tools live in, and reports spend; structured turn facts are read-only
+  // metadata about a turn, with no conversation text.
+  "runtime.tool.extend": "high",
   "runtime.turn.abort": "high",
   "runtime.turn.closing": "high",
+  "runtime.turn.facts": "low",
   "desktop.control": "high",
   "session.read": "high",
   "session.delete.own": "high",

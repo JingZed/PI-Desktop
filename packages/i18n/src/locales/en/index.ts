@@ -1478,6 +1478,7 @@ importConfirm: "Imported extensions run inside the agent process with the same a
         unsupported_api: "Unsupported API",
         stub_symbol: "Terminal-only symbol",
         rejected_registration: "Rejected registration",
+        permission_denied: "Permission denied",
         handler_error: "Handler error",
         handler_timeout: "Handler timed out",
       },
@@ -1737,8 +1738,10 @@ importConfirm: "Imported extensions run inside the agent process with the same a
       "agent.extension": "Run code inside the agent",
       "renderer.extension": "Run plugin UI inside the app window",
       "runtime.send.before": "Inspect a message before it is sent",
+      "runtime.tool.extend": "Add tools while the agent runs",
       "runtime.turn.abort": "Stop the running turn",
       "runtime.turn.closing": "Act just before a turn ends",
+      "runtime.turn.facts": "Read structured facts about a turn",
       "provider.register": "Add providers to the model list",
       "desktop.control": "Control the desktop",
       "models.list": "List authenticated models",
@@ -1787,10 +1790,14 @@ importConfirm: "Imported extensions run inside the agent process with the same a
         "This plugin ships code that runs inside the app's own window. It shares the app's process, can draw anywhere in the interface, and a crash can take the interface down with it. Only install it if you trust the plugin author.",
       "runtime.send.before":
         "The plugin is consulted after you press send and before the message reaches the model. It can stop the message, so a mistake can block what you send.",
+      "runtime.tool.extend":
+        "The plugin may introduce its own tools while the agent runs and report what they spend. An added tool appears in the tool list like any other.",
       "runtime.turn.abort":
         "The plugin can end a running turn without asking you first. Work already in flight is discarded.",
       "runtime.turn.closing":
         "The plugin is consulted while a turn is still running and can ask the agent to keep going. That spends more tokens without a new message from you.",
+      "runtime.turn.facts":
+        "The plugin may read structured facts about a turn: tool calls and outcomes, tokens, spend, duration, files touched. It carries no conversation text.",
       "provider.register":
         "Adds the providers this plugin defines to Settings' provider list. The plugin supplies the endpoint and models; your API key stays in PI-Desktop.",
       "desktop.control":

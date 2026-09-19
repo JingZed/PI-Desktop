@@ -1457,6 +1457,7 @@ sklm: {
         "unsupported_api": "API no compatible",
         "stub_symbol": "Símbolo solo de terminal",
         "rejected_registration": "Registro rechazado",
+        "permission_denied": "Permiso denegado",
         "handler_error": "Error del manejador",
         "handler_timeout": "Tiempo de espera del manejador agotado",
       },
@@ -1715,8 +1716,10 @@ sklm: {
       "agent.extension": "Ejecutar código dentro del agente",
       "renderer.extension": "Ejecutar la interfaz del complemento en la ventana de la aplicación",
       "runtime.send.before": "Revisar un mensaje antes de enviarlo",
+      "runtime.tool.extend": "Agregar herramientas mientras el agente se ejecuta",
       "runtime.turn.abort": "Detener el turno en curso",
       "runtime.turn.closing": "Actuar justo antes de que termine un turno",
+      "runtime.turn.facts": "Leer datos estructurados de un turno",
       "provider.register": "Agregar proveedores a la lista de modelos",
       "desktop.control": "Controlar el escritorio",
       "models.list": "Listar modelos autenticados",
@@ -1757,10 +1760,14 @@ sklm: {
         "Este complemento incluye código que se ejecuta en la propia ventana de la aplicación. Comparte el proceso de la aplicación, puede dibujar en cualquier parte de la interfaz y un fallo puede llevarse la interfaz consigo. Instálelo solo si confía en el autor del complemento.",
       "runtime.send.before":
         "Se consulta al complemento después de que pulse enviar y antes de que el mensaje llegue al modelo. Puede detener el mensaje, así que un error puede bloquear lo que envía.",
+      "runtime.tool.extend":
+        "El complemento puede introducir sus propias herramientas mientras el agente se ejecuta y reportar lo que consumen. La herramienta agregada aparece en la lista como cualquier otra.",
       "runtime.turn.abort":
         "El complemento puede terminar un turno en curso sin preguntarle antes. El trabajo ya en marcha se descarta.",
       "runtime.turn.closing":
         "Se consulta al complemento mientras un turno sigue en curso y puede pedirle al agente que continúe. Eso gasta más tokens sin un mensaje nuevo de su parte.",
+      "runtime.turn.facts":
+        "El complemento puede leer datos estructurados de un turno: llamadas de herramienta y resultados, tokens, gasto, duración y archivos tocados. No incluye el texto de la conversación.",
       "provider.register": "Agregue los proveedores que define este complemento a la lista de proveedores de Configuración. El complemento aporta el punto final y los modelos; su clave API permanece en PI-Desktop.",
       "desktop.control": "Permite invocar el catálogo de control de PI-Desktop revisado; las operaciones destructivas siguen requiriendo confirm=true y el token bearer de MCP no se expone.",
       "models.list": "Puede ver en qué modelos se ha registrado. No recibe llaves.",

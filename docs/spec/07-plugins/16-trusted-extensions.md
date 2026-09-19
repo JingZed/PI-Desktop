@@ -482,7 +482,7 @@ are honored where the event type defines a result.
 | `before_provider_request`, `before_provider_headers`, `after_provider_response` | Provider call wrapper | Yes for request and headers |
 | `agent_start`, `agent_end`, `agent_settled` | Agent loop boundaries | No |
 | `turn_start`, `turn_end` | Turn boundaries | No |
-| `turn_closing` | `shouldStopAfterTurn` (runtime slot 7, issue #561; no slot permission is consulted yet — spec 13 §2C) | Yes: `{ continue: true, message? }` keeps the run going, bounded per run |
+| `turn_closing` | `shouldStopAfterTurn` (runtime slot 7, issue #561; gated by `runtime.turn.closing` — spec 13 §2C) | Yes: `{ continue: true, message? }` keeps the run going, bounded per run |
 | `message_start`, `message_update`, `message_end` | Agent message events | v1 note: no, pi-agent-core offers no post-hoc replacement |
 | `tool_call` | `beforeToolCall` | Yes, block with reason. Modifying the call's arguments is not available and is permanently excluded (ADR 0291 rule 4) |
 | `tool_execution_start`, `tool_execution_update`, `tool_execution_end` | Tool execution stream | No |
@@ -492,6 +492,15 @@ are honored where the event type defines a result.
 | `session_before_fork` | v1 note: not emitted; fork runs in Electron main | n/a |
 | `input` | v1 note: not emitted; Host queue admission is not wired yet | n/a |
 | `user_bash`, `session_before_switch`, `session_before_tree`, `session_tree`, `ui_prompt_start`, `ui_prompt_end` | Not emitted in v1 | n/a |
+
+A handler runs only when the extension's plugin holds the slot permission behind
+its event (ADR 0291 rule 2): `turn_closing` needs `runtime.turn.closing`, and an
+event whose slot is not implemented yet keeps today's behavior until that name is
+registered with its slot. The runner is handed the plugin's granted permissions —
+an extension with no recorded grants holds none — and skips a handler it may not
+run, reporting the skip as an extension diagnostic of kind `permission_denied`
+that names the permission, on the plugin row. A skipped handler never blocks the
+turn: like a throwing handler, it counts as having no opinion.
 
 The kernel exposes two more context hooks — `pi-agent-core`'s `transformContext`
 and `prepareNextTurn` — that no plugin can reach yet: the desktop sets only

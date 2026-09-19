@@ -36,6 +36,7 @@ export const HIGH_RISK_PERMISSIONS = [
   "agent.extension",
   "renderer.extension",
   "runtime.send.before",
+  "runtime.tool.extend",
   "runtime.turn.abort",
   "runtime.turn.closing",
   "desktop.control",

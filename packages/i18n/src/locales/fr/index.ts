@@ -1457,6 +1457,7 @@ sklm: {
         "unsupported_api": "API non prise en charge",
         "stub_symbol": "Symbole réservé au terminal",
         "rejected_registration": "Enregistrement refusé",
+        "permission_denied": "Permission refusée",
         "handler_error": "Erreur du gestionnaire",
         "handler_timeout": "Délai du gestionnaire dépassé",
       },
@@ -1715,8 +1716,10 @@ sklm: {
       "agent.extension": "Exécuter du code dans l'agent",
       "renderer.extension": "Exécuter l'interface du plugin dans la fenêtre de l'application",
       "runtime.send.before": "Inspecter un message avant son envoi",
+      "runtime.tool.extend": "Ajouter des outils pendant l'exécution de l'agent",
       "runtime.turn.abort": "Arrêter le tour en cours",
       "runtime.turn.closing": "Agir juste avant la fin d'un tour",
+      "runtime.turn.facts": "Lire les faits structurés d'un tour",
       "provider.register": "Ajouter des fournisseurs à la liste de modèles",
       "desktop.control": "Contrôler le bureau",
       "models.list": "Liste des modèles authentifiés",
@@ -1757,10 +1760,14 @@ sklm: {
         "Ce plugin fournit du code qui s'exécute dans la fenêtre de l'application elle-même. Il partage le processus de l'application, peut dessiner n'importe où dans l'interface, et un plantage peut emporter l'interface avec lui. Installez-le uniquement si vous faites confiance à l'auteur du plugin.",
       "runtime.send.before":
         "Le plugin est consulté après votre appui sur envoyer et avant que le message atteigne le modèle. Il peut arrêter le message : une erreur peut donc bloquer ce que vous envoyez.",
+      "runtime.tool.extend":
+        "Le plugin peut introduire ses propres outils pendant que l'agent s'exécute et déclarer ce qu'ils consomment. L'outil ajouté apparaît dans la liste comme n'importe quel autre.",
       "runtime.turn.abort":
         "Le plugin peut terminer un tour en cours sans vous demander d'abord. Le travail déjà en route est abandonné.",
       "runtime.turn.closing":
         "Le plugin est consulté pendant qu'un tour est encore en cours et peut demander à l'agent de continuer. Cela consomme plus de tokens sans nouveau message de votre part.",
+      "runtime.turn.facts":
+        "Le plugin peut lire les faits structurés d'un tour : appels d'outil et résultats, tokens, dépense, durée, fichiers touchés. Le texte de la conversation n'est pas inclus.",
       "provider.register": "Ajoute les fournisseurs définis par ce plugin à la liste des fournisseurs des Paramètres. Le plugin fournit le point de terminaison et les modèles ; votre clé API reste dans PI-Desktop.",
       "desktop.control": "Permet d'appeler le catalogue PI-Desktop contrôlé ; les opérations destructrices exigent toujours confirm=true et le bearer token MCP n'est pas exposé.",
       "models.list": "Peut voir pour quels modèles vous vous êtes connecté. Il ne reçoit pas de clés.",

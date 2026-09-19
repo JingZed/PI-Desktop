@@ -18,6 +18,12 @@ export type TrustedExtensionSpec = {
   source: TrustedExtensionSource;
   /** Directory the entry was discovered from (the extensions root). */
   root: string;
+  /**
+   * Permissions the owning plugin holds, exactly as the loader granted them.
+   * The runtime slot gate consults this list (ADR 0291 rule 2); absent means
+   * none, because a tier permission must never imply a slot permission.
+   */
+  permissions?: readonly string[];
 };
 
 export type TrustedExtensionDiagnosticKind =
@@ -26,6 +32,7 @@ export type TrustedExtensionDiagnosticKind =
   | "unsupported_api"
   | "stub_symbol"
   | "rejected_registration"
+  | "permission_denied"
   | "handler_error"
   | "handler_timeout";
 
@@ -143,6 +150,94 @@ export type TrustedExtensionsListResult = {
 
 /** Handler timeout for result-bearing events (spec §6). */
 export const TRUSTED_EXTENSION_HANDLER_TIMEOUT_MS = 30_000;
+
+/**
+ * Runtime slot behind each wired extension event (ADR 0291 rule 2).
+ *
+ * A tier permission says where plugin code runs (`agent.extension`); a slot
+ * permission says what that code may do to a running turn. This map is the
+ * contract between the two: the runner resolves it before a handler runs, and
+ * an event that is absent here has no slot and stays unrestricted —
+ * `session_start` and `session_shutdown` are the runner's own boundaries and
+ * `session_info_changed` is a rename notice, so none of them changes a turn.
+ *
+ * A mapped name whose slot is not implemented yet is reserved, not enforced:
+ * see {@link REGISTERED_SLOT_PERMISSIONS}.
+ */
+export const TRUSTED_EXTENSION_EVENT_PERMISSIONS = {
+  // Slot 7: consulted before a turn closes.
+  turn_closing: "runtime.turn.closing",
+  // Slot 4: block a call with a reason, replace a tool's result.
+  tool_call: "runtime.tool.gate",
+  tool_result: "runtime.tool.gate",
+  // Slot 6: rewrite what is sent to the model (system prompt, model and
+  // thinking level, request payload, message list).
+  before_agent_start: "runtime.request.before",
+  context: "runtime.request.before",
+  before_provider_request: "runtime.request.before",
+  before_provider_headers: "runtime.request.before",
+  model_select: "runtime.request.before",
+  thinking_level_select: "runtime.request.before",
+  // Slot 2: live observation of the running turn.
+  agent_start: "runtime.turn.watch",
+  agent_end: "runtime.turn.watch",
+  agent_settled: "runtime.turn.watch",
+  turn_start: "runtime.turn.watch",
+  turn_end: "runtime.turn.watch",
+  message_start: "runtime.turn.watch",
+  message_update: "runtime.turn.watch",
+  message_end: "runtime.turn.watch",
+  tool_execution_start: "runtime.turn.watch",
+  tool_execution_update: "runtime.turn.watch",
+  tool_execution_end: "runtime.turn.watch",
+  after_provider_response: "runtime.turn.watch",
+  // Slot 11: create / switch / delete / fork, and compaction.
+  project_trust: "runtime.session.lifecycle",
+  resources_discover: "runtime.session.lifecycle",
+  session_before_compact: "runtime.session.lifecycle",
+  session_compact: "runtime.session.lifecycle",
+  session_compact_failed: "runtime.session.lifecycle",
+  session_before_fork: "runtime.session.lifecycle",
+  // Slot 1: after send, before the message is queued.
+  input: "runtime.send.before",
+} as const satisfies Record<string, string>;
+
+/** The events this map knows about: every wired event that has a slot behind it. */
+export type TrustedExtensionSlotEvent = keyof typeof TRUSTED_EXTENSION_EVENT_PERMISSIONS;
+
+/**
+ * The slot permission a handler for `event` must hold; `undefined` means the
+ * event has no slot and stays unrestricted (ADR 0291 rule 2).
+ */
+export function trustedExtensionEventPermission(event: string): string | undefined {
+  return Object.hasOwn(TRUSTED_EXTENSION_EVENT_PERMISSIONS, event)
+    ? TRUSTED_EXTENSION_EVENT_PERMISSIONS[event as TrustedExtensionSlotEvent]
+    : undefined;
+}
+
+/**
+ * Slot permissions the permission registry holds today (spec 13 §2).
+ *
+ * {@link TRUSTED_EXTENSION_EVENT_PERMISSIONS} is the whole contract; this is
+ * the subset a plugin can actually be granted, and therefore the subset a gate
+ * may refuse on. A name enters the registry together with its slot (ADR 0291,
+ * Consequences): a mapped name that is missing here leaves its event
+ * unrestricted, exactly as it is today, until that slot's batch registers it.
+ * `apps/desktop/test/runtime-slot-permissions.test.mjs` fails when this list
+ * and `PLUGIN_PERMISSIONS` disagree.
+ */
+export const REGISTERED_SLOT_PERMISSIONS = [
+  "runtime.send.before",
+  "runtime.tool.extend",
+  "runtime.turn.abort",
+  "runtime.turn.closing",
+  "runtime.turn.facts",
+] as const;
+
+/** True when `permission` is a slot permission the registry holds, so a gate may refuse on it. */
+export function isRegisteredSlotPermission(permission: string): boolean {
+  return (REGISTERED_SLOT_PERMISSIONS as readonly string[]).includes(permission);
+}
 
 /** Modal prompt timeout (spec §9). */
 export const TRUSTED_EXTENSION_PROMPT_TIMEOUT_MS = 5 * 60_000;

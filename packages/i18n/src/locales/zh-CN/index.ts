@@ -1458,6 +1458,7 @@ sklm: {
         unsupported_api: "不支持的 API",
         stub_symbol: "仅终端可用的符号",
         rejected_registration: "注册被拒绝",
+        permission_denied: "权限被拒绝",
         handler_error: "处理器错误",
         handler_timeout: "处理器超时",
       },
@@ -1715,8 +1716,10 @@ sklm: {
       "agent.extension": "在 agent 内运行代码",
       "renderer.extension": "在应用窗口内运行插件界面",
       "runtime.send.before": "在消息发送前检查",
+      "runtime.tool.extend": "在 agent 运行时添加工具",
       "runtime.turn.abort": "停止正在运行的轮次",
       "runtime.turn.closing": "在轮次结束前介入",
+      "runtime.turn.facts": "读取本轮的结构化事实",
       "provider.register": "将服务添加到模型列表",
       "desktop.control": "控制桌面操作",
       "models.list": "列出已登录的模型",
@@ -1758,9 +1761,13 @@ sklm: {
         "此插件提供的代码会在应用自身窗口内运行：它与应用共用同一进程，可在界面任意位置绘制，崩溃可能连带界面一起退出。只在你信任插件作者时才安装。",
       "runtime.send.before":
         "在你按下发送之后、消息到达模型之前，插件会被征询。它可以拦下这条消息，因此插件出错可能导致你发不出内容。",
+      "runtime.tool.extend":
+        "插件可以在 agent 运行时引入自己的工具，并上报这些工具的花费。新增的工具会像其他工具一样出现在工具列表里。",
       "runtime.turn.abort": "插件不必先问你就能结束正在运行的轮次，已在进行的工作会被丢弃。",
       "runtime.turn.closing":
         "轮次仍在运行时插件会被征询，并可以要求智能体继续做下去。这会在你没有新消息的情况下消耗更多额度。",
+      "runtime.turn.facts":
+        "插件可以读取本轮的结构化事实：工具调用与结果、token、花费、耗时、改动的文件。不包含对话正文。",
       "provider.register": "把此插件定义的服务添加到设置的服务列表。接口地址和模型由插件提供，API 密钥则留在 PI-Desktop 中。",
       "desktop.control":
         "允许插件调用经过审查的 PI-Desktop 操作目录；破坏性操作仍需 confirm=true，插件永远拿不到 MCP bearer token。",

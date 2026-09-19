@@ -1474,6 +1474,7 @@ importConfirm: "İçe aktarılan uzantılar ajan sürecinde, ajanın kendi araç
         unsupported_api: "Desteklenmeyen API",
         stub_symbol: "Yalnızca terminal sembolü",
         rejected_registration: "Kayıt reddedildi",
+        permission_denied: "İzin verilmedi",
         handler_error: "İşleyici hatası",
         handler_timeout: "İşleyici zaman aşımı",
       },
@@ -1733,8 +1734,10 @@ importConfirm: "İçe aktarılan uzantılar ajan sürecinde, ajanın kendi araç
       "agent.extension": "Ajanın içinde kod çalıştır",
       "renderer.extension": "Eklenti arayüzünü uygulama penceresinde çalıştır",
       "runtime.send.before": "İletiyi gönderilmeden önce incele",
+      "runtime.tool.extend": "Ajan çalışırken araç ekle",
       "runtime.turn.abort": "Çalışan turu durdur",
       "runtime.turn.closing": "Tur bitmeden hemen önce devreye gir",
+      "runtime.turn.facts": "Bir turun yapısal bilgilerini oku",
       "provider.register": "Model listesine servis ekle",
       "desktop.control": "Masaüstünü kontrol et",
       "models.list": "Kimliği doğrulanmış modelleri listele",
@@ -1782,10 +1785,14 @@ importConfirm: "İçe aktarılan uzantılar ajan sürecinde, ajanın kendi araç
         "Bu eklenti, uygulamanın kendi penceresinde çalışan kod içerir. Uygulamanın sürecini paylaşır, arayüzün her yerine çizebilir ve bir çökme arayüzü de beraberinde götürebilir. Yalnızca eklenti yazarına güveniyorsanız yükleyin.",
       "runtime.send.before":
         "Siz göndere bastıktan sonra ve ileti modele ulaşmadan önce eklentiye danışılır. İletiyi durdurabilir, bu yüzden bir hata gönderdiklerinizi engelleyebilir.",
+      "runtime.tool.extend":
+        "Eklenti, ajan çalışırken kendi araçlarını tanıtabilir ve bu araçların harcamasını bildirebilir. Eklenen araç, araç listesinde diğerleri gibi görünür.",
       "runtime.turn.abort":
         "Eklenti, size sormadan çalışan bir turu bitirebilir. Yürümekte olan iş yok sayılır.",
       "runtime.turn.closing":
         "Tur hâlâ çalışırken eklentiye danışılır ve eklenti ajanın devam etmesini isteyebilir. Bu, sizden yeni bir ileti olmadan daha fazla token harcar.",
+      "runtime.turn.facts":
+        "Eklenti bir tura ilişkin yapısal bilgileri okuyabilir: araç çağrıları ve sonuçları, token, harcama, süre, dokunulan dosyalar. Konuşma metni içermez.",
       "provider.register":
         "Bu eklentinin tanımladığı servisleri Ayarlar’daki servis listesine ekler. Uç noktayı ve modelleri eklenti sağlar; API anahtarınız PI-Desktop’ta kalır.",
       "desktop.control":

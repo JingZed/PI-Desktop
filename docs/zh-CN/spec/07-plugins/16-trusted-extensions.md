@@ -378,7 +378,7 @@ main、渲染层或插件宿主进程中。
 | `before_provider_request`、`before_provider_headers`、`after_provider_response` | provider 调用包装 | 请求与头部为是 |
 | `agent_start`、`agent_end`、`agent_settled` | Agent 循环边界 | 否 |
 | `turn_start`、`turn_end` | 回合边界 | 否 |
-| `turn_closing` | `shouldStopAfterTurn`（运行时槽 7，issue #561；目前不校验任何槽位权限 —— 规格 13 §2C） | 是：`{ continue: true, message? }` 让本回合继续，按运行次数上限约束 |
+| `turn_closing` | `shouldStopAfterTurn`（运行时槽 7，issue #561；由 `runtime.turn.closing` 门禁 —— 规格 13 §2C） | 是：`{ continue: true, message? }` 让本回合继续，按运行次数上限约束 |
 | `message_start`、`message_update`、`message_end` | Agent 消息事件 | v1 说明：否，pi-agent-core 不提供事后替换 |
 | `tool_call` | `beforeToolCall` | 是，可带理由阻止。修改该调用的参数不可用，且已被永久排除（ADR 0291 规则 4） |
 | `tool_execution_start`、`tool_execution_update`、`tool_execution_end` | 工具执行流 | 否 |
@@ -388,6 +388,13 @@ main、渲染层或插件宿主进程中。
 | `session_before_fork` | v1 说明：不触发；fork 在 Electron main 执行 | 不适用 |
 | `input` | v1 说明：不触发；Host 队列准入尚未接入 | 不适用 |
 | `user_bash`、`session_before_switch`、`session_before_tree`、`session_tree`、`ui_prompt_start`、`ui_prompt_end` | v1 不触发 | 不适用 |
+
+处理器只有在扩展所属插件持有其事件背后的槽位权限时才会运行（ADR 0291 规则 2）：
+`turn_closing` 需要 `runtime.turn.closing`；某个槽位尚未实现时，对应事件在该名字随槽位
+注册之前保持今天的行为。runner 会拿到该插件被授予的权限清单 —— 没有记录授权的扩展
+不持有任何权限 —— 对无权运行的处理器直接跳过，并把跳过作为插件行上 kind 为
+`permission_denied`、写明权限名的扩展诊断上报。被跳过的处理器不会阻塞回合：与抛错的
+处理器一样，它只是没有意见。
 
 `pi-agent-core` 还暴露两个上下文钩子 —— `transformContext` 与 `prepareNextTurn`
 —— 插件目前都无法触及：桌面只设置了 `prepareNextTurnWithContext`，上表的

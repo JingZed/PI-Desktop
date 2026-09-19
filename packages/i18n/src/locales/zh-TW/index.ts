@@ -1458,6 +1458,7 @@ sklm: {
         unsupported_api: "不支援的 API",
         stub_symbol: "僅終端可用的符號",
         rejected_registration: "註冊被拒絕",
+        permission_denied: "權限被拒絕",
         handler_error: "處理器錯誤",
         handler_timeout: "處理器逾時",
       },
@@ -1715,8 +1716,10 @@ sklm: {
       "agent.extension": "在 agent 內執行程式碼",
       "renderer.extension": "在應用視窗內執行外掛介面",
       "runtime.send.before": "在訊息傳送前檢查",
+      "runtime.tool.extend": "在 agent 執行時新增工具",
       "runtime.turn.abort": "停止正在執行的輪次",
       "runtime.turn.closing": "在輪次結束前介入",
+      "runtime.turn.facts": "讀取本輪的結構化事實",
       "provider.register": "將服務新增到模型列表",
       "desktop.control": "控制桌面操作",
       "models.list": "列出已登入的模型",
@@ -1758,9 +1761,13 @@ sklm: {
         "此外掛提供的程式碼會在應用自身視窗內執行：它與應用共用同一個程序，可在介面任意位置繪製，崩潰可能連帶介面一起結束。只在你信任外掛作者時才安裝。",
       "runtime.send.before":
         "在你按下傳送之後、訊息送達模型之前，外掛會被徵詢。它可以攔下這則訊息，因此外掛出錯可能讓你送不出內容。",
+      "runtime.tool.extend":
+        "外掛可以在 agent 執行時引入自己的工具，並回報這些工具的花費。新增的工具會像其他工具一樣出現在工具清單裡。",
       "runtime.turn.abort": "外掛不必先問你就能結束正在執行的輪次，已進行中的工作會被捨棄。",
       "runtime.turn.closing":
         "輪次仍在執行時外掛會被徵詢，並可以要求智慧體繼續進行。這會在你沒有新訊息的情況下消耗更多額度。",
+      "runtime.turn.facts":
+        "外掛可以讀取本輪的結構化事實：工具呼叫與結果、token、花費、耗時、改動的檔案。不包含對話正文。",
       "provider.register": "把此外掛定義的服務新增到設定的服務列表。介面地址和模型由外掛提供，API 金鑰則留在 PI-Desktop 中。",
       "desktop.control": "允許外掛呼叫經過審查的 PI-Desktop 操作目錄；破壞性操作仍需 confirm=true，外掛永遠拿不到 MCP bearer token。",
       "models.list": "可以看到你已登入的模型，但拿不到金鑰。",

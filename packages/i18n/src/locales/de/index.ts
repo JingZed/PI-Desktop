@@ -1457,6 +1457,7 @@ sklm: {
         "unsupported_api": "Nicht unterstützte API",
         "stub_symbol": "Nur im Terminal verfügbar",
         "rejected_registration": "Registrierung abgelehnt",
+        "permission_denied": "Berechtigung fehlt",
         "handler_error": "Handler-Fehler",
         "handler_timeout": "Handler-Zeitüberschreitung",
       },
@@ -1715,8 +1716,10 @@ sklm: {
       "agent.extension": "Code im Agenten ausführen",
       "renderer.extension": "Plugin-Oberfläche im App-Fenster ausführen",
       "runtime.send.before": "Eine Nachricht vor dem Senden prüfen",
+      "runtime.tool.extend": "Während der Agent läuft eigene Tools hinzufügen",
       "runtime.turn.abort": "Die laufende Runde stoppen",
       "runtime.turn.closing": "Kurz vor Ende einer Runde eingreifen",
+      "runtime.turn.facts": "Strukturierte Fakten zu einer Runde lesen",
       "provider.register": "Anbieter zur Modellliste hinzufügen",
       "desktop.control": "Desktop steuern",
       "models.list": "Authentifizierte Modelle auflisten",
@@ -1757,10 +1760,14 @@ sklm: {
         "Dieses Plugin liefert Code, der im Fenster der App selbst läuft. Er teilt sich den Prozess der App, kann überall in der Oberfläche zeichnen, und ein Absturz kann die Oberfläche mitreißen. Installieren Sie es nur, wenn Sie dem Plugin-Autor vertrauen.",
       "runtime.send.before":
         "Das Plugin wird befragt, nachdem Sie auf Senden gedrückt haben und bevor die Nachricht das Modell erreicht. Es kann die Nachricht stoppen, ein Fehler kann also blockieren, was Sie senden.",
+      "runtime.tool.extend":
+        "Das Plugin kann während des Laufs eigene Tools einführen und melden, was sie verbrauchen. Ein hinzugefügtes Tool erscheint wie jedes andere in der Tool-Liste.",
       "runtime.turn.abort":
         "Das Plugin kann eine laufende Runde beenden, ohne Sie vorher zu fragen. Bereits laufende Arbeit wird verworfen.",
       "runtime.turn.closing":
         "Das Plugin wird befragt, während eine Runde noch läuft, und kann den Agenten bitten, weiterzumachen. Das verbraucht mehr Token, ohne dass Sie eine neue Nachricht senden.",
+      "runtime.turn.facts":
+        "Das Plugin kann strukturierte Fakten zu einer Runde lesen: Tool-Aufrufe und Ergebnisse, Token, Kosten, Dauer, berührte Dateien. Gesprächstext ist nicht enthalten.",
       "provider.register": "Fügt die Anbieter, die dieses Plugin definiert, zur Anbieterliste in den Einstellungen hinzu. Das Plugin liefert den Endpunkt und die Modelle; Ihr API-Schlüssel bleibt in PI-Desktop.",
       "desktop.control": "Erlaubt den Aufruf des geprüften PI-Desktop-Katalogs; destruktive Vorgänge benötigen weiterhin confirm=true, und das MCP-Bearer-Token wird nicht offengelegt.",
       "models.list": "Kann sehen, für welche Modelle Sie sich angemeldet haben. Es erhält keine Schlüssel.",

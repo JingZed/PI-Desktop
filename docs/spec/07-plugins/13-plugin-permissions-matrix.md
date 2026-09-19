@@ -49,9 +49,11 @@ Provide a permission–capability–risk–default-policy reference table for re
 | `agent.complete` | high | `pi.agent.complete` | Confirm at install | Host-owned one-shot; spends user quota; `includeSessionContext` also needs `session.read` |
 | `speech.adapter.register` | high | `pi.speech.registerAdapter` / `unregisterAdapter` | Confirm at install | Registers a speech protocol. Handles stay in the guest; HTTP plans are executed by the host with the bound provider key and must stay on that origin. Built-in protocol ids are reserved |
 | `renderer.extension` | high | Run `manifest.renderer` as an ES module inside the host renderer and register components into host-owned slots | Explicit confirmation; by tier, never per slot | The module runs inside the app window, in the host's own realm, with no process isolation. One permission covers every component slot (spec 16 §2A, ADR 0287) |
-| `runtime.send.before` | high | Runtime slot consult: Before Send | Confirm at install | The plugin is consulted while a turn is running, after the user presses send and before the message reaches the model, and can stop the message. Declared; not yet wired to the kernel (see §2C) |
-| `runtime.turn.abort` | high | Runtime slot consult: Abort Turn | Confirm at install | The plugin can end a running turn without asking first; work already in flight is discarded. Declared; not yet wired to the kernel (see §2C) |
-| `runtime.turn.closing` | high | Runtime slot consult: Turn Closing | Confirm at install | The plugin is consulted while a turn is running and can ask the agent to keep going, which spends more tokens with no new message from the user. The hook (`shouldStopAfterTurn`) currently fires for any extension loaded under `agent.extension`: no code consults this permission, which is a defect against D1. The permission becomes the gate when the slot is wired (ADR 0291 rule 2) |
+| `runtime.send.before` | high | Runtime slot consult: Before Send | Confirm at install | The plugin is consulted while a turn is running, after the user presses send and before the message reaches the model, and can stop the message. Declared; its slot is not wired to the kernel yet, so no handler is gated by it (see §2C) |
+| `runtime.tool.extend` | high | Runtime slot consult: Tool Extend | Confirm at install | A plugin tool can add tools to the catalogue while the agent runs and report its own spend; a runtime-introduced tool is labelled as such in the UI. Registered with slot 5, which is being implemented in this batch; no handler is gated by it yet (see §2C) |
+| `runtime.turn.abort` | high | Runtime slot consult: Abort Turn | Confirm at install | The plugin can end a running turn without asking first; work already in flight is discarded. Declared; its slot is not wired to the kernel yet, so no handler is gated by it (see §2C) |
+| `runtime.turn.closing` | high | Runtime slot consult: Turn Closing | Confirm at install | The plugin is consulted while a turn is running and can ask the agent to keep going, which spends more tokens with no new message from the user. The hook (`shouldStopAfterTurn`) fires only for a plugin holding this permission: the sidecar resolves the event's slot permission before a handler runs and skips it otherwise, reporting a `permission_denied` diagnostic on the plugin row (ADR 0291 rule 2) |
+| `runtime.turn.facts` | low | Runtime slot consult: Turn Facts | Confirm at install | Structured facts about a turn — tool calls and outcomes, tokens, spend, duration, files touched — with no conversation text. Registered with slot 9, which is being implemented in this batch; the query surface behind it is not shipped yet (see §2C) |
 
 ## 2A. A permission is the switch; the manifest carries the range
 
@@ -110,19 +112,27 @@ declare `renderer` cannot register one, and a registration attempt is skipped
 and reported as a diagnostic rather than dropped silently. The runtime
 permissions in §2 differ in shape — one name per slot, because each one changes
 a different point of a running turn. Only the Turn Closing slot reaches the
-kernel so far (issue #561 item 7), as the `turn_closing` event; no code consults
-`runtime.turn.closing` first, so the hook fires for any extension loaded under
-`agent.extension`. That is a defect against D1 (one slot, one permission), not a
-design choice, and the permission becomes the gate when the slot is wired
-(ADR 0291 rule 2). `runtime.send.before` and `runtime.turn.abort` are declared
-names with no implementation behind them yet, and the remaining runtime slots
-are not shipped. Modifying a tool call's arguments is not one of them and is
-permanently excluded (ADR 0291 rule 4): a `tool_call` handler can block with a
-reason, and nothing else. ADR 0291 reserves the twelve `runtime.*` names for the
-remaining slots; they register one at a time, with their slot.
+kernel so far (issue #561 item 7), as the `turn_closing` event, and it is gated:
+the agent sidecar resolves the event's slot permission before a handler runs,
+skips the handler when the plugin does not hold `runtime.turn.closing`, and
+reports the skip as a `permission_denied` diagnostic on the plugin row. That
+retires the D1 violation this section used to describe (ADR 0291 rule 2).
+
+The gate follows the registry: slot permissions the registry holds are resolved
+for every wired event, and a mapped name whose slot is not implemented yet is
+reserved rather than enforced, so an event keeps today's behavior until its name
+is registered with its slot. `runtime.send.before` and `runtime.turn.abort` are
+declared names with no implementation behind them, so no handler is gated by
+either; this batch registers `runtime.tool.extend` (slot 5) and
+`runtime.turn.facts` (slot 9) because their slots are being implemented, and the
+remaining runtime slots are not shipped. Modifying a tool call's arguments is
+not one of them and is permanently excluded (ADR 0291 rule 4): a `tool_call`
+handler can block with a reason, and nothing else. ADR 0291 reserves the twelve
+`runtime.*` names for the remaining slots; they register one at a time, with
+their slot.
 
 Separate from the permission question, the trusted-extension sidecar's
-result-bearing event set (`packages/agent-runtime/src/extensions/runner.ts:93-107`)
+result-bearing event set (`packages/agent-runtime/src/extensions/runner.ts:95-109`)
 gives the 30 s handler budget to events the desktop never emits (`project_trust`,
 `resources_discover`, `session_before_fork`, `input`), and it counts
 `message_end` as result-bearing although the desktop's forwarding path discards
@@ -198,8 +208,10 @@ so "Modify the files it lists" is followed by the list.
 | `net.websocket` | Open real-time connections | 建立实时双向连接 |
 | `renderer.extension` | Run plugin UI inside the app window | 在应用窗口内运行插件界面 |
 | `runtime.send.before` | Inspect a message before it is sent | 在消息发送前检查 |
+| `runtime.tool.extend` | Add tools while the agent runs | 在 agent 运行时添加工具 |
 | `runtime.turn.abort` | Stop the running turn | 停止正在运行的轮次 |
 | `runtime.turn.closing` | Act just before a turn ends | 在轮次结束前介入 |
+| `runtime.turn.facts` | Read structured facts about a turn | 读取本轮的结构化事实 |
 
 ## 5. Adding permissions on upgrade
 

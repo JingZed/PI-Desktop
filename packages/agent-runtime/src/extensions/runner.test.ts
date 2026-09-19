@@ -1,8 +1,18 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { clearTrustedExtensionCache, TrustedExtensionRunner } from "./runner.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  REGISTERED_SLOT_PERMISSIONS,
+  trustedExtensionEventPermission,
+  TRUSTED_EXTENSION_EVENT_PERMISSIONS,
+  TRUSTED_EXTENSION_HANDLER_TIMEOUT_MS,
+} from "@pi-desktop/shared";
+import {
+  clearTrustedExtensionCache,
+  TRUSTED_EXTENSION_EVENTS,
+  TrustedExtensionRunner,
+} from "./runner.js";
 import type {
   TrustedExtensionBridge,
   TrustedExtensionCommand,
@@ -23,10 +33,22 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
-function spec(name: string, source: string): TrustedExtensionSpec {
+/**
+ * One extension module on disk. `permissions` is the set its owning plugin was
+ * loaded with; absent means the plugin holds nothing, which is what the slot
+ * gate refuses on (ADR 0291 rule 2).
+ */
+function spec(name: string, source: string, permissions?: readonly string[]): TrustedExtensionSpec {
   const entry = join(root, `${name}.ts`);
   writeFileSync(entry, source);
-  return { id: entry, entry, label: name, source: "user", root };
+  return {
+    id: entry,
+    entry,
+    label: name,
+    source: "user",
+    root,
+    ...(permissions ? { permissions } : {}),
+  };
 }
 
 type BridgeLog = {
@@ -325,5 +347,176 @@ export default function (pi: any) {
     ]);
     await runner.dispose();
     expect(await runner.emit("turn_start", { type: "turn_start" })).toBeUndefined();
+  });
+
+  it("maps every wired event to its slot permission and leaves the rest unrestricted", () => {
+    // The map is the contract (ADR 0291 rule 2): whatever the runner does not
+    // find here has no slot and stays unrestricted.
+    expect(trustedExtensionEventPermission("turn_closing")).toBe("runtime.turn.closing");
+    expect(trustedExtensionEventPermission("tool_call")).toBe("runtime.tool.gate");
+    expect(trustedExtensionEventPermission("tool_result")).toBe("runtime.tool.gate");
+    for (const event of [
+      "context",
+      "before_agent_start",
+      "before_provider_request",
+      "before_provider_headers",
+      "model_select",
+      "thinking_level_select",
+    ]) {
+      expect(trustedExtensionEventPermission(event), event).toBe("runtime.request.before");
+    }
+    for (const event of [
+      "agent_start",
+      "agent_end",
+      "agent_settled",
+      "turn_start",
+      "turn_end",
+      "message_start",
+      "message_update",
+      "message_end",
+      "tool_execution_start",
+      "tool_execution_update",
+      "tool_execution_end",
+      "after_provider_response",
+    ]) {
+      expect(trustedExtensionEventPermission(event), event).toBe("runtime.turn.watch");
+    }
+    for (const event of [
+      "project_trust",
+      "resources_discover",
+      "session_before_compact",
+      "session_compact",
+      "session_compact_failed",
+      "session_before_fork",
+    ]) {
+      expect(trustedExtensionEventPermission(event), event).toBe("runtime.session.lifecycle");
+    }
+    expect(trustedExtensionEventPermission("input")).toBe("runtime.send.before");
+
+    // Every mapped event is one the runtime actually emits, and every event
+    // this runner knows that is not mapped is one of the three the map
+    // deliberately leaves alone.
+    const wired = new Set<string>(TRUSTED_EXTENSION_EVENTS);
+    for (const event of Object.keys(TRUSTED_EXTENSION_EVENT_PERMISSIONS)) {
+      expect(wired.has(event), event).toBe(true);
+    }
+    expect(
+      TRUSTED_EXTENSION_EVENTS.filter((event) => !(event in TRUSTED_EXTENSION_EVENT_PERMISSIONS)),
+    ).toEqual(["session_start", "session_shutdown", "session_info_changed"]);
+    expect(trustedExtensionEventPermission("session_start")).toBeUndefined();
+    expect(trustedExtensionEventPermission("session_shutdown")).toBeUndefined();
+    expect(trustedExtensionEventPermission("session_info_changed")).toBeUndefined();
+    expect(trustedExtensionEventPermission("not_an_event")).toBeUndefined();
+    expect(trustedExtensionEventPermission("constructor")).toBeUndefined();
+
+    // A name no registry holds yet cannot be granted by anyone, so it cannot be
+    // the reason a handler is refused.
+    expect(REGISTERED_SLOT_PERMISSIONS).toContain("runtime.turn.closing");
+    expect(REGISTERED_SLOT_PERMISSIONS).not.toContain("runtime.tool.gate");
+  });
+
+  it("skips a turn_closing handler the plugin holds no slot permission for", async () => {
+    const ext = spec(
+      "closing-without-permission",
+      `export default function (pi: any) {
+  pi.on("turn_closing", () => {
+    (globalThis as any).__closing = true;
+    return { continue: true };
+  });
+}`,
+      // The tier grant the loader recorded; the slot is not in it (ADR 0291
+      // rule 2: `agent.extension` never implies a slot permission).
+      ["agent.extension"],
+    );
+    const { bridge } = fakeBridge();
+    const runner = new TrustedExtensionRunner({ specs: [ext], bridge });
+    await runner.load();
+    delete (globalThis as { __closing?: boolean }).__closing;
+
+    const result = await runner.emit("turn_closing", { type: "turn_closing" });
+
+    expect(result).toBeUndefined();
+    expect((globalThis as { __closing?: boolean }).__closing).toBeUndefined();
+    expect(runner.getDiagnostics()).toEqual([
+      {
+        extensionId: ext.id,
+        kind: "permission_denied",
+        message: 'handler for "turn_closing" skipped: the plugin does not hold runtime.turn.closing',
+        member: "turn_closing",
+        count: 1,
+      },
+    ]);
+  });
+
+  it("runs the handler once the plugin holds the slot permission", async () => {
+    const ext = spec(
+      "closing-with-permission",
+      `export default function (pi: any) {
+  pi.on("turn_closing", () => ({ continue: true, message: "keep going" }));
+}`,
+      ["agent.extension", "runtime.turn.closing"],
+    );
+    const { bridge } = fakeBridge();
+    const runner = new TrustedExtensionRunner({ specs: [ext], bridge });
+    await runner.load();
+
+    const result = await runner.emit("turn_closing", { type: "turn_closing" });
+
+    expect(result).toEqual({ continue: true, message: "keep going" });
+    expect(runner.getDiagnostics()).toEqual([]);
+  });
+
+  it("leaves an event whose slot is not registered yet unrestricted", async () => {
+    // The gate follows the permission registry: `runtime.tool.gate` is mapped
+    // but reserved, so a `tool_call` handler keeps today's behavior and is not
+    // reported (spec 13 §2C, ADR 0291 phasing).
+    const ext = spec(
+      "tool-call",
+      `export default function (pi: any) {
+  pi.on("tool_call", (e: any) => (e.toolName === "bash" ? { block: true, reason: "no bash" } : undefined));
+}`,
+      ["agent.extension"],
+    );
+    const { bridge } = fakeBridge();
+    const runner = new TrustedExtensionRunner({ specs: [ext], bridge });
+    await runner.load();
+
+    const blocked = await runner.emit<{ block?: boolean }>("tool_call", {
+      type: "tool_call",
+      toolName: "bash",
+      toolCallId: "t",
+      input: {},
+    });
+
+    expect(blocked).toEqual({ block: true, reason: "no bash" });
+    expect(runner.getDiagnostics()).toEqual([]);
+  });
+
+  it("keeps the 30 s handler budget for a handler the plugin is allowed to run", async () => {
+    const ext = spec(
+      "stalled",
+      `export default function (pi: any) {
+  pi.on("turn_closing", () => new Promise(() => {}));
+}`,
+      ["runtime.turn.closing"],
+    );
+    const { bridge } = fakeBridge();
+    const runner = new TrustedExtensionRunner({ specs: [ext], bridge });
+    await runner.load();
+    vi.useFakeTimers();
+    try {
+      const emitted = runner.emit("turn_closing", { type: "turn_closing" });
+      await vi.advanceTimersByTimeAsync(TRUSTED_EXTENSION_HANDLER_TIMEOUT_MS + 1);
+      expect(await emitted).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(runner.getDiagnostics()).toEqual([
+      expect.objectContaining({
+        kind: "handler_timeout",
+        member: "turn_closing",
+        message: `handler exceeded ${TRUSTED_EXTENSION_HANDLER_TIMEOUT_MS}ms`,
+      }),
+    ]);
   });
 });
