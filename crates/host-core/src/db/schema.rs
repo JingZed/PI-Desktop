@@ -241,10 +241,18 @@ CREATE TABLE audit_log (
   ts           INTEGER NOT NULL,
   kind         TEXT NOT NULL,
   session_id   TEXT,
-  payload_json TEXT NOT NULL DEFAULT '{}'
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  -- The turn this record belongs to (schema v21, ADR 0291 rule 8, slot #9
+  -- `runtime.turn.facts`): one turn's records are an indexed read instead of
+  -- a scan of redacted payloads. NULL when the record is not about a turn —
+  -- including every row written before v21 — so a per-turn read sees only
+  -- rows the host actually attributed. Appended last because `ALTER TABLE`
+  -- appends: a migrated file and a fresh one then hold the same column order.
+  turn_id      TEXT
 );
 CREATE INDEX idx_audit_ts ON audit_log(ts);
 CREATE INDEX idx_audit_session ON audit_log(session_id, ts) WHERE session_id IS NOT NULL;
+CREATE INDEX idx_audit_turn ON audit_log(turn_id, ts) WHERE turn_id IS NOT NULL;
 
 "#;
 

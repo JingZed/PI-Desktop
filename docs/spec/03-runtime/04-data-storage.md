@@ -1,4 +1,4 @@
-# 04. Data Storage (Schema v20)
+# 04. Data Storage (Schema v21)
 
 ## 0. Ownership decision
 
@@ -501,6 +501,17 @@ CREATE TABLE turns (
 CREATE INDEX idx_turns_session ON turns(session_id, started_at DESC);
 CREATE INDEX idx_turns_ended_at ON turns(ended_at DESC);
 ```
+
+`input_tokens` / `output_tokens` are the authoritative model totals: they are
+the promoted columns every rollup reads, and a turn that recorded no usage
+record keeps the zeros its row was created with. `usage_json` is the provider's
+own record exactly as Electron reported it at `session.endTurn` — the cached /
+reasoning breakdown lives there. That record also carries the turn's
+**plugin-tool spend** as its own `pluginToolUsage` member when a plugin tool
+reported spend, kept beside the model totals instead of summed into them
+(ADR 0291 slot 5); a turn whose plugin tools reported nothing has no such
+member. Both are read back as they were stored: `turn.facts` exposes the record
+verbatim plus `pluginToolUsage` on its own (§4.16).
 
 ### 4.6a plan_approvals — immutable checkpoint and execution fields (schema v11)
 
@@ -1019,12 +1030,25 @@ CREATE TABLE audit_log (
   ts           INTEGER NOT NULL,
   kind         TEXT NOT NULL,              -- tool_execute | tool_denied | …
   session_id   TEXT,
-  payload_json TEXT NOT NULL DEFAULT '{}'
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  turn_id      TEXT                        -- the turn the record belongs to (v21)
 );
 CREATE INDEX idx_audit_ts ON audit_log(ts);
 CREATE INDEX idx_audit_session ON audit_log(session_id, ts)
   WHERE session_id IS NOT NULL;
+CREATE INDEX idx_audit_turn ON audit_log(turn_id, ts)
+  WHERE turn_id IS NOT NULL;
 ```
+
+`turn_id` (schema v21, ADR 0291 rule 8) is the turn a record belongs to, so one
+turn's records are an indexed read instead of a scan of redacted payloads. The
+host writes it where it knows the turn: `tool_execute`, `tool_denied` and
+`tool_aborted` carry the turn the call was made in, and `turn.facts` counts
+executed calls by it (§4.16). It is NULL when a record is not about a turn and
+for every row written before v21 — the column is a fact, never a backfilled
+guess — so a per-turn read sees only rows the host actually attributed. The
+column is last because `ALTER TABLE` appends, which keeps a migrated file and a
+fresh one at the same shape.
 
 ### 4.14 notifications — durable local inbox (D117)
 
@@ -1141,6 +1165,36 @@ Reads: one turn's records oldest first — the order the rewrites happened in th
 turn, which is what the slot #1 / #6 surfaces read — and one session's newest
 first. Both order by `created_at` with `id` as the deterministic tiebreak, both
 accept an optional kind filter, and both clamp the limit to 500.
+
+### 4.16 turn facts — one turn's authoritative numbers (slot #9)
+
+`turn.facts` answers "what happened in this turn" from host-owned tables only
+(ADR 0291 rule 8, slot #9 `runtime.turn.facts`); no number is reconstructed
+from plugin-observed events and no conversation text is involved. "This turn"
+means exactly one thing, because every source below is keyed by the turn's own
+id:
+
+| fact | source | what makes it authoritative |
+|---|---|---|
+| executed tool calls, outcomes, error codes | `audit_log` where `kind = 'tool_execute'` and `turn_id = ?` (via `idx_audit_turn`) | the audit row the host writes when a tool really ran, with its `ok` flag and `errorCode` |
+| model tokens, start/end, duration, status, provider/model, terminal error | `turns` (`input_tokens`, `output_tokens`, `started_at`, `ended_at`, `status`, `provider_id`, `model_id`, `error_code`) | the turn row the state machine owns |
+| provider usage record, plugin-tool spend | `turns.usage_json`, and its `pluginToolUsage` member | the record stored at `session.endTurn`, reported beside the model totals (slot 5) |
+| files touched, with their ops | `artifacts` where `turn_id = ?` (via `idx_artifacts_session_turn`) | one row per recorded touch (§4.10) |
+
+A call the host refused before running (`tool_denied` / `tool_aborted`) never
+executed and is not counted as a call the turn made; its own audit row still
+carries the turn, so the record is attributable without inflating the counts. A
+`tool_execute` row whose payload does not say `ok: true` counts as failed, which
+keeps `ok + failed = total` true for every row the table can hold. Per tool the
+answer carries `calls`, `ok`, `failed` and the distinct sorted `errorCodes` of
+that tool's failures, one entry per tool ordered by name.
+
+A turn that does not exist is an error, not an empty answer: zeroes are reserved
+for a turn that exists and really did nothing. `pluginToolUsage` and `usage` are
+`null` when the turn recorded none, `endedAt` / `durationMs` are `null` while the
+turn is still running, and `filesTruncated` marks a file list the caller's limit
+capped — the read probes with one row more than the limit so that flag is exact
+rather than a guess.
 ### Dropped from v1
 
 | v1 table | v2 home |
@@ -1164,7 +1218,8 @@ is the source of truth, the index is derived and self-healing.
 | assistant/tool message end | append message line; remove the in-flight checkpoint when its id matches | index row + touch session |
 | streaming reply checkpoint (`session.saveInflightMessage`, D299) | atomically replace `<id>.inflight.json`; no-op for an empty message or an id already indexed | — |
 | context checkpoint (`session.appendCompaction`) | append typed checkpoint line after its referenced message boundary | — (checkpoint is not searchable transcript content) |
-| tool succeeded (Write/Edit) | — | insert one `artifacts` touch row per changed file + the `tool_execute` `audit_log` row |
+| tool succeeded (Write/Edit) | — | insert one `artifacts` touch row per changed file + the `tool_execute` `audit_log` row, both stamped with the turn the call ran in |
+| tool refused or aborted (`tools.execute`) | — | the `tool_denied` / `tool_aborted` `audit_log` row, stamped with the turn the call was made in |
 | turn terminal via `session.endTurn` | `completed`/`error`: remove the in-flight checkpoint only when its id is already indexed; otherwise leave it for the outbox or boot (D327). `recoverInflight`: append the leftover as `complete` when the turn is `completed`, otherwise as `aborted`, when its final row never landed | update `turns`; for completed/error insert one notification and prune to 200 in the same tx; aborted inserts none; a promoted checkpoint gets an index row under the turn |
 | plan/goal submission | host writes the exact Markdown bytes to a new unique `<workspaceRoot>/.pi/<kind>/*.md` file | insert one `plan_approvals(pending)` row with the kind, structured title/question, artifact path/hash/size, and expiry before emitting the approval request |
 | plan/goal approval | verify the immutable artifact path/hash/size | atomically resolve `plan_approvals`, update `sessions.mode` and explicit `permission_mode`, and set `execution_state = 'queued'`; reject/expiry stay in the contract mode |
@@ -1275,6 +1330,8 @@ truncating at a guessed position.
     recent artifacts → `idx_artifacts_time`
   - plugin rewrites of one session or one turn → `idx_plugin_rewrites_session` /
     `idx_plugin_rewrites_turn`
+  - one turn's facts → the `turns` primary key for the turn row, `idx_audit_turn`
+    for its tool calls, and `idx_artifacts_session_turn` for its file touches
   - run history → `idx_task_runs`
   - audit forensics/pruning → `idx_audit_session` / `idx_audit_ts`
   - notification inbox → `idx_notifications_created`; unread filter/count →
@@ -1366,6 +1423,17 @@ truncating at a guessed position.
   (`runtime.send.before`) and slot #6 (`runtime.request.before`) — are not built
   yet, so the audit surface lands ahead of the capability that depends on it. A
   `pi.sqlite.v19.bak` copy precedes the step.
+- **Schema v21 is additive.** It adds the nullable `audit_log.turn_id` column and
+  its partial index `idx_audit_turn`, so one turn's records — and with them
+  `turn.facts` (§4.16, ADR 0291 rule 8) — are an indexed read rather than a scan
+  of redacted payloads. Every existing row keeps its content and carries a NULL
+  turn: the column is a fact the host writes when it knows the turn, never a
+  backfilled guess, so a per-turn read sees only rows the host actually
+  attributed. The column is appended last, which is where `ALTER TABLE` puts it,
+  so a migrated file and a fresh one hold the same column order. The step probes
+  `pragma_table_info` before altering, so a file that already created
+  `audit_log` from the current DDL is not altered twice. A `pi.sqlite.v20.bak`
+  copy precedes the step.
 - **Schema v14 is additive.** It adds nullable `sessions.deleted_at`, the
   partial deletion index, and `session_import_origins`. Existing sessions stay
   active and have no origin rows. The migration runs in the same guarded

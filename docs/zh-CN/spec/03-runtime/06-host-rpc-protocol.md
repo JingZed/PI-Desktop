@@ -458,7 +458,7 @@ off | minimal | low | medium | high | xhigh | max
 `*.active` 返回经激活作用域过滤后适用于给定项目的条目（未知作用域返回
 `CAPABILITY_INVALID`）。
 
-### 搜索、工件、插件改写、键盘
+### 搜索、工件、插件改写、回合事实、键盘
 - `search.query` — 跨会话、项目和设置目的地的全局搜索（ADR 0034）
 - `artifacts.list` — 已记录的文件触碰，可按某个会话过滤，或（配合 `turnId`，
   它需要 `sessionId`）只取改动过文件的单个回合。每行带有 `path`、`op`
@@ -476,6 +476,22 @@ off | minimal | low | medium | high | xhigh | max
   缺少 `sessionId`、未知的 `kind` 或非正的 `limit` 返回 `INVALID_PARAMS`；limit 被限制
   在 500。增量 RPC；不提升协议版本。**目前没有生产者** —— 插槽 #1 与 #6 尚未实现，
   在它们落地前该列表为空。
+- `turn.facts({ sessionId, turnId, limit? }) -> { facts }` — 单个回合的
+  **权威结构化数字**，由主机从自己的表中汇总（ADR 0291 规则 8，插槽 #9
+  `runtime.turn.facts`）。这里没有任何内容是从插件观察到的事件重建的，也不返回对话正文。
+  `facts` 携带 `sessionId`、`turnId`、`status`（`running | completed | aborted | error`）、
+  `providerId`、`modelId`、`errorCode`（该回合自身的终止错误）、`startedAt`、`endedAt`
+  （运行中为 `null`）、`durationMs`（`endedAt - startedAt`，运行中为 `null`）、
+  `tokens`（`{ input, output, total }`，取自 `turns` 的提升列）、`usage`（按存储原样给出的
+  provider 记录，或 `null`）、`pluginToolUsage`（该记录中的插件工具花费组件，或 `null`；
+  绝不会并入 `tokens`）、`toolCalls`（`{ total, ok, failed, byTool }`，其中 `byTool` 是每个工具
+  一条、按名称排序的 `{ toolName, calls, ok, failed, errorCodes }`）、`files`（该回合的
+  `artifacts` 触碰，最旧在前，每项带 `path`、`op`、`turnId`、`updatedAt`）以及
+  `filesTruncated`。`sessionId` 与 `turnId` 都为必需，为空、或 `limit` 非正／非整数，
+  返回 `INVALID_PARAMS`；`limit` 默认 200，并被限制在 1–499，从而保证截断标志精确。
+  会话不存在返回 `SESSION_NOT_FOUND`，该会话中不存在该回合 —— 包括该回合属于另一个会话 ——
+  返回 `TURN_NOT_FOUND`：主机从未记录过的回合绝不会以零值回答。增量 RPC；不提升协议版本。
+  需要架构 v21（见 04-data-storage §4.16）。
 - `keyboard.setGlobalShortcut` — 在 Electron 无法注册插件启动器快捷键时，
   由宿主持有的原生回退
 
@@ -889,6 +905,7 @@ JSON-RPC 错误携带一个数字 `code` 以及 `data.errorCode`，后者是来�
 | 1006 | RATE_LIMITED | 某个按调用方计的预算窗口已耗尽 |
 | 1007 | NOT_FOUND | 实体缺失 |
 | 1007 | SESSION_NOT_FOUND | 点名的会话不存在；工具请求永远不会回退到全局工作区 |
+| 1007 | TURN_NOT_FOUND | 点名的回合不在该会话中；`turn.facts` 绝不会以零值回答未知的回合 |
 | 1008 | CONFLICT | busy/conflict 状态 |
 | 1008 | AGENT_BUSY | 该会话有一个正在运行的回合 |
 | 1009 | PLUGIN_INVALID | manifest/validation 失败 |

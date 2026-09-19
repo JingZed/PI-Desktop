@@ -1684,3 +1684,103 @@ fn a_v19_file_gains_the_rewrite_audit_and_keeps_its_rows() {
     assert_eq!(listed.len(), 1);
     assert!(listed[0].turn_id.is_none());
 }
+
+/// Schema v21 makes a turn's audit records attributable (ADR 0291 rule 8, slot
+/// #9): `audit_log` gains the nullable `turn_id` column and `idx_audit_turn`.
+/// Build a v20 file that already holds audit rows, reopen it, and check the
+/// column arrived last — the position `ALTER TABLE` appends, which the fresh
+/// DDL also uses — that the old rows kept their content with no turn, and that
+/// a turn-stamped record can be written and read back through the new index.
+#[test]
+fn a_v20_file_gains_the_audit_turn_column_and_keeps_its_rows() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("pi.sqlite");
+    let session_id;
+    {
+        let db = Database::open(&path).unwrap();
+        let session = crate::sessions::create_session(&db, None, None, None, None, None).unwrap();
+        session_id = session.id.clone();
+        crate::audit::append(
+            &db,
+            "tool_execute",
+            Some(&session_id),
+            serde_json::json!({ "toolName": "Read", "ok": true }),
+        )
+        .unwrap();
+        // Back to a file from before the per-turn filter existed.
+        db.conn()
+            .execute_batch(
+                "DROP INDEX idx_audit_turn;
+                 ALTER TABLE audit_log DROP COLUMN turn_id;
+                 PRAGMA user_version=20;",
+            )
+            .unwrap();
+    }
+
+    let columns = |db: &Database| -> Vec<String> {
+        let mut stmt = db
+            .conn()
+            .prepare("SELECT name FROM pragma_table_info('audit_log') ORDER BY cid")
+            .unwrap();
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0)).unwrap();
+        rows.collect::<rusqlite::Result<Vec<_>>>().unwrap()
+    };
+
+    let db = Database::open(&path).unwrap();
+    assert_eq!(schema_version(db.conn()), SCHEMA_VERSION);
+    assert!(migration_backup_path(&path, 20).exists());
+    assert_eq!(
+        columns(&db),
+        ["id", "ts", "kind", "session_id", "payload_json", "turn_id"]
+    );
+    let index_exists: bool = db
+        .conn()
+        .query_row(
+            "SELECT EXISTS(
+                 SELECT 1 FROM sqlite_master
+                 WHERE type = 'index' AND name = 'idx_audit_turn'
+             )",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(index_exists);
+
+    // The pre-v21 row kept its content and is not attributed to a guessed turn.
+    let (kind, payload, turn_id): (String, String, Option<String>) = db
+        .conn()
+        .query_row(
+            "SELECT kind, payload_json, turn_id FROM audit_log",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(kind, "tool_execute");
+    assert_eq!(turn_id, None);
+    let payload: serde_json::Value = serde_json::from_str(&payload).unwrap();
+    assert_eq!(payload["toolName"], serde_json::json!("Read"));
+
+    // The upgraded file stores — and finds — the attribution the column exists
+    // for, and its shape matches a fresh file's.
+    crate::audit::append_turn(
+        &db,
+        "tool_execute",
+        Some(&session_id),
+        Some("turn-1"),
+        serde_json::json!({ "toolName": "Bash", "ok": false, "errorCode": "TOOL_TIMEOUT" }),
+    )
+    .unwrap();
+    let stamped: i64 = db
+        .conn()
+        .query_row(
+            "SELECT COUNT(*) FROM audit_log WHERE turn_id = 'turn-1'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(stamped, 1);
+
+    let fresh_dir = tempfile::tempdir().unwrap();
+    let fresh = Database::open(&fresh_dir.path().join("pi.sqlite")).unwrap();
+    assert_eq!(columns(&db), columns(&fresh));
+}

@@ -641,6 +641,33 @@ pub(crate) fn migrate_v19_to_v20_tx(tx: &rusqlite::Transaction<'_>) -> Result<()
     Ok(())
 }
 
+/// v21 makes a turn's audit records attributable (ADR 0291 rule 8, slot #9):
+/// `audit_log` grows the nullable `turn_id` column and its partial index, so
+/// one turn's tool executions are an indexed read instead of a scan of
+/// redacted payloads. Additive: every existing row keeps its content and stays
+/// valid with a NULL turn, and a per-turn read therefore sees only the rows
+/// the host wrote with a turn — the column is a fact, never a backfill guess.
+/// It is appended last because `ALTER TABLE` appends, which keeps a migrated
+/// file and the fresh DDL in `schema.rs` at the same column order. Probing
+/// `pragma_table_info` keeps the step idempotent for a file that already
+/// created `audit_log` from the current DDL.
+pub(crate) fn migrate_v20_to_v21_tx(tx: &rusqlite::Transaction<'_>) -> Result<()> {
+    let has_turn_id: bool = tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM pragma_table_info('audit_log') WHERE name = 'turn_id')",
+        [],
+        |row| row.get(0),
+    )?;
+    if !has_turn_id {
+        tx.execute_batch("ALTER TABLE audit_log ADD COLUMN turn_id TEXT;")?;
+    }
+    tx.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_audit_turn
+           ON audit_log(turn_id, ts) WHERE turn_id IS NOT NULL;",
+    )?;
+    tx.pragma_update(None, "user_version", 21i64)?;
+    Ok(())
+}
+
 pub(crate) fn migration_backup_path(path: &Path, version: i64) -> PathBuf {
     path.with_extension(format!("sqlite.v{version}.bak"))
 }
@@ -870,6 +897,19 @@ pub(crate) fn migrate_v19_to_v20(conn: &Connection, path: &Path) -> Result<()> {
     tx.commit().with_context(|| {
         format!(
             "commit schema v19 to v20 migration; backup {} remains",
+            backup.display()
+        )
+    })?;
+    Ok(())
+}
+
+pub(crate) fn migrate_v20_to_v21(conn: &Connection, path: &Path) -> Result<()> {
+    let backup = create_migration_backup(conn, path, 20)?;
+    let tx = conn.unchecked_transaction()?;
+    migrate_v20_to_v21_tx(&tx)?;
+    tx.commit().with_context(|| {
+        format!(
+            "commit schema v20 to v21 migration; backup {} remains",
             backup.display()
         )
     })?;

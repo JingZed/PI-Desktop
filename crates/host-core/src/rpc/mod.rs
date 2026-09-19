@@ -25,6 +25,7 @@ use crate::sessions::{self, UiMessage};
 use crate::state::{AppState, HOST_VERSION, PROTOCOL_VERSION};
 use crate::tools::{self, ToolsExecuteParams};
 use crate::transcripts::CompactionRecord;
+use crate::turn_facts;
 use crate::turn_queue;
 use crate::workspace;
 
@@ -2762,6 +2763,46 @@ async fn handle_request(
             Ok(json!({ "rewrites": rewrites }))
         }
 
+        "turn.facts" => {
+            // Slot #9 (`runtime.turn.facts`, ADR 0291 rule 8): one turn's
+            // authoritative numbers, assembled by the host from its own tables
+            // — tool calls and outcomes, model tokens, plugin-tool spend,
+            // duration, and the files the turn touched. `sessionId` is required
+            // with `turnId` because the turn must be attributed to that session
+            // rather than to whichever session happens to own the id.
+            let session_id = params
+                .get("sessionId")
+                .and_then(|value| value.as_str())
+                .filter(|id| !id.trim().is_empty())
+                .ok_or_else(|| rpc_err(1002, "sessionId required", "INVALID_PARAMS"))?;
+            let turn_id = params
+                .get("turnId")
+                .and_then(|value| value.as_str())
+                .filter(|id| !id.trim().is_empty())
+                .ok_or_else(|| rpc_err(1002, "turnId required", "INVALID_PARAMS"))?;
+            let limit = match params.get("limit") {
+                None | Some(Value::Null) => 200,
+                Some(value) => value.as_i64().filter(|limit| *limit > 0).ok_or_else(|| {
+                    rpc_err(1002, "limit must be a positive integer", "INVALID_PARAMS")
+                })?,
+            };
+            let st = state.lock().await;
+            let session_exists = sessions::session_mode(&st.db, session_id)
+                .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?
+                .is_some();
+            if !session_exists {
+                return Err(rpc_err(1007, "session not found", "SESSION_NOT_FOUND"));
+            }
+            // A turn that does not exist is an error, not zeroes: an empty
+            // answer would claim a turn did nothing when it was never recorded.
+            let facts = turn_facts::for_turn(&st.db, session_id, turn_id, limit)
+                .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?
+                .ok_or_else(|| rpc_err(1007, "turn not found", "TURN_NOT_FOUND"))?;
+            serde_json::to_value(facts)
+                .map(|facts| json!({ "facts": facts }))
+                .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))
+        }
+
         "plans.pending" => {
             let session_id = params.get("sessionId").and_then(|v| v.as_str());
             let st = state.lock().await;
@@ -3518,7 +3559,7 @@ async fn handle_request(
                     if let Some(shell_id) = permission_shell_id.as_deref() {
                         denied_audit["commandShellId"] = json!(shell_id);
                     }
-                    let _ = audit::append(
+                    let _ = audit::append_turn(
                         &st.db,
                         if cancelled {
                             "tool_aborted"
@@ -3526,6 +3567,7 @@ async fn handle_request(
                             "tool_denied"
                         },
                         Some(&p.session_id),
+                        p.turn_id.as_deref(),
                         denied_audit,
                     );
                     let error_code = if cancelled {
@@ -3804,7 +3846,13 @@ async fn handle_request(
                 if let Some(shell_id) = result.command_shell_id.as_deref() {
                     execute_audit["commandShellId"] = json!(shell_id);
                 }
-                let _ = audit::append(&st.db, "tool_execute", Some(&p.session_id), execute_audit);
+                let _ = audit::append_turn(
+                    &st.db,
+                    "tool_execute",
+                    Some(&p.session_id),
+                    p.turn_id.as_deref(),
+                    execute_audit,
+                );
 
                 serde_json::to_value(result).map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))
             }
@@ -8440,5 +8488,218 @@ mod tests {
             assert_eq!(error.code, 1002);
             assert_eq!(error.data.unwrap()["errorCode"], json!("INVALID_PARAMS"));
         }
+    }
+
+    /// `turn.facts` is the host's own answer for one turn — the numbers come
+    /// from host tables, never from a plugin counting events — and a turn that
+    /// does not exist is an error rather than zeroes (ADR 0291 rule 8, slot #9).
+    #[tokio::test]
+    async fn turn_facts_reads_the_turn_and_rejects_unknown_input() {
+        use crate::artifacts::{self, ArtifactOp};
+        use crate::audit;
+
+        let data_dir = tempfile::tempdir().unwrap();
+        let mut app_state = AppState::open(data_dir.path()).unwrap();
+        app_state.handshook = true;
+        let session =
+            sessions::create_session(&app_state.db, None, None, None, None, None).unwrap();
+        let turn = sessions::begin_turn(&app_state.db, &session.id, None, None).unwrap();
+        audit::append_turn(
+            &app_state.db,
+            "tool_execute",
+            Some(&session.id),
+            Some(&turn),
+            json!({ "toolName": "Read", "ok": true }),
+        )
+        .unwrap();
+        audit::append_turn(
+            &app_state.db,
+            "tool_execute",
+            Some(&session.id),
+            Some(&turn),
+            json!({ "toolName": "Bash", "ok": false, "errorCode": "TOOL_TIMEOUT" }),
+        )
+        .unwrap();
+        // Another turn's call must never be counted here.
+        audit::append_turn(
+            &app_state.db,
+            "tool_execute",
+            Some(&session.id),
+            Some("turn-elsewhere"),
+            json!({ "toolName": "Grep", "ok": true }),
+        )
+        .unwrap();
+        artifacts::record(
+            &app_state.db,
+            &session.id,
+            "/w/notes.txt",
+            ArtifactOp::Write,
+            Some(&turn),
+        )
+        .unwrap();
+        artifacts::record(
+            &app_state.db,
+            &session.id,
+            "/w/extra.txt",
+            ArtifactOp::Edit,
+            Some(&turn),
+        )
+        .unwrap();
+        let usage = json!({
+            "inputTokens": 120,
+            "outputTokens": 30,
+            "totalTokens": 150,
+            "pluginToolUsage": { "inputTokens": 5, "outputTokens": 7, "totalTokens": 12 }
+        });
+        sessions::end_turn(&app_state.db, &turn, "completed", None, Some(&usage), false).unwrap();
+        let state = Arc::new(Mutex::new(app_state));
+        let (tx, _rx) = mpsc::unbounded_channel();
+
+        let response = handle_request(
+            state.clone(),
+            "turn.facts",
+            json!({ "sessionId": session.id, "turnId": turn }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        let facts = &response["facts"];
+        assert_eq!(facts["sessionId"], json!(session.id));
+        assert_eq!(facts["turnId"], json!(turn));
+        assert_eq!(facts["status"], json!("completed"));
+        assert_eq!(
+            facts["tokens"],
+            json!({ "input": 120, "output": 30, "total": 150 })
+        );
+        assert_eq!(facts["usage"], usage);
+        assert_eq!(facts["pluginToolUsage"]["totalTokens"], json!(12));
+        assert_eq!(facts["toolCalls"]["total"], json!(2));
+        assert_eq!(facts["toolCalls"]["ok"], json!(1));
+        assert_eq!(facts["toolCalls"]["failed"], json!(1));
+        assert_eq!(facts["toolCalls"]["byTool"][0]["toolName"], json!("Bash"));
+        assert_eq!(
+            facts["toolCalls"]["byTool"][0]["errorCodes"],
+            json!(["TOOL_TIMEOUT"])
+        );
+        assert_eq!(facts["toolCalls"]["byTool"][1]["toolName"], json!("Read"));
+        assert_eq!(facts["files"][0]["path"], json!("/w/notes.txt"));
+        assert_eq!(facts["files"][0]["op"], json!("write"));
+        assert_eq!(facts["files"][1]["op"], json!("edit"));
+        assert_eq!(facts["filesTruncated"], json!(false));
+        assert!(facts["durationMs"].as_i64().unwrap() >= 0);
+        assert!(facts["endedAt"].as_str().unwrap().ends_with('Z'));
+
+        // The file list honours the caller's limit and says when it capped.
+        let capped = handle_request(
+            state.clone(),
+            "turn.facts",
+            json!({ "sessionId": session.id, "turnId": turn, "limit": 1 }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(capped["facts"]["files"].as_array().unwrap().len(), 1);
+        assert_eq!(capped["facts"]["filesTruncated"], json!(true));
+
+        for params in [
+            json!({ "turnId": turn }),
+            json!({ "sessionId": session.id }),
+            json!({ "sessionId": "  ", "turnId": turn }),
+            json!({ "sessionId": session.id, "turnId": "" }),
+            json!({ "sessionId": session.id, "turnId": turn, "limit": 0 }),
+            json!({ "sessionId": session.id, "turnId": turn, "limit": "twenty" }),
+        ] {
+            let error = handle_request(state.clone(), "turn.facts", params, tx.clone())
+                .await
+                .unwrap_err();
+            assert_eq!(error.code, 1002);
+            assert_eq!(error.data.unwrap()["errorCode"], json!("INVALID_PARAMS"));
+        }
+
+        let unknown_turn = handle_request(
+            state.clone(),
+            "turn.facts",
+            json!({ "sessionId": session.id, "turnId": "turn-that-never-was" }),
+            tx.clone(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(unknown_turn.code, 1007);
+        assert_eq!(
+            unknown_turn.data.unwrap()["errorCode"],
+            json!("TURN_NOT_FOUND")
+        );
+
+        let unknown_session = handle_request(
+            state,
+            "turn.facts",
+            json!({ "sessionId": "session-that-never-was", "turnId": turn }),
+            tx,
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(unknown_session.code, 1007);
+        assert_eq!(
+            unknown_session.data.unwrap()["errorCode"],
+            json!("SESSION_NOT_FOUND")
+        );
+    }
+
+    /// The write side of the facts read: a real `tools.execute` stamps its
+    /// audit row with the turn it ran in, so the counts are the host's own.
+    #[tokio::test]
+    async fn turn_facts_counts_the_tool_calls_a_real_execution_audits() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let project = data_dir.path().join("project");
+        fs::create_dir_all(&project).unwrap();
+        fs::write(project.join("note.txt"), "hello").unwrap();
+        let mut app_state = AppState::open(data_dir.path()).unwrap();
+        app_state.handshook = true;
+        let session = sessions::create_session(
+            &app_state.db,
+            Some("Facts".into()),
+            Some("agent".into()),
+            None,
+            None,
+            Some(project.to_string_lossy().into_owned()),
+        )
+        .unwrap();
+        let turn = sessions::begin_turn(&app_state.db, &session.id, None, None).unwrap();
+        let state = Arc::new(Mutex::new(app_state));
+        let (tx, _rx) = mpsc::unbounded_channel();
+
+        let result = handle_request(
+            state.clone(),
+            "tools.execute",
+            json!({
+                "sessionId": session.id,
+                "turnId": turn,
+                "toolCallId": "tc-1",
+                "toolName": "Read",
+                "args": { "path": "note.txt" },
+                "mode": "agent"
+            }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result["ok"], json!(true), "read succeeded: {result}");
+
+        let response = handle_request(
+            state,
+            "turn.facts",
+            json!({ "sessionId": session.id, "turnId": turn }),
+            tx,
+        )
+        .await
+        .unwrap();
+        let facts = &response["facts"];
+        assert_eq!(facts["toolCalls"]["total"], json!(1));
+        assert_eq!(facts["toolCalls"]["ok"], json!(1));
+        assert_eq!(facts["toolCalls"]["failed"], json!(0));
+        assert_eq!(
+            facts["toolCalls"]["byTool"][0],
+            json!({ "toolName": "Read", "calls": 1, "ok": 1, "failed": 0, "errorCodes": [] })
+        );
     }
 }

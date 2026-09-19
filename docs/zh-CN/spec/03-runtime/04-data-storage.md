@@ -1,4 +1,4 @@
-# 04. 数据存储（架构 v20）
+# 04. 数据存储（架构 v21）
 
 > **翻译说明：** 本页是与 [英文源规格](/spec/03-runtime/04-data-storage) 一一对应的机器辅助翻译。代码、协议字段和标识符保持原文；如翻译与英文源事实有歧义，以英文版本为准。
 
@@ -456,6 +456,14 @@ CREATE TABLE turns (
 );
 CREATE INDEX idx_turns_session ON turns(session_id, started_at DESC);
 ```
+
+`input_tokens` / `output_tokens` 是权威的模型总量：它们是所有汇总读取的提升列，
+未记录 usage 记录的回合保留该行创建时的零值。`usage_json` 是 Electron 在
+`session.endTurn` 上报的 provider 原始记录——缓存／推理细项都在其中。当插件工具
+上报过花费时，该记录还以独立的 `pluginToolUsage` 成员携带该回合的**插件工具花费**，
+它与模型总量并列而不是被并入其中（ADR 0291 槽位 5）；插件工具没有上报花费的回合
+没有该成员。两者都按存储原样读回：`turn.facts` 原样给出该记录，并单独暴露
+`pluginToolUsage`（§4.16）。
 
 ### 4.6a plan_approvals — 不可变的检查点和执行字段（模式 v11）
 
@@ -922,12 +930,22 @@ CREATE TABLE audit_log (
   ts           INTEGER NOT NULL,
   kind         TEXT NOT NULL,              -- tool_execute | tool_denied | …
   session_id   TEXT,
-  payload_json TEXT NOT NULL DEFAULT '{}'
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  turn_id      TEXT                        -- 记录所属的回合（v21）
 );
 CREATE INDEX idx_audit_ts ON audit_log(ts);
 CREATE INDEX idx_audit_session ON audit_log(session_id, ts)
   WHERE session_id IS NOT NULL;
+CREATE INDEX idx_audit_turn ON audit_log(turn_id, ts)
+  WHERE turn_id IS NOT NULL;
 ```
+
+`turn_id`（架构 v21，ADR 0291 规则 8）是记录所属的回合，因此某个回合的记录是一次
+索引读取，而不必扫描已脱敏的有效负载。主机在知道回合时写入它：`tool_execute`、
+`tool_denied` 与 `tool_aborted` 都带有该调用发生所在的回合，`turn.facts` 按它统计
+已执行的调用（§4.16）。当记录与回合无关时它为 NULL，v21 之前写入的每一行同样为
+NULL——该列是事实，绝不是回填的猜测——因此按回合读取只会看到主机真正归属过的行。
+该列位于最后，因为 `ALTER TABLE` 只能追加，这样迁移后的文件与全新文件形状一致。
 
 ### 4.14 notifications — 持久本地收件箱 (D117)
 
@@ -1034,6 +1052,30 @@ CREATE INDEX idx_plugin_rewrites_turn
 形状 —— 单个会话的记录按最新在前。两者都以 `created_at` 排序、以 `id` 作为确定性的并列
 次序，都接受可选的 kind 过滤，并把 limit 限制在 500。
 
+### 4.16 回合事实 —— 单个回合的权威数字（槽位 #9）
+
+`turn.facts` 只从主机拥有的表中回答"这个回合发生了什么"（ADR 0291 规则 8，槽位 #9
+`runtime.turn.facts`）；没有任何数字是从插件观察到的事件重建的，也不涉及对话正文。
+"这个回合"只意味着一种东西，因为以下每个来源都以该回合自身的 id 为键：
+
+| 事实 | 来源 | 为何权威 |
+|---|---|---|
+| 已执行的工具调用、结果、错误码 | `audit_log` 中 `kind = 'tool_execute'` 且 `turn_id = ?` 的行（经 `idx_audit_turn`） | 工具真正运行时主机写入的审计行，带其 `ok` 标志与 `errorCode` |
+| 模型 token、起止时间、耗时、状态、provider/model、终止错误 | `turns`（`input_tokens`、`output_tokens`、`started_at`、`ended_at`、`status`、`provider_id`、`model_id`、`error_code`） | 状态机拥有的回合行 |
+| provider usage 记录、插件工具花费 | `turns.usage_json` 及其 `pluginToolUsage` 成员 | `session.endTurn` 时存下的记录，与模型总量并列上报（槽位 5） |
+| 改动过的文件及其 op | `artifacts` 中 `turn_id = ?` 的行（经 `idx_artifacts_session_turn`） | 每次记录到的触碰一行（§4.10） |
+
+被主机在执行前拒绝的调用（`tool_denied` / `tool_aborted`）从未执行，因此不计入该回合
+发起的调用；它自己的审计行仍带有回合，所以记录可归属却不会虚增计数。`tool_execute`
+行的有效负载若未表明 `ok: true`，则计为失败，这让 `ok + failed = total` 对表里能存在的
+每一行都成立。按工具给出的答案是 `calls`、`ok`、`failed` 以及该工具失败项的互异且已排序的
+`errorCodes`，每个工具一条，按名称排序。
+
+不存在的回合是错误，而不是空答案：零值只留给确实存在且什么都没做的回合。回合没有记录
+usage 时 `pluginToolUsage` 与 `usage` 为 `null`，回合仍在运行时 `endedAt` / `durationMs`
+为 `null`，`filesTruncated` 标明调用方的 limit 截断了文件列表 —— 读取会按 limit 多探一行，
+因此该标志是精确的而不是猜测。
+
 ### 从 v1 中删除
 
 | v1表 | v2首页 |
@@ -1057,7 +1099,8 @@ CREATE INDEX idx_plugin_rewrites_turn
 | assistant/tool 消息结束 | 附加消息行；id 匹配时移除进行中检查点 | 索引行+触摸会话 |
 | 流式回复检查点（`session.saveInflightMessage`，D299） | 原子替换 `<id>.inflight.json`；空消息或已索引的 id 为空操作 | — |
 | 上下文检查点（`session.appendCompaction`） | 在其引用的消息边界之后附加类型化检查点行 | —（检查点是不可搜索的转录本内容） |
-| 工具成功（Write/Edit） | — | 每个被改动的文件插入一行 `artifacts` 触碰行 + `tool_execute` `audit_log` 行 |
+| 工具成功（Write/Edit） | — | 每个被改动的文件插入一行 `artifacts` 触碰行 + `tool_execute` `audit_log` 行，两者都标记调用发生所在的回合 |
+| 工具被拒绝或中止（`tools.execute`） | — | `tool_denied` / `tool_aborted` `audit_log` 行，标记该调用发生所在的回合 |
 | 通过 `session.endTurn` 打开终端 | `completed`/`error`：仅当该 id 已索引时才移除进行中检查点，否则留给 outbox 或启动恢复（D327）。`recoverInflight`：最终行从未落盘时，回合已 `completed` 则追加为 `complete`，否则为 `aborted` | 更新 `turns`；对于 completed/error，在同一交易中插入一个通知并修剪至 200 个；中止插入 无；被提升的检查点在该回合下获得一个索引行 |
 | plan/goal 提交 | 主机将准确的 Markdown 字节写入新的唯一 `<workspaceRoot>/.pi/<kind>/*.md` 文件 | 在发出批准请求之前插入一个 `plan_approvals(pending)` 行，其中包含类型、结构化 title/question、工件 path/hash/size 和到期时间 |
 | plan/goal 批准 | 验证不可变工件 path/hash/size | 原子地解析 `plan_approvals`，更新 `sessions.mode` 和显式 `permission_mode`，并设置 `execution_state = 'queued'`； reject/expiry 保持合约模式 |
@@ -1139,6 +1182,8 @@ outbox 排空。渲染器侧的停止绝不重写已有已开始回复的转录
   - 某个会话或某个回合的工件 → `idx_artifacts_session_turn`；全局最近的工件 → `idx_artifacts_time`
   - 某个会话或某个回合的插件改写记录 → `idx_plugin_rewrites_session` /
     `idx_plugin_rewrites_turn`
+  - 单个回合的事实 → `turns` 主键取回合行、`idx_audit_turn` 取工具调用、
+    `idx_artifacts_session_turn` 取文件触碰
   - 运行历史记录 → `idx_task_runs`
   - 审核 forensics/pruning → `idx_audit_session` / `idx_audit_ts`
   - 通知收件箱 → `idx_notifications_created`；未读 filter/count →
@@ -1183,6 +1228,14 @@ outbox 排空。渲染器侧的停止绝不重写已有已开始回复的转录
   该表初始为空，因为它的生产者 —— 插槽 #1（`runtime.send.before`）与插槽 #6
   （`runtime.request.before`）—— 尚未实现，审计面因此先于依赖它的能力落地。该步骤之前
   保留 `pi.sqlite.v19.bak` 副本。
+- **架构 v21 是追加式的。** 它新增可空的 `audit_log.turn_id` 列及其部分索引
+  `idx_audit_turn`，使单个回合的记录 —— 以及随其而来的 `turn.facts`（§4.16，
+  ADR 0291 规则 8）—— 成为索引读取，而不必扫描已脱敏的有效负载。每一条已有行都保留
+  自己的内容并携带 NULL 回合：该列是主机在知道回合时写入的事实，绝不是回填的猜测，
+  因此按回合读取只会看到主机真正归属过的行。该列追加在最后（`ALTER TABLE` 只能追加），
+  所以迁移后的文件与全新文件保持相同的列顺序。该步骤在改动前先探测
+  `pragma_table_info`，因此已经按当前 DDL 建好 `audit_log` 的文件不会被二次改动。
+  该步骤之前保留 `pi.sqlite.v20.bak` 副本。
 - **架构 v7 首先到达 v8，然后使用受保护的路径。** v7→v8
   迁移之后是相同的受保护的 v8→v15 迁移；架构-v9 和
   schema-v10 数据库采用相同的受保护路径并接收精确的可读数据

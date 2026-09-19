@@ -649,7 +649,7 @@ destination is a no-op.
 `*.active` returns the entries that apply to the given project after
 activation-scope filtering (`CAPABILITY_INVALID` for an unknown scope).
 
-### Search, artifacts, plugin rewrites, keyboard
+### Search, artifacts, plugin rewrites, turn facts, keyboard
 - `search.query` — legacy indexed-message hits; existing response and limit remain compatible
 - `search.sessions({ query, offset? }) -> { hits, nextOffset }` — global session
   discovery with title/project metadata and indexed user/assistant text. Trimmed
@@ -694,6 +694,29 @@ activation-scope filtering (`CAPABILITY_INVALID` for an unknown scope).
   `INVALID_PARAMS`; the limit is clamped to 500. Additive RPC; no protocol
   version bump. **No producer exists yet** — slots #1 and #6 are not built, so
   the list stays empty until they are.
+- `turn.facts({ sessionId, turnId, limit? }) -> { facts }` — one turn's
+  **authoritative structured numbers**, assembled by the host from its own
+  tables (ADR 0291 rule 8, slot #9 `runtime.turn.facts`). Nothing here is
+  reconstructed from plugin-observed events, and no conversation text is
+  returned. `facts` carries `sessionId`, `turnId`, `status`
+  (`running | completed | aborted | error`), `providerId`, `modelId`,
+  `errorCode` (the turn's own terminal error), `startedAt`, `endedAt` (`null`
+  while running), `durationMs` (`endedAt - startedAt`, `null` while running),
+  `tokens` (`{ input, output, total }` from the promoted `turns` columns),
+  `usage` (the provider record exactly as stored, or `null`),
+  `pluginToolUsage` (that record's plugin-tool spend component, or `null`;
+  never folded into `tokens`), `toolCalls` (`{ total, ok, failed, byTool }`,
+  where `byTool` is one entry per tool ordered by name with
+  `{ toolName, calls, ok, failed, errorCodes }`), `files` (the turn's
+  `artifacts` touches, oldest first, each with `path`, `op`, `turnId`,
+  `updatedAt`), and `filesTruncated`. Both `sessionId` and `turnId` are
+  required, and a blank one, or a non-positive/non-integer `limit`, is
+  `INVALID_PARAMS`; `limit` defaults to 200 and is clamped to 1–499, which
+  keeps the truncation flag exact. A session that does not exist is
+  `SESSION_NOT_FOUND`, and a turn that does not exist in that session —
+  including one that belongs to another session — is `TURN_NOT_FOUND`: a turn
+  the host never recorded is never answered with zeroes. Additive RPC; no
+  protocol version bump. Requires schema v21 (see 04-data-storage §4.16).
 - `keyboard.setGlobalShortcut` — host-owned native fallback for the plugin
   launcher chord where Electron cannot register it
 
@@ -1109,6 +1132,7 @@ numeric slot; the string is the contract, the number is transport detail.
 | 1006 | RATE_LIMITED | a per-caller budget window was exhausted |
 | 1007 | NOT_FOUND | entity missing |
 | 1007 | SESSION_NOT_FOUND | the named session does not exist; tool requests never fall back to the global workspace |
+| 1007 | TURN_NOT_FOUND | the named turn does not exist in that session; `turn.facts` never answers an unknown turn with zeroes |
 | 1008 | CONFLICT | busy/conflict state |
 | 1008 | AGENT_BUSY | the session has a running turn |
 | 1009 | PLUGIN_INVALID | manifest/validation failure |
