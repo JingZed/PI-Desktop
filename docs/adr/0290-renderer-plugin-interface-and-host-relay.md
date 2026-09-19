@@ -98,11 +98,20 @@ do not.
    A slot that sits inside rendering — a per-message block whose height the
    transcript must know, a code-block decoration, a value read while a composer
    control is computed — cannot be served by an async round trip without the UI
-   flickering or reflowing afterwards. The interface therefore also registers
-   host-callable pure functions, invoked in the renderer with a short deadline;
-   past the deadline the host proceeds as if the plugin had no opinion and
-   records a diagnostic. These functions are renderer-local: they are not an IPC
-   channel and must not perform I/O.
+   flickering or reflowing afterwards. The interface therefore also lets a
+   plugin register host-callable pure functions, invoked in the renderer while
+   the host renders, with the semantics a synchronous call actually admits: the
+   call is measured, an answer that returns within the one-frame budget (16 ms)
+   is used, an answer that arrives over budget is discarded, and a failure —
+   missing, thrown, or over budget — is recorded as a diagnostic on the
+   plugin's row. Three consecutive over-budget or throwing calls trip a
+   per-function circuit breaker (a success resets the count), and the host then
+   stops calling that function for the rest of the plugin's loaded lifetime.
+   The deadline therefore limits what the host *uses*, not what it *waits for*:
+   a synchronous call cannot be preempted, so the budget is enforced by
+   discarding the answer and by the breaker, never by cancelling the call.
+   These functions are renderer-local: they are not an IPC channel and must not
+   perform I/O.
 
 7. **Data is pushed; plugins do not poll.** Slots that display live state
    (`draft`, `attachments`, `selection`, `session`, `theme`, `locale`) receive

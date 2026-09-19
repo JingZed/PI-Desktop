@@ -11,6 +11,10 @@
  * refused at load, because two React copies break hooks and context. Write
  * components against the types here instead of importing React: this module
  * deliberately carries no React dependency so the SDK stays renderer-agnostic.
+ *
+ * A plugin may also register pure synchronous functions (`pi.functions`) that
+ * the host calls directly while it renders — the positions that cannot wait
+ * for an async round trip (ADR 0290 decision 6).
  */
 
 
@@ -176,6 +180,44 @@ export type PiRendererRegistration = {
 export type PiRendererStyleHandle = {
   remove(): void;
 };
+/**
+ * A function a plugin hands the host to call *while it renders* (ADR 0290
+ * decision 6). Some positions cannot wait for an async round trip — a
+ * per-message block whose height the transcript has to know, a code-block
+ * decoration, a value read while a composer control is computed — so these
+ * functions are called directly, in the host's realm, synchronously. They must
+ * be pure and synchronous: no I/O, no network, no DOM mutation, no long work.
+ * The host may call one on any render of the position that registered it, and
+ * stops calling it if it misbehaves.
+ */
+export type PiRendererHostFunction = (input: unknown) => unknown;
+
+/** Handle returned by `pi.functions.register`; the host also revokes it on unload. */
+export type PiRendererFunctionHandle = {
+  readonly name: string;
+  /** Removes this one function; the host stops calling the name immediately. */
+  remove(): void;
+};
+
+/** Why a host call of a registered function produced no value. */
+export type PiRendererFunctionFailureCode =
+  | "PLUGIN_FUNCTION_MISSING"
+  | "PLUGIN_FUNCTION_THREW"
+  | "PLUGIN_FUNCTION_OVER_BUDGET"
+  | "PLUGIN_FUNCTION_DISABLED";
+
+/**
+ * The answer to one host call. `ok: true` carries the function's value
+ * unchanged; a failure carries the code the host refused the call under and a
+ * human-readable `detail`. `PLUGIN_FUNCTION_OVER_BUDGET` means the function
+ * returned, but past the host's one-frame budget, so its value was discarded:
+ * a render that needed a synchronous answer cannot wait another frame for it.
+ * Three consecutive throwing or over-budget calls disable the function for the
+ * rest of that plugin's loaded lifetime.
+ */
+export type PiRendererFunctionCallResult =
+  | { ok: true; value: unknown }
+  | { ok: false; code: PiRendererFunctionFailureCode; detail?: string };
 
 /**
  * The object handed to a renderer module's `onLoad`. It is the whole host API a
@@ -200,6 +242,25 @@ export type PiRendererApi = {
       component: PiRendererComponent<Props>,
       options?: PiRendererSlotOptions,
     ): PiRendererRegistration;
+  };
+  readonly functions: {
+    /**
+     * Registers one host-callable function under a name that is unique inside
+     * this plugin. The host may call it *while it renders* — synchronously, in
+     * this realm, on any render — so the function must be pure and synchronous:
+     * no I/O, no network, no DOM mutation, no long work. A throwing call, or an
+     * answer past the host's one-frame budget, is discarded and reported; three
+     * consecutive such calls disable the function for the rest of that
+     * plugin's loaded lifetime.
+     *
+     * A name must match `^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$` and be at most
+     * 64 characters; a name that does not, or one this plugin already
+     * registered, is refused with a coded error rather than silently replaced.
+     * Names are per plugin, and registration only ever goes through this `pi`
+     * object: the host calls the function directly, with no ambient handle and
+     * no channel.
+     */
+    register(name: string, fn: PiRendererHostFunction): PiRendererFunctionHandle;
   };
   readonly ui: {
     /**

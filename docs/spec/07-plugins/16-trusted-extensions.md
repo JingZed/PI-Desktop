@@ -107,9 +107,10 @@ grants nothing in another, and a plugin may declare any combination.
   development and breaks only in a packaged build.
 - The module's `onLoad(pi)` hook is required and is where registration happens;
   `onUnload()` is optional. The `pi` object carries `plugin.id` /
-  `plugin.version`, `pi.slots.register`, and `pi.ui.injectStyle`, and nothing
-  else — a slot component's host data and its `dispatch` method arrive as props
-  on the component, not through that object (§2A.7).
+  `plugin.version`, `pi.slots.register`, `pi.functions.register`, and
+  `pi.ui.injectStyle`, and nothing else — a slot component's host data and its
+  `dispatch` method arrive as props on the component, not through that object
+  (§2A.7).
 - React is a singleton: the host injects its own React and maps the bare
   specifiers `react`, `react-dom`, and `react-dom/client` onto it, and a plugin
   that ships its own React copy is refused at load with a diagnostic, because
@@ -244,6 +245,49 @@ nine names are implemented; a call to one of the other six rejects with a coded
 - `ui.openModal`
 - `ui.closeModal`
 - `ui.toast`
+
+### 2A.8 Host-callable plugin functions
+
+Some positions need an answer from the plugin while the host is rendering — a
+per-message block whose height the transcript must know before it lays out, a
+code-block decoration, a value read while a composer control is computed. An
+async round trip cannot serve them without the UI flickering or reflowing
+afterwards, so the module also registers pure, synchronous functions for the
+host to call in the renderer (ADR 0290 decision 6).
+
+- `pi.functions.register(name, fn)` returns `{ name, remove() }`. Names are per
+  plugin, not global, and must match `^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$` and
+  stay at most 64 characters long. A name outside that grammar is refused with
+  a coded error and a diagnostic (`PLUGIN_FUNCTION_INVALID_NAME`), and so is a
+  name the same plugin already registered (`PLUGIN_FUNCTION_DUPLICATE_NAME`);
+  nothing is registered in either case.
+- `fn` is called by the host while rendering, on any render — not once per
+  plugin load and not on a schedule. It must be pure and synchronous: no I/O,
+  no network, no DOM mutation, no long work.
+- The host calls it as `callRendererFunction(pluginId, name, input)` and gets a
+  discriminated result rather than an exception:
+  - `{ ok: true, value }` — the function returned within one frame.
+  - `{ ok: false, code: "PLUGIN_FUNCTION_MISSING" }` — no such function exists,
+    including after the plugin was unloaded.
+  - `{ ok: false, code: "PLUGIN_FUNCTION_THREW" }` — the function threw.
+  - `{ ok: false, code: "PLUGIN_FUNCTION_OVER_BUDGET" }` — the function
+    returned, but took longer than the budget of one frame (16 ms); **the value
+    is discarded** and the host renders without it.
+  - `{ ok: false, code: "PLUGIN_FUNCTION_DISABLED" }` — three consecutive
+    over-budget or throwing calls (a success resets the count) tripped the
+    per-function circuit breaker; the host stops calling that function for the
+    rest of the plugin's loaded lifetime.
+- A synchronous call cannot be preempted. The budget is enforced by discarding
+  the answer and by the breaker, never by cancelling the call: the host waits
+  for the call to return, then discards an answer that arrived too late. It
+  does not "proceed as if the plugin had no opinion" before that return.
+- Every failure above is recorded as a diagnostic on the plugin's row (§2A.7).
+- This is a renderer-local path and is not an IPC channel: no host-core or
+  Electron main message carries a function call, and a function must not make
+  one because it must not perform I/O.
+- No host position calls a registered function yet. The positions that need a
+  synchronous plugin answer are among the eight component slots that are still
+  not mounted (two of the ten in §2A.5 render today).
 
 ## 3. Contribution and import
 

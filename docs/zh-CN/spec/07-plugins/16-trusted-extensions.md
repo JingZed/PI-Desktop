@@ -85,9 +85,9 @@ ES 模块，由宿主渲染器在应用自己的窗口内获取并求值，在�
   `plugin-renderer`，构建期的 CSP 收紧也必须在同一次改动里包含它 —— 否则该入口只在
   开发环境可用，打包后才坏。
 - 模块的 `onLoad(pi)` 钩子是必需的，注册就发生在那里；`onUnload()` 可选。`pi` 对象
-  只携带 `plugin.id` / `plugin.version`、`pi.slots.register` 与
-  `pi.ui.injectStyle`，别无其他 —— 槽位组件的宿主数据与它的 `dispatch` 方法以 props
-  交给组件，不经过该对象（§2A.7）。
+  只携带 `plugin.id` / `plugin.version`、`pi.slots.register`、
+  `pi.functions.register` 与 `pi.ui.injectStyle`，别无其他 —— 槽位组件的宿主数据与
+  它的 `dispatch` 方法以 props 交给组件，不经过该对象（§2A.7）。
 - React 是单例：宿主注入自己的 React，并把裸标识符 `react`、`react-dom`、
   `react-dom/client` 映射到它；自带 React 副本的插件在加载时被拒绝并记录诊断，
   因为两份副本会破坏 hooks 与 context。
@@ -201,6 +201,41 @@ props 拿到它的宿主数据和一个方法 `dispatch(action, payload)`；没�
 - `ui.openModal`
 - `ui.closeModal`
 - `ui.toast`
+
+### 2A.8 宿主可调用的插件函数
+
+有些位置需要插件在宿主渲染时给出答案 —— 一个转录必须在布局前就知道其高度的逐消息
+块、一个代码块装饰、一个在计算 composer 控件时读取的值。异步往返无法服务这些位置，
+否则界面会在之后闪烁或重排，因此模块还会注册宿主可在渲染层内调用的纯同步函数
+（ADR 0290 决策 6）。
+
+- `pi.functions.register(name, fn)` 返回 `{ name, remove() }`。名字按插件划分、不是
+  全局的，且必须匹配 `^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$` 并不超过 64 个字符。
+  不符合该语法的名字会被带错误码地拒绝并记录一条诊断
+  （`PLUGIN_FUNCTION_INVALID_NAME`），同一插件已注册过的名字同样被拒
+  （`PLUGIN_FUNCTION_DUPLICATE_NAME`）；两种情况都不会注册任何函数。
+- `fn` 由宿主在渲染时调用，任何一次渲染都可能调用 —— 不是每次插件加载调用一次，
+  也不按计划调用。它必须是纯同步的：没有 I/O、没有网络、不做 DOM 变更、不做耗时
+  工作。
+- 宿主以 `callRendererFunction(pluginId, name, input)` 调用，得到的是判别式结果而不是
+  异常：
+  - `{ ok: true, value }` —— 函数在一帧内返回。
+  - `{ ok: false, code: "PLUGIN_FUNCTION_MISSING" }` —— 不存在这样的函数，插件卸载后
+    也包括在内。
+  - `{ ok: false, code: "PLUGIN_FUNCTION_THREW" }` —— 函数抛出了异常。
+  - `{ ok: false, code: "PLUGIN_FUNCTION_OVER_BUDGET" }` —— 函数返回了，但耗时超过
+    一帧（16 ms）的预算；**返回值被丢弃**，宿主在没有它的前提下渲染。
+  - `{ ok: false, code: "PLUGIN_FUNCTION_DISABLED" }` —— 连续三次超预算或抛出调用
+    （一次成功会重置计数）使该函数自己的断路器跳闸；此后宿主在插件本次加载的剩余
+    生命周期内不再调用该函数。
+- 同步调用无法被抢占。预算通过丢弃答案和断路器来执行，绝不通过取消调用来执行：宿主
+  会等调用返回，然后把来得太晚的答案丢弃。它不会在返回之前就“当作插件没有意见”
+  继续。
+- 上述每种失败都作为诊断记在插件的行上（§2A.7）。
+- 这是渲染层本地路径，不是 IPC 通道：没有任何 host-core 或 Electron main 消息承载
+  函数调用，函数本身也不得发起，因为它不得执行 I/O。
+- 目前还没有任何宿主位置调用已注册的函数。需要同步插件答案的位置属于仍未挂载的八个
+  组件槽位（§2A.5 所列的十个中目前有两个会渲染）。
 
 ## 3. 贡献与导入
 

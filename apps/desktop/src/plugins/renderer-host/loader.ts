@@ -23,6 +23,11 @@ import { api } from "../../lib/api";
 import { pluginSlots } from "../renderer-slots/registry";
 import { injectPluginStyle, removePluginStyles } from "../renderer-slots/style-injection";
 import { installRendererImportMap } from "./react-shim";
+import {
+  registerRendererFunction,
+  removeRendererFunctions,
+  resetRendererFunctions,
+} from "./host-functions";
 
 /** One entry per plugin: in flight or settled, so a slot never loads twice. */
 const attempts = new Map<string, Promise<void>>();
@@ -86,8 +91,9 @@ export function rendererEntryUrl(pluginId: string, entry: string): string {
 
 /**
  * The object a plugin's `onLoad` receives. It is the whole host *API* surface —
- * there is no `pi` global — and it carries only slots, styles and the plugin's
- * own id, which is what keeps the API per-plugin. It is a contract, not a
+ * there is no `pi` global — and it carries only the plugin's own identity, the
+ * slots it may fill, the styles it may inject and the functions the host may
+ * call, which is what keeps the API per-plugin. It is a contract, not a
  * boundary: the module shares this realm (ADR 0287), so it can also reach
  * `window.piDesktop`.
  */
@@ -116,6 +122,11 @@ function buildApi(pluginId: string, version: string): PiRendererApi {
           },
         };
       },
+    },
+    functions: {
+      // Registration only ever goes through this object, and the module that
+      // stores it keys by plugin id: a plugin can only ever touch its own.
+      register: (name, fn) => registerRendererFunction(pluginId, name, fn),
     },
     ui: {
       injectStyle(css: string): PiRendererStyleHandle {
@@ -236,6 +247,9 @@ export async function disposeRendererPlugin(pluginId: string): Promise<void> {
   modules.delete(pluginId);
   attempts.delete(pluginId);
   declaredActions.delete(pluginId);
+  // The functions a plugin registered go with it (D10): a stale render can
+  // never reach into a module that is gone.
+  removeRendererFunctions(pluginId);
   pluginSlots.unregisterPlugin(pluginId);
   removePluginStyles(pluginId);
   if (typeof module?.onUnload === "function") {
@@ -262,4 +276,5 @@ export function resetRendererPlugins(): void {
   attempts.clear();
   modules.clear();
   declaredActions.clear();
+  resetRendererFunctions();
 }

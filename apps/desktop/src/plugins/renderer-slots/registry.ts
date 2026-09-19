@@ -65,6 +65,16 @@ export type PluginSlotDiagnostic = {
     | "PLUGIN_CALL_NO_HANDLER"
     | "PLUGIN_CALL_UNSERIALIZABLE"
     | "PLUGIN_CALL_FAILED"
+    // Host-callable functions a plugin registered (ADR 0290 decision 6,
+    // renderer-host/host-functions.ts): a registration refused by the name
+    // grammar or by a duplicate name, and every way a host call can fail —
+    // missing, threw, past the one-frame budget, or disabled by the breaker.
+    | "PLUGIN_FUNCTION_INVALID_NAME"
+    | "PLUGIN_FUNCTION_DUPLICATE_NAME"
+    | "PLUGIN_FUNCTION_MISSING"
+    | "PLUGIN_FUNCTION_THREW"
+    | "PLUGIN_FUNCTION_OVER_BUDGET"
+    | "PLUGIN_FUNCTION_DISABLED"
     | "PLUGIN_INVALID: renderer entry must export onLoad";
   detail?: string;
   ts: number;
