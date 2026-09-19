@@ -1,4 +1,4 @@
-# 04. Data Storage (Schema v17)
+# 04. Data Storage (Schema v20)
 
 ## 0. Ownership decision
 
@@ -1070,6 +1070,77 @@ CREATE INDEX idx_notifications_unread
   read is one indexed update, and clear deletes notification rows only. None of
   these operations changes sessions, turns, or transcripts.
 
+### 4.15 plugin_rewrites — diff-level audit of plugin rewrites (schema v20)
+
+Every rewrite a runtime slot performs on what the model receives is recorded at
+**diff level** — which characters, which messages, which payload fields changed
+(ADR 0291 rule 5). Slot #1 (`runtime.send.before`, the outgoing message) and
+slot #6 (`runtime.request.before`, system prompt / message list / request
+payload) are the producers, and **neither is built yet**: the table, its caps,
+and the read path exist first, because the ADR makes the audit a prerequisite of
+the rewrite capability rather than a follow-up.
+
+```sql
+CREATE TABLE plugin_rewrites (
+  id            INTEGER PRIMARY KEY,
+  session_id    TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  turn_id       TEXT,                        -- null when the rewrite is outside a turn
+  plugin_id     TEXT NOT NULL,
+  kind          TEXT NOT NULL,               -- outgoing_message | system_prompt
+                                             -- | message_list | request_payload
+  truncated     INTEGER NOT NULL DEFAULT 0,  -- a cap clipped or dropped part of this record
+  dropped_edits INTEGER NOT NULL DEFAULT 0,  -- change entries the caps dropped
+  created_at    INTEGER NOT NULL,
+  diff_json     TEXT NOT NULL
+);
+CREATE INDEX idx_plugin_rewrites_session
+  ON plugin_rewrites(session_id, created_at, id);
+CREATE INDEX idx_plugin_rewrites_turn
+  ON plugin_rewrites(session_id, turn_id, created_at, id) WHERE turn_id IS NOT NULL;
+```
+
+`turn_id` has no foreign key, for the same reason `artifacts.turn_id` has none:
+slot #1 runs after send but before queueing, so a rewrite can be recorded before
+the `turns` row exists. `kind` carries no SQL `CHECK` either — the vocabulary is
+closed by the typed write path (`plugin_rewrites.rs`), so a row a build with a
+wider vocabulary wrote still reads back verbatim.
+
+`diff_json` is machine-readable and tagged by `kind`; a reader never has to parse
+prose to learn what changed:
+
+| kind | diff keys | what the record says |
+|---|---|---|
+| `outgoing_message` | `targetMessageId`, `characterEdits` | the changed span of the message the user sent |
+| `system_prompt` | `characterEdits` | the changed span of the system prompt |
+| `message_list` | `messageEdits` | per position `insert` / `replace` / `delete` / `reorder`, with the message ids and, for a reorder, `toIndex` |
+| `request_payload` | `fieldEdits`, `summary`, `body`, `bodyTruncated` | the dotted paths that differ, the exact payload sizes, and the capped payload the model received |
+
+A `characterEdits` entry locates a change by `start` / `end` — half-open Unicode
+scalar-value offsets into the original text — and carries the exact `beforeChars`
+/ `afterChars` counts plus the (possibly clipped) span. A `fieldEdits` path is
+dotted from the payload root (`$.messages.0.content`), and `request_payload`
+measures `summary.beforeBytes` / `summary.afterBytes` on the **full** objects, so
+the summary stays exact when the body is capped.
+
+Caps, stated here and enforced at the write boundary
+(`plugin_rewrites::record`); nothing else writes this table:
+
+| cap | value | behaviour at the boundary |
+|---|---|---|
+| change entries per record | 512 | entries that do not fit are dropped and counted in `dropped_edits` |
+| one text fragment (changed span, message id) | 2 KiB | clipped at a character boundary; `beforeChars` / `afterChars` stay exact |
+| request-payload body | 16 KiB | `bodyTruncated` set; `summary.afterBytes` still reports the full size |
+| stored `diff_json` | 64 KiB | hard ceiling — entries that do not fit are dropped, so one record cannot blow up the database |
+| session / turn / plugin identifier | 256 bytes | write rejected (`LIMIT_EXCEEDED`) instead of storing a record nobody can attribute |
+
+None of it is silent: `truncated` says a cap touched the record and
+`dropped_edits` says how many entries are missing, so a capped record is never
+mistaken for a full one.
+
+Reads: one turn's records oldest first — the order the rewrites happened in the
+turn, which is what the slot #1 / #6 surfaces read — and one session's newest
+first. Both order by `created_at` with `id` as the deterministic tiebreak, both
+accept an optional kind filter, and both clamp the limit to 500.
 ### Dropped from v1
 
 | v1 table | v2 home |
@@ -1202,6 +1273,8 @@ truncating at a guessed position.
   - global token history → `idx_turns_ended_at` (completed turns by end time)
   - artifacts of one session or one turn → `idx_artifacts_session_turn`; global
     recent artifacts → `idx_artifacts_time`
+  - plugin rewrites of one session or one turn → `idx_plugin_rewrites_session` /
+    `idx_plugin_rewrites_turn`
   - run history → `idx_task_runs`
   - audit forensics/pruning → `idx_audit_session` / `idx_audit_ts`
   - notification inbox → `idx_notifications_created`; unread filter/count →
@@ -1286,6 +1359,13 @@ truncating at a guessed position.
   shape could hold only one row per file, so nothing merges — and `op` stays
   unconstrained in SQL, which is why no stored value has to be rewritten. A
   `pi.sqlite.v18.bak` copy precedes the step.
+- **Schema v20 is additive.** It adds `plugin_rewrites`, the diff-level audit of
+  what a plugin changed in what the model receives, with its two read indexes
+  (ADR 0291 rule 5). No existing row changes and no stored value is rewritten;
+  the table starts empty because its producers — slot #1
+  (`runtime.send.before`) and slot #6 (`runtime.request.before`) — are not built
+  yet, so the audit surface lands ahead of the capability that depends on it. A
+  `pi.sqlite.v19.bak` copy precedes the step.
 - **Schema v14 is additive.** It adds nullable `sessions.deleted_at`, the
   partial deletion index, and `session_import_origins`. Existing sessions stay
   active and have no origin rows. The migration runs in the same guarded
@@ -1322,6 +1402,9 @@ destructive migration or a second settings store.
   gone, file present) are preserved, not garbage-collected: the file is the
   source of truth and a future re-index can recover it.
 - logs rotate at the file layer (D082); sessions are never auto-deleted.
+- plugin_rewrites: kept with the session (rows cascade on delete) and not pruned
+  yet — a rewrite record is audit evidence, a global cap belongs to the audit
+  surface that reads it, and no producer writes rows in this build.
 - Attachment GC (later): sweep `attachments/` for hashes unreferenced by any
   transcript file.
 

@@ -1,4 +1,4 @@
-# 04. 数据存储（架构 v17）
+# 04. 数据存储（架构 v20）
 
 > **翻译说明：** 本页是与 [英文源规格](/spec/03-runtime/04-data-storage) 一一对应的机器辅助翻译。代码、协议字段和标识符保持原文；如翻译与英文源事实有歧义，以英文版本为准。
 
@@ -973,6 +973,67 @@ CREATE INDEX idx_notifications_unread
   read 是一项索引更新，而clear 仅删除通知行。没有一个
   这些操作会更改会话、回合或记录。
 
+### 4.15 plugin_rewrites — 插件改写的差分级审计（架构 v20）
+
+运行时插槽对"模型收到的内容"所做的每一次改写都按**差分级**记录 —— 改了哪些字符、哪些
+消息、哪些负载字段（ADR 0291 规则 5）。生产者是插槽 #1（`runtime.send.before`，发出的
+消息）和插槽 #6（`runtime.request.before`，系统提示词 / 消息列表 / 请求负载），**两者都
+尚未实现**：表、上限和读取路径先行落地，因为 ADR 把审计当作改写能力的前提而不是后续工作。
+
+```sql
+CREATE TABLE plugin_rewrites (
+  id            INTEGER PRIMARY KEY,
+  session_id    TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  turn_id       TEXT,                        -- null when the rewrite is outside a turn
+  plugin_id     TEXT NOT NULL,
+  kind          TEXT NOT NULL,               -- outgoing_message | system_prompt
+                                             -- | message_list | request_payload
+  truncated     INTEGER NOT NULL DEFAULT 0,  -- a cap clipped or dropped part of this record
+  dropped_edits INTEGER NOT NULL DEFAULT 0,  -- change entries the caps dropped
+  created_at    INTEGER NOT NULL,
+  diff_json     TEXT NOT NULL
+);
+CREATE INDEX idx_plugin_rewrites_session
+  ON plugin_rewrites(session_id, created_at, id);
+CREATE INDEX idx_plugin_rewrites_turn
+  ON plugin_rewrites(session_id, turn_id, created_at, id) WHERE turn_id IS NOT NULL;
+```
+
+`turn_id` 没有外键，理由与 `artifacts.turn_id` 相同：插槽 #1 在发送之后、入队之前运行，
+改写可能在 `turns` 行存在之前就被记录。`kind` 也不带 SQL `CHECK` —— 词表由带类型的写入路径
+（`plugin_rewrites.rs`）闭合，因此更宽词表的构建写下的行仍按原样读出。
+
+`diff_json` 是机器可读的，并以 `kind` 为标签；读者不必解析散文就能知道改了什么：
+
+| kind | diff 键 | 记录说明的内容 |
+|---|---|---|
+| `outgoing_message` | `targetMessageId`、`characterEdits` | 用户发出的消息中被改动的片段 |
+| `system_prompt` | `characterEdits` | 系统提示词中被改动的片段 |
+| `message_list` | `messageEdits` | 每个位置上的 `insert` / `replace` / `delete` / `reorder`，带消息 id，重排还带 `toIndex` |
+| `request_payload` | `fieldEdits`、`summary`、`body`、`bodyTruncated` | 有差异的点分路径、精确的负载大小、以及模型实际收到的被截断负载 |
+
+`characterEdits` 条目用 `start` / `end` —— 原始文本中半开的 Unicode 标量偏移 —— 定位改动，
+并携带精确的 `beforeChars` / `afterChars` 计数以及（可能被截断的）片段。`fieldEdits` 的路径从
+负载根开始点分（`$.messages.0.content`）；`request_payload` 的
+`summary.beforeBytes` / `summary.afterBytes` 按**完整**对象计量，因此 body 被截断时摘要仍然精确。
+
+上限在此声明，并在写入边界（`plugin_rewrites::record`）强制执行；没有其他代码写这张表：
+
+| 上限 | 取值 | 边界行为 |
+|---|---|---|
+| 每条记录的改动条目 | 512 | 放不下的条目被丢弃并计入 `dropped_edits` |
+| 单个文本片段（改动片段、消息 id） | 2 KiB | 在字符边界处截断；`beforeChars` / `afterChars` 仍然精确 |
+| 请求负载 body | 16 KiB | 置 `bodyTruncated`；`summary.afterBytes` 仍报告完整大小 |
+| 存储的 `diff_json` | 64 KiB | 硬上限 —— 放不下的条目被丢弃，因此一条记录不会撑爆数据库 |
+| 会话 / 回合 / 插件标识符 | 256 字节 | 拒绝写入（`LIMIT_EXCEEDED`），而不是存下无人能归属的记录 |
+
+这一切都不是静默的：`truncated` 表明有上限动过这条记录，`dropped_edits` 表明缺了多少条目，
+因此被截断的记录绝不会被误认为完整记录。
+
+读取：单个回合的记录按最旧在前 —— 即改写在该回合中发生的顺序，也是插槽 #1 / #6 表面读取的
+形状 —— 单个会话的记录按最新在前。两者都以 `created_at` 排序、以 `id` 作为确定性的并列
+次序，都接受可选的 kind 过滤，并把 limit 限制在 500。
+
 ### 从 v1 中删除
 
 | v1表 | v2首页 |
@@ -1076,6 +1137,8 @@ outbox 排空。渲染器侧的停止绝不重写已有已开始回复的转录
   - 按项目分组 → `idx_sessions_project`
   - badges/cost 汇总 → `idx_turns_session`（每个会话的最新回合）
   - 某个会话或某个回合的工件 → `idx_artifacts_session_turn`；全局最近的工件 → `idx_artifacts_time`
+  - 某个会话或某个回合的插件改写记录 → `idx_plugin_rewrites_session` /
+    `idx_plugin_rewrites_turn`
   - 运行历史记录 → `idx_task_runs`
   - 审核 forensics/pruning → `idx_audit_session` / `idx_audit_ts`
   - 通知收件箱 → `idx_notifications_created`；未读 filter/count →
@@ -1115,6 +1178,11 @@ outbox 排空。渲染器侧的停止绝不重写已有已开始回复的转录
   `updated_at` 原样保留 —— 旧形状每个文件只能有一行，因此不会发生合并 —— `op`
   在 SQL 中不受约束，所以不需要重写任何已存值。该步骤之前保留
   `pi.sqlite.v18.bak` 副本。
+- **架构 v20 是追加式的。** 它新增 `plugin_rewrites`，即"插件改动了模型收到内容"的差分级
+  审计，连同两个读取索引（ADR 0291 规则 5）。没有任何已有行变化，也没有已存值被重写；
+  该表初始为空，因为它的生产者 —— 插槽 #1（`runtime.send.before`）与插槽 #6
+  （`runtime.request.before`）—— 尚未实现，审计面因此先于依赖它的能力落地。该步骤之前
+  保留 `pi.sqlite.v19.bak` 副本。
 - **架构 v7 首先到达 v8，然后使用受保护的路径。** v7→v8
   迁移之后是相同的受保护的 v8→v15 迁移；架构-v9 和
   schema-v10 数据库采用相同的受保护路径并接收精确的可读数据
@@ -1184,6 +1252,8 @@ outbox 排空。渲染器侧的停止绝不重写已有已开始回复的转录
   消失，文件存在）被保留，而不是被垃圾收集：该文件是
   事实来源和未来的重新索引可以恢复它。
 - 日志在文件层轮转（D082）；会话永远不会自动删除。
+- plugin_rewrites：随会话保留（删除会话时级联删除）且暂不修剪 —— 改写记录是审计证据，
+  全局上限属于读取它的审计界面，而本次构建没有任何生产者写入行。
 - 附件 GC（稍后）：扫描 `attachments/` 中未被任何引用的哈希值
   转录文件。
 

@@ -9,6 +9,7 @@ mod network_proxy;
 mod notifications;
 mod permissions;
 mod plans;
+mod plugin_rewrites;
 mod plugin_sessions;
 mod plugins;
 mod providers;

@@ -649,7 +649,7 @@ destination is a no-op.
 `*.active` returns the entries that apply to the given project after
 activation-scope filtering (`CAPABILITY_INVALID` for an unknown scope).
 
-### Search, artifacts, keyboard
+### Search, artifacts, plugin rewrites, keyboard
 - `search.query` — legacy indexed-message hits; existing response and limit remain compatible
 - `search.sessions({ query, offset? }) -> { hits, nextOffset }` — global session
   discovery with title/project metadata and indexed user/assistant text. Trimmed
@@ -680,6 +680,20 @@ activation-scope filtering (`CAPABILITY_INVALID` for an unknown scope).
   touch, newest first for a session and in touch order for a turn. A `turnId`
   without a `sessionId` returns `INVALID_ARGUMENT`. Additive RPC; no protocol
   version bump (ADR 0291 rule 8).
+- `plugin.rewrites.list({ sessionId, turnId?, kind?, limit? }) -> { rewrites }` —
+  the diff-level audit of what a plugin changed in what the model receives
+  (ADR 0291 rule 5). With `turnId` it returns one turn's records oldest first —
+  the order the rewrites happened, which is what the slot #1 / #6 surfaces read
+  — and without it the session's records newest first, including any record
+  written outside a turn. `kind` filters to `outgoing_message | system_prompt |
+  message_list | request_payload`. Each record carries `id`, `sessionId`,
+  `turnId` (null outside a turn), `pluginId`, `kind`, `truncated`,
+  `droppedEdits`, `createdAt`, and `diff`, whose per-kind shape, caps, and
+  truncation markers are specified in 04-data-storage §4.15. A missing
+  `sessionId`, an unknown `kind`, or a non-positive `limit` returns
+  `INVALID_PARAMS`; the limit is clamped to 500. Additive RPC; no protocol
+  version bump. **No producer exists yet** — slots #1 and #6 are not built, so
+  the list stays empty until they are.
 - `keyboard.setGlobalShortcut` — host-owned native fallback for the plugin
   launcher chord where Electron cannot register it
 

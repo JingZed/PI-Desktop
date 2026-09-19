@@ -629,6 +629,18 @@ pub(crate) fn migrate_v18_to_v19_tx(tx: &rusqlite::Transaction<'_>) -> Result<()
     Ok(())
 }
 
+/// v20 adds `plugin_rewrites`, the diff-level audit of what a plugin changed
+/// in what the model receives (ADR 0291 rule 5). Additive: no existing row
+/// changes, and the table starts empty because its producers — slot #1
+/// (`runtime.send.before`) and slot #6 (`runtime.request.before`) — are not
+/// built yet. Executing the module's own DDL keeps the fresh-install shape and
+/// this step from drifting.
+pub(crate) fn migrate_v19_to_v20_tx(tx: &rusqlite::Transaction<'_>) -> Result<()> {
+    tx.execute_batch(crate::plugin_rewrites::SCHEMA)?;
+    tx.pragma_update(None, "user_version", 20i64)?;
+    Ok(())
+}
+
 pub(crate) fn migration_backup_path(path: &Path, version: i64) -> PathBuf {
     path.with_extension(format!("sqlite.v{version}.bak"))
 }
@@ -845,6 +857,19 @@ pub(crate) fn migrate_v18_to_v19(conn: &Connection, path: &Path) -> Result<()> {
     tx.commit().with_context(|| {
         format!(
             "commit schema v18 to v19 migration; backup {} remains",
+            backup.display()
+        )
+    })?;
+    Ok(())
+}
+
+pub(crate) fn migrate_v19_to_v20(conn: &Connection, path: &Path) -> Result<()> {
+    let backup = create_migration_backup(conn, path, 19)?;
+    let tx = conn.unchecked_transaction()?;
+    migrate_v19_to_v20_tx(&tx)?;
+    tx.commit().with_context(|| {
+        format!(
+            "commit schema v19 to v20 migration; backup {} remains",
             backup.display()
         )
     })?;

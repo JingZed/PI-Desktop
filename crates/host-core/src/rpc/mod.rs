@@ -15,6 +15,7 @@ use crate::audit;
 use crate::notifications;
 use crate::permissions::{PermissionDecision, PermissionEvaluationParams, PermissionManager};
 use crate::plans;
+use crate::plugin_rewrites::{self, RewriteKind};
 use crate::plugin_sessions;
 use crate::providers::{self, DiscoveredModelInput, ProviderCreateInput, ProviderUpdateInput};
 use crate::review;
@@ -2715,6 +2716,50 @@ async fn handle_request(
             }
             .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?;
             Ok(json!({ "artifacts": artifacts }))
+        }
+
+        "plugin.rewrites.list" => {
+            // The diff-level audit of what a plugin changed in what the model
+            // receives (ADR 0291 rule 5). Per turn is the shape the slot #1 /
+            // #6 surfaces read, so a `turnId` needs its `sessionId`.
+            let session_id = params
+                .get("sessionId")
+                .and_then(|v| v.as_str())
+                .filter(|id| !id.trim().is_empty())
+                .ok_or_else(|| rpc_err(1002, "sessionId required", "INVALID_PARAMS"))?;
+            let turn_id = params
+                .get("turnId")
+                .and_then(|v| v.as_str())
+                .filter(|id| !id.trim().is_empty());
+            let kind = match params.get("kind") {
+                None | Some(Value::Null) => None,
+                Some(Value::String(kind)) => Some(RewriteKind::parse(kind).ok_or_else(|| {
+                    rpc_err(
+                        1002,
+                        "kind must be 'outgoing_message', 'system_prompt', 'message_list' or \
+                         'request_payload'",
+                        "INVALID_PARAMS",
+                    )
+                })?),
+                Some(_) => {
+                    return Err(rpc_err(1002, "kind must be a string", "INVALID_PARAMS"));
+                }
+            };
+            let limit = match params.get("limit") {
+                None | Some(Value::Null) => 200,
+                Some(value) => value.as_i64().filter(|limit| *limit > 0).ok_or_else(|| {
+                    rpc_err(1002, "limit must be a positive integer", "INVALID_PARAMS")
+                })?,
+            };
+            let st = state.lock().await;
+            let rewrites = match turn_id {
+                Some(turn_id) => {
+                    plugin_rewrites::list_for_turn(&st.db, session_id, turn_id, kind, limit)
+                }
+                None => plugin_rewrites::list_for_session(&st.db, session_id, kind, limit),
+            }
+            .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?;
+            Ok(json!({ "rewrites": rewrites }))
         }
 
         "plans.pending" => {
@@ -8278,5 +8323,122 @@ mod tests {
         }
         let st = state.lock().await;
         assert_eq!(st.plugins.locale(), "en-US");
+    }
+
+    /// `plugin.rewrites.list` reads the diff-level audit the rewrite slots
+    /// write: one turn's records oldest first, a session's newest first with
+    /// its turn-less records kept, and filters that fail loudly instead of
+    /// silently matching nothing (ADR 0291 rule 5).
+    #[tokio::test]
+    async fn plugin_rewrites_list_reads_a_turn_and_rejects_bad_filters() {
+        use crate::plugin_rewrites::{self, RewriteDiff};
+
+        let data_dir = tempfile::tempdir().unwrap();
+        let mut app_state = AppState::open(data_dir.path()).unwrap();
+        app_state.handshook = true;
+        let session =
+            sessions::create_session(&app_state.db, None, None, None, None, None).unwrap();
+        plugin_rewrites::record(
+            &app_state.db,
+            &session.id,
+            Some("turn-1"),
+            "acme.sender",
+            RewriteDiff::outgoing_message("m-1", "hello world", "hello brave world"),
+        )
+        .unwrap();
+        plugin_rewrites::record(
+            &app_state.db,
+            &session.id,
+            Some("turn-1"),
+            "acme.prompt",
+            RewriteDiff::system_prompt("You are help", "Be terse"),
+        )
+        .unwrap();
+        // A rewrite outside any turn belongs to the session read only.
+        plugin_rewrites::record(
+            &app_state.db,
+            &session.id,
+            None,
+            "acme.nightly",
+            RewriteDiff::system_prompt("You are help", "Be brief"),
+        )
+        .unwrap();
+        let state = Arc::new(Mutex::new(app_state));
+        let (tx, _rx) = mpsc::unbounded_channel();
+
+        let listed = handle_request(
+            state.clone(),
+            "plugin.rewrites.list",
+            json!({ "sessionId": session.id, "turnId": "turn-1" }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        let rewrites = listed["rewrites"].as_array().unwrap();
+        assert_eq!(rewrites.len(), 2);
+        assert_eq!(rewrites[0]["pluginId"], json!("acme.sender"));
+        assert_eq!(rewrites[0]["kind"], json!("outgoing_message"));
+        assert_eq!(rewrites[0]["turnId"], json!("turn-1"));
+        assert_eq!(rewrites[0]["truncated"], json!(false));
+        assert_eq!(rewrites[0]["droppedEdits"], json!(0));
+        assert_eq!(
+            rewrites[0]["diff"]["characterEdits"][0]["after"],
+            json!("brave ")
+        );
+        assert!(rewrites[0]["createdAt"].as_str().unwrap().ends_with('Z'));
+        assert_eq!(rewrites[1]["kind"], json!("system_prompt"));
+
+        // The kind filter is applied by the query, not by the caller.
+        let filtered = handle_request(
+            state.clone(),
+            "plugin.rewrites.list",
+            json!({ "sessionId": session.id, "turnId": "turn-1", "kind": "system_prompt" }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(filtered["rewrites"].as_array().unwrap().len(), 1);
+
+        // The session read is newest first and keeps the turn-less record.
+        let session_read = handle_request(
+            state.clone(),
+            "plugin.rewrites.list",
+            json!({ "sessionId": session.id, "limit": 10 }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        let all = session_read["rewrites"].as_array().unwrap();
+        assert_eq!(all.len(), 3);
+        assert_eq!(all[0]["pluginId"], json!("acme.nightly"));
+        assert_eq!(all[0]["turnId"], Value::Null);
+
+        let missing_session = handle_request(
+            state.clone(),
+            "plugin.rewrites.list",
+            json!({ "turnId": "turn-1" }),
+            tx.clone(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(missing_session.code, 1002);
+        assert_eq!(
+            missing_session.data.unwrap()["errorCode"],
+            json!("INVALID_PARAMS")
+        );
+
+        for params in [
+            json!({ "sessionId": session.id, "kind": "telepathy" }),
+            json!({ "sessionId": session.id, "kind": 7 }),
+            json!({ "sessionId": session.id, "limit": 0 }),
+            json!({ "sessionId": session.id, "limit": "twenty" }),
+            json!({ "sessionId": "  " }),
+        ] {
+            let error = handle_request(state.clone(), "plugin.rewrites.list", params, tx.clone())
+                .await
+                .unwrap_err();
+            assert_eq!(error.code, 1002);
+            assert_eq!(error.data.unwrap()["errorCode"], json!("INVALID_PARAMS"));
+        }
     }
 }

@@ -1570,3 +1570,117 @@ fn a_v18_file_keeps_its_artifact_rows_when_they_become_one_row_per_touch() {
         1
     );
 }
+
+/// Schema v20 adds `plugin_rewrites`, the diff-level audit of what a plugin
+/// changed in what the model receives (ADR 0291 rule 5). Build a v19 file with
+/// real rows in the tables that must survive, then reopen it: the audit table
+/// arrives in its current shape, every existing row keeps its value, and the
+/// upgraded file accepts a record.
+#[test]
+fn a_v19_file_gains_the_rewrite_audit_and_keeps_its_rows() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("pi.sqlite");
+    let session_id;
+    {
+        let db = Database::open(&path).unwrap();
+        let session = crate::sessions::create_session(&db, None, None, None, None, None).unwrap();
+        session_id = session.id.clone();
+        let turn_id = crate::sessions::begin_turn(&db, &session.id, None, None).unwrap();
+        let message: crate::sessions::UiMessage = serde_json::from_value(serde_json::json!({
+            "id": "u1",
+            "role": "user",
+            "content": "before the upgrade",
+            "createdAt": "2025-05-01T00:00:00Z"
+        }))
+        .unwrap();
+        crate::sessions::append_message(&db, &session.id, &message, Some(&turn_id)).unwrap();
+        crate::artifacts::record(
+            &db,
+            &session.id,
+            "/w/notes.txt",
+            crate::artifacts::ArtifactOp::Write,
+            Some(&turn_id),
+        )
+        .unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO kv (ns, key, value_json, updated_at)
+                 VALUES ('app', 'currentProjectId', '1', 1)",
+                [],
+            )
+            .unwrap();
+        // Back to a file that predates the rewrite audit.
+        db.conn()
+            .execute_batch("DROP TABLE plugin_rewrites; PRAGMA user_version=19;")
+            .unwrap();
+    }
+
+    let db = Database::open(&path).unwrap();
+    assert_eq!(schema_version(db.conn()), SCHEMA_VERSION);
+    assert!(migration_backup_path(&path, 19).exists());
+    // The table arrived with the shape the store writes against.
+    let columns: Vec<String> = {
+        let mut stmt = db
+            .conn()
+            .prepare("SELECT name FROM pragma_table_info('plugin_rewrites') ORDER BY cid")
+            .unwrap();
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0)).unwrap();
+        rows.collect::<rusqlite::Result<Vec<_>>>().unwrap()
+    };
+    assert_eq!(
+        columns,
+        [
+            "id",
+            "session_id",
+            "turn_id",
+            "plugin_id",
+            "kind",
+            "truncated",
+            "dropped_edits",
+            "created_at",
+            "diff_json"
+        ]
+    );
+    // Nothing the pre-v20 file held was lost.
+    let sessions_kept: i64 = db
+        .conn()
+        .query_row("SELECT COUNT(*) FROM sessions", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(sessions_kept, 1);
+    let message: (String, String) = db
+        .conn()
+        .query_row("SELECT id, text FROM messages", [], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
+        .unwrap();
+    assert_eq!(message.0, "u1");
+    assert_eq!(message.1, "before the upgrade");
+    let setting: String = db
+        .conn()
+        .query_row(
+            "SELECT value_json FROM kv WHERE ns = 'app' AND key = 'currentProjectId'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(setting, "1");
+    assert_eq!(
+        crate::artifacts::list(&db, Some(&session_id), 50)
+            .unwrap()
+            .len(),
+        1
+    );
+    // And the upgraded file stores the audit the new schema exists for.
+    let recorded = crate::plugin_rewrites::record(
+        &db,
+        &session_id,
+        None,
+        "acme.nightly",
+        crate::plugin_rewrites::RewriteDiff::system_prompt("one", "two"),
+    )
+    .unwrap();
+    assert!(recorded > 0);
+    let listed = crate::plugin_rewrites::list_for_session(&db, &session_id, None, 50).unwrap();
+    assert_eq!(listed.len(), 1);
+    assert!(listed[0].turn_id.is_none());
+}

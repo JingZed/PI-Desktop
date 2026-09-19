@@ -458,7 +458,7 @@ off | minimal | low | medium | high | xhigh | max
 `*.active` 返回经激活作用域过滤后适用于给定项目的条目（未知作用域返回
 `CAPABILITY_INVALID`）。
 
-### 搜索、工件、键盘
+### 搜索、工件、插件改写、键盘
 - `search.query` — 跨会话、项目和设置目的地的全局搜索（ADR 0034）
 - `artifacts.list` — 已记录的文件触碰，可按某个会话过滤，或（配合 `turnId`，
   它需要 `sessionId`）只取改动过文件的单个回合。每行带有 `path`、`op`
@@ -466,6 +466,16 @@ off | minimal | low | medium | high | xhigh | max
   被多个回合触碰过的路径每次触碰各出现一次，会话视图按最新在前，回合视图按触碰
   顺序。只有 `turnId` 而没有 `sessionId` 返回 `INVALID_ARGUMENT`。增量 RPC；
   不提升协议版本（ADR 0291 规则 8）。
+- `plugin.rewrites.list({ sessionId, turnId?, kind?, limit? }) -> { rewrites }` —
+  插件对"模型收到内容"所做改动的差分级审计（ADR 0291 规则 5）。带 `turnId` 时按最旧在前
+  返回单个回合的记录 —— 即改写发生的顺序，也是插槽 #1 / #6 表面读取的形状 —— 不带时按
+  最新在前返回会话记录，包括在回合之外写入的记录。`kind` 可过滤 `outgoing_message |
+  system_prompt | message_list | request_payload`。每条记录带 `id`、`sessionId`、
+  `turnId`（回合之外为 null）、`pluginId`、`kind`、`truncated`、`droppedEdits`、
+  `createdAt`，以及 `diff`；各 kind 的形状、上限与截断标记见 04-data-storage §4.15。
+  缺少 `sessionId`、未知的 `kind` 或非正的 `limit` 返回 `INVALID_PARAMS`；limit 被限制
+  在 500。增量 RPC；不提升协议版本。**目前没有生产者** —— 插槽 #1 与 #6 尚未实现，
+  在它们落地前该列表为空。
 - `keyboard.setGlobalShortcut` — 在 Electron 无法注册插件启动器快捷键时，
   由宿主持有的原生回退
 
