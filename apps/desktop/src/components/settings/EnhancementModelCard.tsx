@@ -1,12 +1,10 @@
 /**
- * Enhancement prompt model and reasoning (ADR 0121).
+ * Enhancement model and reasoning rows (ADR 0121).
  *
  * Which model rewrites the Composer draft, and with how much reasoning, live
- * on Settings → AI, in their own card immediately below Prompt enhancement, so
- * the template and the rewrite model for the same action sit together. They get
- * their own card rather than joining the prompt card: that card's row is a
- * switch plus an icon button, and the enhancement model needs a title, the
- * current value, and a picker — the same shape as the default-model row.
+ * on the Settings → AI Prompt enhancement card, as rows below the custom-template
+ * switch. They are rows rather than a second card so the template, model, and
+ * reasoning for the same action share one heading.
  *
  * The picker reuses the default-model anchored menu so Settings offers one kind
  * of model picker, and the reasoning row reuses the shared settings menu select.
@@ -29,7 +27,7 @@ import { Button, Input, cx } from "../ui";
 import { IconCheck, IconChevronDown, IconSearch } from "../icons";
 import { AnchoredMenu } from "./AnchoredMenu";
 import { SettingsMenuSelect } from "./SettingsMenuSelect";
-import { SettingsCard, SettingsRow } from "../../features/settings/primitives";
+import { SettingsRow } from "../../features/settings/primitives";
 import { defaultModelOptions } from "./default-model";
 import {
   groupSubagentModelChoices,
@@ -157,7 +155,7 @@ export function EnhancementModelCard() {
   };
 
   return (
-    <SettingsCard title={t("settings.promptEnhancementModelTitle")}>
+    <>
         <SettingsRow
           title={t("settings.promptEnhancementModel")}
           description={
@@ -312,6 +310,6 @@ export function EnhancementModelCard() {
             }
           />
         </SettingsRow>
-    </SettingsCard>
+    </>
   );
 }

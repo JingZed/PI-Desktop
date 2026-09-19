@@ -30,7 +30,6 @@ import {
 } from "../../components/icons";
 import { Button, cx } from "../../components/ui";
 import { ModelConfigPage } from "../../components/settings/ModelConfigPage";
-import { EnhancementModelCard } from "../../components/settings/EnhancementModelCard";
 import { KeyboardShortcutsSection } from "../../components/settings/KeyboardShortcutsSection";
 import { FontFamilyRow } from "../../components/settings/FontFamilyRow";
 import { ThinkingDisplayModeRow } from "../../components/settings/ThinkingDisplayModeRow";
@@ -438,7 +437,6 @@ export function SettingsPage() {
                 settings={settings}
                 saveSettings={saveSettings}
               />
-              <EnhancementModelCard />
             </div>
           )}
 

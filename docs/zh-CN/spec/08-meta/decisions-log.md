@@ -4464,3 +4464,7 @@ that amendment are retired by ADR 0268; the upstream work-panel lifecycle stays.
   放到设置 → AI，紧挨提示词增强之后，让同一操作的模板与改写模型在同一目的地。该卡仍自带标题，
   因为模型选择器需要标题 / 当前值 / 控件。设置搜索在 AI 页索引这两行。仅演示层：无 IPC、存储或
   宿主协议改动。见 `04-ux/06-settings-ia.md` 与 `04-ux/12-prompt-enhancement.md` §5。
+
+## 2026-09-20 —— 提示词增强合成一张设置 → AI 卡
+
+- 修订同日的两卡放置：增强提示词卡并入设置 → AI 的提示词增强。自定义模板开关、默认模型与思考强度共用一个标题。设置搜索仍索引 `promptEnhancementModelTitle`，因此搜「增强提示词」仍会落到 AI。仅演示层：无 IPC、存储或宿主协议改动。

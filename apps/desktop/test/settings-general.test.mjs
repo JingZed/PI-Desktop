@@ -111,7 +111,7 @@ test("Basics and AI tabs expose their respective app and AI controls", () => {
   assert.match(aiSource, /LargePasteThresholdRow/);
   assert.match(aiSource, /ContextUsageDisplayRow/);
   assert.match(aiSource, /PromptEnhancementCard/);
-  assert.match(aiSource, /EnhancementModelCard/);
+  assert.doesNotMatch(aiSource, /EnhancementModelCard/);
   assert.match(
     settingsPageSource,
     /saveSettings\(\{ contextUsageDisplay: value \}\)/,

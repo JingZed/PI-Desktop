@@ -6220,3 +6220,11 @@ that was sitting at the bottom — including after the turn had finished.
   search indexes those rows on the AI tab. Presentation only: no IPC, storage, or
   host-protocol change. See `04-ux/06-settings-ia.md` and
   `04-ux/12-prompt-enhancement.md` §5.
+
+## 2026-09-20 — Prompt enhancement is one Settings → AI card
+
+- Amend the same-day two-card placement: the Enhancement prompt card is folded
+  into Prompt enhancement on Settings → AI. The custom-template switch, default
+  model, and reasoning rows share one heading. Settings search still indexes
+  `promptEnhancementModelTitle` so "增强提示词" finds the AI tab. Presentation
+  only: no IPC, storage, or host-protocol change.

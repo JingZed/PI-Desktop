@@ -103,7 +103,8 @@ test("prompt-enhancement settings expose templates, restore, and the draft varia
   assert.match(card, /const templateChanged = savedTemplateValue !== savedTemplate/);
   assert.match(card, /settings-icon-button/);
   assert.match(card, /IconPencil/);
-  // The model and reasoning rows live on the sibling Enhancement prompt card, not here.
+  assert.match(card, /EnhancementModelCard/);
+  // Model and reasoning rows are composed in, not inlined on this file.
   assert.doesNotMatch(card, /promptEnhancementProviderId/);
   assert.doesNotMatch(card, /promptEnhancementThinkingLevel/);
   assert.doesNotMatch(card, /promptEnhancementModelId/);
@@ -187,8 +188,9 @@ test("the default ceiling is about a minute", () => {
   assert.equal(PROMPT_ENHANCEMENT_TIMEOUT_MS, 60_000);
 });
 
-test("the enhancement model and reasoning live on the AI tab next to the prompt card", async () => {
+test("the enhancement model and reasoning are rows on the Prompt enhancement card", async () => {
   const settingsPage = await read("../src/features/settings/SettingsPage.tsx");
+  const promptCard = await read("../src/features/settings/prompt-enhancement-card.tsx");
   const modelPage = await read("../src/components/settings/ModelConfigPage.tsx");
   const search = await read("../src/lib/settings-search.ts");
   const card = await read("../src/components/settings/EnhancementModelCard.tsx");
@@ -197,23 +199,21 @@ test("the enhancement model and reasoning live on the AI tab next to the prompt 
   const shortcutsStart = settingsPage.indexOf('{tab === "shortcuts" && settings && (');
   const aiSource = settingsPage.slice(aiStart, shortcutsStart);
   assert.match(aiSource, /PromptEnhancementCard/);
-  assert.match(aiSource, /EnhancementModelCard/);
-  assert.ok(
-    aiSource.indexOf("PromptEnhancementCard") < aiSource.indexOf("EnhancementModelCard"),
-    "enhancement model sits below the prompt card",
-  );
+  assert.doesNotMatch(aiSource, /EnhancementModelCard/);
+  assert.match(promptCard, /EnhancementModelCard/);
   assert.doesNotMatch(modelPage, /EnhancementModelCard/);
   assert.doesNotMatch(modelPage, /promptEnhancementProviderId/);
 
   const aiSearch = search.slice(search.indexOf('id: "ai"'), search.indexOf('id: "shortcuts"'));
   const agentSearch = search.slice(search.indexOf('id: "agent"'), search.indexOf('id: "skills"'));
+  assert.match(aiSearch, /promptEnhancementTitle/);
   assert.match(aiSearch, /promptEnhancementModelTitle/);
   assert.match(aiSearch, /promptEnhancementThinking/);
   assert.doesNotMatch(agentSearch, /promptEnhancementModelTitle/);
   assert.doesNotMatch(agentSearch, /promptEnhancementThinking/);
 
-  // Card title and row title are separate strings (B3: both read "Default model").
-  assert.match(card, /promptEnhancementModelTitle/);
+  assert.doesNotMatch(card, /promptEnhancementModelTitle/);
+  assert.doesNotMatch(card, /SettingsCard/);
   assert.match(card, /t\("settings\.promptEnhancementModel"\)/);
 
   // Same control as the default-model row: one anchored menu, one search field.
@@ -225,8 +225,6 @@ test("the enhancement model and reasoning live on the AI tab next to the prompt 
   assert.match(card, /promptEnhancementModelUnavailable/);
   assert.match(card, /pickModel/);
 
-  // The rows use the shared settings card and row, not an ad-hoc layout.
-  assert.match(card, /SettingsCard/);
   assert.match(card, /SettingsRow/);
 });
 
