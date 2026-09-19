@@ -746,6 +746,116 @@ export type PluginToolExecContext = {
   log: (msg: string) => void;
 };
 
+/**
+ * The `input` event's payload (ADR 0291 slot 1, permission
+ * `runtime.send.before`).
+ *
+ * It fires once per prompt, after the desktop has accepted and stored the
+ * user's message and before that message enters the agent, so a handler reads
+ * exactly what is about to be queued — attachments included — while the text
+ * the user typed stays on their row.
+ *
+ * ```ts
+ * pi.on("input", (event) => {
+ *   if (event.text.startsWith("?quick ")) {
+ *     return { action: "transform", text: `Answer briefly: ${event.text.slice(7)}` };
+ *   }
+ *   return { action: "continue" };
+ * });
+ * ```
+ */
+export type PluginInputEvent = {
+  type: "input";
+  sessionId: string;
+  turnId: string;
+  /** The text being queued, as the current handler chain sees it. */
+  text: string;
+  /** Image attachments carried inline for this turn. */
+  images: ReadonlyArray<{ name: string; mimeType?: string; data: string }>;
+  /** Every attachment of the message, images included, by reference. */
+  attachments: ReadonlyArray<{
+    name: string;
+    ref: string;
+    kind: "image" | "file";
+    mimeType?: string;
+    size?: number;
+  }>;
+  source: "rpc" | "extension";
+};
+
+/**
+ * What an `input` handler answers (ADR 0291 slot 1), using the kernel's three
+ * actions:
+ *
+ * - `continue` — pass the message through unchanged; returning nothing does
+ *   the same.
+ * - `transform` — replace the text the model receives. Transforms chain in
+ *   load order, so a later handler sees the text an earlier one produced. The
+ *   user's row keeps the original and the rewrite is recorded at diff level
+ *   (`plugin_rewrites`), which is what makes "rewritten by plugin X" visible.
+ * - `handled` — keep the message away from the model entirely. Give a
+ *   `reason`: it is what the user reads, so a block is never silent.
+ *
+ * The handler runs with the ordinary 30-second budget; going over it counts as
+ * having no opinion (`handler_timeout`).
+ */
+export type PluginInputResult = {
+  action: "continue" | "transform" | "handled";
+  text?: string;
+  reason?: string;
+};
+
+/**
+ * A session lifecycle notice the kernel has no hook for (ADR 0291 slot 11,
+ * permission `runtime.session.lifecycle`): the desktop created or deleted a
+ * session. Informed-only — nothing can be vetoed, and the delete or create
+ * never waits for a handler.
+ */
+export type PluginSessionLifecycleEvent = {
+  type: "session_lifecycle";
+  change: "created" | "deleted";
+  sessionId: string;
+};
+
+/**
+ * The kernel's `session_before_switch` (ADR 0291 slot 11), emitted by the
+ * desktop when the user leaves a session for a new one or for another session.
+ * Informed-only here even though the kernel lets a handler cancel the switch.
+ */
+export type PluginSessionBeforeSwitchEvent = {
+  type: "session_before_switch";
+  reason: "new" | "resume";
+  sessionId: string;
+  targetSessionId?: string;
+};
+
+/**
+ * The kernel's `session_before_fork` (ADR 0291 slot 11), emitted by the
+ * desktop before it forks the session. Informed-only.
+ */
+export type PluginSessionBeforeForkEvent = {
+  type: "session_before_fork";
+  sessionId: string;
+  entryId?: string;
+  position: "before" | "at";
+};
+
+/** The conversation a compaction is about to replace (ADR 0291 rule 7). */
+export type PluginCompactionSegment = {
+  messages: ReadonlyArray<unknown>;
+  messageCount: number;
+  tokensBefore: number;
+  retained: ReadonlyArray<unknown>;
+};
+
+/** Payload of `session_before_compact` (ADR 0291 slot 11). */
+export type PluginSessionBeforeCompactEvent = {
+  type: "session_before_compact";
+  reason: "manual" | "threshold" | "overflow";
+  retentionMode: "active_turn" | "completed_turn";
+  segment: PluginCompactionSegment;
+};
+
 export type PluginModelInfo = {
   key: string;
   providerId: string;

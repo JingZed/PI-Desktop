@@ -19,7 +19,11 @@ import {
   type RuntimeProviderConfig,
 } from "./runtime.js";
 import type { PluginSkillDef } from "./plugin-skills-prompt.js";
-import type { SessionMessageOrigin, TrustedExtensionSpec } from "@pi-desktop/shared";
+import type {
+  SessionMessageOrigin,
+  TrustedExtensionSessionLifecycleNotice,
+  TrustedExtensionSpec,
+} from "@pi-desktop/shared";
 import type { ProjectInstructions } from "./project-instructions.js";
 import {
   normalizeSupportedThinkingLevels,
@@ -452,6 +456,41 @@ function classifiedRuntimeError(err: unknown) {
   return classifyAgentError(err);
 }
 
+
+/**
+ * Validate one `agent.notifyLifecycle` notice (ADR 0291 slot 11). The desktop
+ * host owns these moments, so the runtime only ever sees a shape it named; an
+ * unknown `change` is rejected instead of guessed, and a `switch` / `fork`
+ * without its own fields falls back to the safe defaults.
+ */
+function parseLifecycleNotice(
+  params: Record<string, unknown>,
+  sessionId: string,
+): TrustedExtensionSessionLifecycleNotice {
+  const change = String(params.change ?? "").trim();
+  if (change === "created" || change === "deleted") return { change, sessionId };
+  if (change === "switch") {
+    const targetSessionId = String(params.targetSessionId ?? "").trim();
+    return {
+      change,
+      sessionId,
+      reason: params.reason === "new" ? "new" : "resume",
+      ...(targetSessionId ? { targetSessionId } : {}),
+    };
+  }
+  if (change === "fork") {
+    const entryId = String(params.entryId ?? "").trim();
+    return {
+      change,
+      sessionId,
+      ...(entryId ? { entryId } : {}),
+      position: params.position === "at" ? "at" : "before",
+    };
+  }
+  throw Object.assign(new Error(`unknown lifecycle change: ${change || "(none)"}`), {
+    errorCode: "INVALID_PARAMS",
+  });
+}
 // Host notifications (permissions.request never reaches us — main forwards
 // it to the renderer directly; re-emitting it here would duplicate the
 // permission dialog delivery).
@@ -640,6 +679,27 @@ async function handle(method: string, params: any): Promise<unknown> {
           pendingToolConfirmations: 0,
         },
       };
+    }
+    case "agent.notifyLifecycle": {
+      // Session lifecycle notices the desktop host owns (ADR 0291 slot 11,
+      // rule 11). They are fire-and-forget by design: the reply is sent before
+      // any handler finishes, so a plugin that stalls cannot hold up a session
+      // switch, a delete or a fork. `created` is broadcast to the sessions that
+      // are live at that moment, because the created session has no runtime
+      // yet; every other change belongs to one session.
+      const sessionId = String(params.sessionId ?? "").trim();
+      if (!sessionId) {
+        throw Object.assign(new Error("sessionId required"), {
+          errorCode: "INVALID_PARAMS",
+        });
+      }
+      const notice = parseLifecycleNotice(params, sessionId);
+      if (notice.change === "created") {
+        for (const runtime of runtimes.values()) runtime.notifySessionLifecycle(notice);
+      } else {
+        runtimes.get(sessionId)?.notifySessionLifecycle(notice);
+      }
+      return { ok: true, delivered: notice.change === "created" ? runtimes.size : 1 };
     }
     case "agent.disposeSession": {
       const sessionId = String(params.sessionId);

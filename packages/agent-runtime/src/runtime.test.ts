@@ -8151,6 +8151,7 @@ describe("DesktopAgentRuntime compaction summary retry and sizing (#543, ADR 028
 
     const build = await (runtime as any).buildCheckpoint(
       new AbortController().signal,
+      "threshold",
       "active_turn",
     );
 
@@ -8868,5 +8869,422 @@ describe("DesktopAgentRuntime turn abort and tool capabilities (#561 items 3, 5)
     expect((runtime as any).activeDeferredToolNames.has("plugin_demo_other")).toBe(false);
     await runtime.dispose();
   });
+});
 
+/**
+ * Issue #561 items 1 and 11 (ADR 0291 slots 1 and 11, spec
+ * 07-plugins/16 section 6). These drive the real prompt path and the real
+ * compaction, with extension modules on disk, so what is under test is the
+ * wiring — where the event fires, what a handler's answer does, and what the
+ * host receives — rather than a reducer in isolation.
+ */
+describe("DesktopAgentRuntime send-before and session-lifecycle slots (#561 items 1 and 11)", () => {
+  let extensionRoot: string;
+
+  beforeEach(() => {
+    extensionRoot = mkdtempSync(join(tmpdir(), "pi-slot-1-11-"));
+    clearTrustedExtensionCache();
+  });
+
+  afterEach(() => {
+    rmSync(extensionRoot, { recursive: true, force: true });
+  });
+
+  function spec(
+    name: string,
+    source: string,
+    permissions: readonly string[] = ["agent.extension", "runtime.send.before"],
+  ): TrustedExtensionSpec {
+    const entry = join(extensionRoot, `${name}.ts`);
+    writeFileSync(entry, source);
+    return { id: entry, entry, label: name, source: "user", root: extensionRoot, permissions };
+  }
+
+  /** One plain assistant text turn: no tool calls, `stopReason: "stop"`. */
+  function fauxTurn() {
+    const stream = createAssistantMessageEventStream();
+    const message = assistantMessage({
+      content: [{ type: "text", text: "done" }],
+    }) as unknown as AssistantMessage;
+    queueMicrotask(() => {
+      stream.push({ type: "done", reason: "stop", message });
+      stream.end(message);
+    });
+    return stream;
+  }
+
+  async function startRuntime(specs: TrustedExtensionSpec[]) {
+    const host = { call: vi.fn(async () => undefined), onNotification: vi.fn(() => () => {}) };
+    const runtime = createRuntime({ host, trustedExtensions: specs });
+    await runtime.loadTrustedExtensions();
+    const models = {
+      streamSimple: vi.fn((_model: unknown, _context: { messages: unknown[] }) => fauxTurn()),
+    };
+    (runtime as any).models = models;
+    /** Text of the last message the provider received, flattened for asserts. */
+    const lastUserText = () => {
+      const last = models.streamSimple.mock.calls.at(-1)?.[1]?.messages.at(-1) as
+        | { content?: unknown }
+        | undefined;
+      const content = last?.content;
+      if (typeof content === "string") return content;
+      if (!Array.isArray(content)) return undefined;
+      return content
+        .map((block) => (block as { text?: string }).text ?? "")
+        .join("");
+    };
+    return { runtime, models, host, lastUserText };
+  }
+
+  it("lets a plugin rewrite what the model receives and records the rewrite", async () => {
+    const ext = spec(
+      "rewrites",
+      `export default function (pi: any) {
+  pi.on("input", (event: any) => {
+    (globalThis as any).__inputText = event.text;
+    (globalThis as any).__inputPayload = event;
+    return { action: "transform", text: \`Answer briefly: \${event.text}\` };
+  });
+}`,
+    );
+    const { runtime, host, lastUserText } = await startRuntime([ext]);
+
+    await runtime.prompt("explain closures", "user-1", "turn-1");
+
+    // The model reads the plugin's text ...
+    expect(lastUserText()).toBe("Answer briefly: explain closures");
+    // ... and the handler saw the text the user sent, with the row, turn and
+    // attachments of the message the desktop is about to queue.
+    const seenText = (globalThis as Record<string, any>).__inputText;
+    delete (globalThis as Record<string, any>).__inputText;
+    expect(seenText).toBe("explain closures");
+    const seen = (globalThis as Record<string, any>).__inputPayload;
+    delete (globalThis as Record<string, any>).__inputPayload;
+    expect(seen).toMatchObject({
+      type: "input",
+      sessionId: "session-1",
+      turnId: "turn-1",
+      text: "Answer briefly: explain closures",
+      source: "rpc",
+      attachments: [],
+    });
+    // The audit record names the plugin and the row, and keeps both texts so
+    // the owner of `plugin_rewrites` can compute the diff (rule 5).
+    expect(host.call).toHaveBeenCalledWith("extensions.rewrites.record", {
+      sessionId: "session-1",
+      turnId: "turn-1",
+      pluginId: ext.id,
+      pluginLabel: "rewrites",
+      kind: "outgoing_message",
+      targetMessageId: "user-1",
+      before: "explain closures",
+      after: "Answer briefly: explain closures",
+    });
+    await runtime.dispose();
+  });
+
+  it("chains transforms so a later plugin reads the text an earlier one produced", async () => {
+    const first = spec(
+      "first",
+      `export default function (pi: any) {
+  pi.on("input", (event: any) => ({ action: "transform", text: \`\${event.text} +first\` }));
+}`,
+    );
+    const second = spec(
+      "second",
+      `export default function (pi: any) {
+  pi.on("input", (event: any) => {
+    (globalThis as any).__secondSaw = event.text;
+    return { action: "transform", text: \`\${event.text} +second\` };
+  });
+}`,
+    );
+    const { runtime, lastUserText } = await startRuntime([first, second]);
+
+    await runtime.prompt("base", "user-1", "turn-1");
+
+    expect((globalThis as Record<string, any>).__secondSaw).toBe("base +first");
+    delete (globalThis as Record<string, any>).__secondSaw;
+    expect(lastUserText()).toBe("base +first +second");
+    await runtime.dispose();
+  });
+
+  it("keeps the message away from the model and reports the plugin's reason", async () => {
+    const ext = spec(
+      "handler",
+      `export default function (pi: any) {
+  pi.on("input", () => ({ action: "handled", reason: "Ask the on-call bot instead." }));
+}`,
+    );
+    const { runtime, models } = await startRuntime([ext]);
+
+    // `handled` means the message never reaches the model, and the reason is
+    // what the user reads on the failed turn.
+    await expect(runtime.prompt("ship it", "user-1", "turn-1")).rejects.toThrow(
+      "Ask the on-call bot instead.",
+    );
+    expect(models.streamSimple).not.toHaveBeenCalled();
+    await runtime.dispose();
+  });
+
+  it("skips an input handler the plugin holds no slot permission for", async () => {
+    const ext = spec(
+      "tier-only",
+      `export default function (pi: any) {
+  pi.on("input", () => ({ action: "handled", reason: "should never run" }));
+}`,
+      ["agent.extension"],
+    );
+    const { runtime, models, lastUserText } = await startRuntime([ext]);
+
+    await runtime.prompt("untouched", "user-1", "turn-1");
+
+    expect(models.streamSimple).toHaveBeenCalledTimes(1);
+    expect(lastUserText()).toBe("untouched");
+    expect((runtime as any).extensionRunner.getDiagnostics()).toEqual([
+      expect.objectContaining({
+        kind: "permission_denied",
+        member: "input",
+        message: expect.stringContaining("runtime.send.before"),
+      }),
+    ]);
+    await runtime.dispose();
+  });
+
+  it("announces the four session moments to a granted plugin without waiting for it", async () => {
+    const ext = spec(
+      "watcher",
+      `export default function (pi: any) {
+  const record = (name: string) => (event: any) => {
+    (globalThis as any).__lifecycle = (globalThis as any).__lifecycle ?? [];
+    (globalThis as any).__lifecycle.push([name, event]);
+    // A handler that never answers: the notice must not wait for it.
+    return name === "session_before_switch" ? new Promise(() => {}) : undefined;
+  };
+  pi.on("session_before_switch", record("session_before_switch"));
+  pi.on("session_before_fork", record("session_before_fork"));
+  pi.on("session_lifecycle", record("session_lifecycle"));
+}`,
+      ["agent.extension", "runtime.session.lifecycle"],
+    );
+    const { runtime } = await startRuntime([ext]);
+
+    runtime.notifySessionLifecycle({
+      change: "switch",
+      sessionId: "session-1",
+      reason: "resume",
+      targetSessionId: "session-2",
+    });
+    runtime.notifySessionLifecycle({
+      change: "fork",
+      sessionId: "session-1",
+      entryId: "m-7",
+      position: "before",
+    });
+    runtime.notifySessionLifecycle({ change: "created", sessionId: "session-2" });
+    runtime.notifySessionLifecycle({ change: "deleted", sessionId: "session-1" });
+
+    // Nothing awaited the handlers: the notices are queued and the calls
+    // returned on the spot, which is what keeps a switch or a delete cheap.
+    const seen = ((globalThis as Record<string, any>).__lifecycle ?? []) as Array<
+      [string, Record<string, unknown>]
+    >;
+    expect(seen.map(([name]) => name)).toEqual([
+      "session_before_switch",
+      "session_before_fork",
+      "session_lifecycle",
+      "session_lifecycle",
+    ]);
+    expect(seen[0][1]).toMatchObject({
+      type: "session_before_switch",
+      reason: "resume",
+      sessionId: "session-1",
+      targetSessionId: "session-2",
+    });
+    expect(seen[1][1]).toMatchObject({
+      type: "session_before_fork",
+      sessionId: "session-1",
+      entryId: "m-7",
+      position: "before",
+    });
+    expect(seen[2][1]).toMatchObject({ type: "session_lifecycle", change: "created" });
+    expect(seen[3][1]).toMatchObject({ type: "session_lifecycle", change: "deleted" });
+    delete (globalThis as Record<string, any>).__lifecycle;
+    await runtime.dispose();
+  });
+
+  it("skips a lifecycle handler the plugin holds no slot permission for", async () => {
+    const ext = spec(
+      "watcher-refused",
+      `export default function (pi: any) {
+  pi.on("session_lifecycle", () => {
+    (globalThis as any).__lifecycleSeen = true;
+  });
+}`,
+      ["agent.extension"],
+    );
+    const { runtime } = await startRuntime([ext]);
+
+    runtime.notifySessionLifecycle({ change: "deleted", sessionId: "session-1" });
+    await vi.waitFor(() => {
+      expect((runtime as any).extensionRunner.getDiagnostics()).toEqual([
+        expect.objectContaining({
+          kind: "permission_denied",
+          member: "session_lifecycle",
+          message: expect.stringContaining("runtime.session.lifecycle"),
+        }),
+      ]);
+    });
+    expect((globalThis as Record<string, any>).__lifecycleSeen).toBeUndefined();
+    await runtime.dispose();
+  });
+
+  it("hands the segment about to be replaced to session_before_compact, and a cancel stops it", async () => {
+    const ext = spec(
+      "rescue",
+      `export default function (pi: any) {
+  pi.on("session_before_compact", (event: any) => {
+    (globalThis as any).__compactEvent = event;
+    return { cancel: true };
+  });
+}`,
+      ["agent.extension", "runtime.session.lifecycle"],
+    );
+    const host = { call: vi.fn(async () => undefined), onNotification: vi.fn(() => () => {}) };
+    const runtime = createRuntime({ host, trustedExtensions: [ext] });
+    await runtime.loadTrustedExtensions();
+    const events: Array<Record<string, unknown>> = [];
+    (runtime as any).emit = (event: Record<string, unknown>) => events.push(event);
+    const toolCalls = Array.from({ length: 40 }, (_, index) => ({
+      type: "toolCall" as const,
+      id: `tool-${index}`,
+      name: "Read",
+      arguments: { path: `large-${index}.txt` },
+    }));
+    (runtime as any).fullEntries = [
+      {
+        type: "message",
+        id: "old-user",
+        seq: 0,
+        parentId: null,
+        timestamp: Date.parse("2026-09-18T00:00:00Z"),
+        message: { role: "user", content: "inspect the repository", timestamp: 1 },
+      },
+      {
+        type: "message",
+        id: "carrier",
+        seq: 1,
+        parentId: "old-user",
+        timestamp: Date.parse("2026-09-18T00:00:01Z"),
+        message: {
+          ...assistantMessage({ content: toolCalls, stopReason: "toolUse" }),
+          usage: {
+            input: 80_000,
+            output: 10,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 80_010,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          },
+        },
+      },
+      ...toolCalls.map((call, index) => ({
+        type: "message",
+        id: call.id,
+        seq: index + 2,
+        parentId: index === 0 ? "carrier" : toolCalls[index - 1].id,
+        timestamp: Date.parse("2026-09-18T00:00:02Z") + index,
+        message: {
+          role: "toolResult" as const,
+          toolCallId: call.id,
+          toolName: call.name,
+          content: [{ type: "text" as const, text: "x".repeat(5_000) }],
+          timestamp: index + 3,
+          isError: false,
+        },
+      })),
+    ];
+    const generate = vi
+      .spyOn(runtime as any, "generateCompaction")
+      .mockResolvedValue({ ok: true, value: { summary: "never reached", tokensBefore: 80_000 } });
+
+    await expect((runtime as any).runCompaction("manual", false)).resolves.toBe(false);
+
+    // The compaction stopped before a summary request, and nothing reported a
+    // failure: a plugin's cancel is not a failure.
+    expect(generate).not.toHaveBeenCalled();
+    expect(events.filter((event) => event.type === "compaction_end")).toEqual([]);
+    const seen = (globalThis as Record<string, any>).__compactEvent;
+    delete (globalThis as Record<string, any>).__compactEvent;
+    expect(seen).toMatchObject({
+      type: "session_before_compact",
+      reason: "manual",
+      retentionMode: "completed_turn",
+    });
+    // The handover carries the conversation that is about to be replaced —
+    // the thing a "rescue before compaction" plugin needs (rule 7).
+    expect(seen.segment.messageCount).toBe(seen.segment.messages.length);
+    expect(seen.segment.messageCount).toBeGreaterThan(0);
+    expect(seen.segment.tokensBefore).toBeGreaterThan(0);
+    await runtime.dispose();
+  });
+
+  it("compacts normally when the plugin answers nothing", async () => {
+    const ext = spec(
+      "no-opinion",
+      `export default function (pi: any) {
+  pi.on("session_before_compact", (event: any) => {
+    (globalThis as any).__compactSeen = event.segment.messageCount;
+  });
+}`,
+      ["agent.extension", "runtime.session.lifecycle"],
+    );
+    const host = { call: vi.fn(async () => undefined), onNotification: vi.fn(() => () => {}) };
+    const runtime = createRuntime({ host, trustedExtensions: [ext] });
+    await runtime.loadTrustedExtensions();
+    const events: Array<Record<string, unknown>> = [];
+    (runtime as any).emit = (event: Record<string, unknown>) => events.push(event);
+    (runtime as any).fullEntries = [
+      {
+        type: "message",
+        id: "old-user",
+        seq: 0,
+        parentId: null,
+        timestamp: Date.parse("2026-09-18T00:00:00Z"),
+        message: { role: "user", content: "inspect the repository", timestamp: 1 },
+      },
+      {
+        type: "message",
+        id: "carrier",
+        seq: 1,
+        parentId: "old-user",
+        timestamp: Date.parse("2026-09-18T00:00:01Z"),
+        message: {
+          ...assistantMessage({ content: [{ type: "text", text: "done" }], stopReason: "stop" }),
+          usage: {
+            input: 80_000,
+            output: 10,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 80_010,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          },
+        },
+      },
+    ];
+    const generate = vi.spyOn(runtime as any, "generateCompaction").mockResolvedValue({
+      ok: true,
+      value: { summary: "Summarized.", tokensBefore: 80_000 },
+    });
+    vi.spyOn(runtime as any, "persistCheckpoint").mockResolvedValue("persisted");
+
+    await expect((runtime as any).runCompaction("manual", false)).resolves.toBe(true);
+
+    // No answer means no opinion: the compaction ran, and the handler had the
+    // segment in hand while deciding.
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect((globalThis as Record<string, any>).__compactSeen).toBeGreaterThan(0);
+    delete (globalThis as Record<string, any>).__compactSeen;
+    await runtime.dispose();
+  });
 });

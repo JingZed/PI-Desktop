@@ -77,22 +77,35 @@ export const TRUSTED_EXTENSION_EVENTS = [
   "session_compact",
   "session_compact_failed",
   "session_before_fork",
+  "session_before_switch",
+  "session_lifecycle",
   "input",
 ] as const;
 
 export type TrustedExtensionEventName = (typeof TRUSTED_EXTENSION_EVENTS)[number];
 
-/** Upstream events the runtime never emits in v1; handlers register silently. */
+/**
+ * Upstream events the runtime never emits in v1; handlers register silently.
+ * `session_before_switch` left this list with slot 11: the desktop emits it
+ * from the host side, because the switch happens there. `session_before_tree`
+ * stays: the desktop has no tree navigation to announce.
+ */
 const NOT_EMITTED_EVENTS = new Set([
   "user_bash",
-  "session_before_switch",
   "session_before_tree",
   "session_tree",
   "ui_prompt_start",
   "ui_prompt_end",
 ]);
 
-/** Events whose handler result is honored, and therefore time-limited. */
+/**
+ * Events whose handler result is honored, and therefore time-limited.
+ *
+ * The session lifecycle notices are in here for the budget rather than for a
+ * result: they are informed-only (ADR 0291 rule 11), so the caller ignores
+ * what they return, but a handler that stalls is still cut off after the
+ * budget instead of holding the notification loop forever.
+ */
 const RESULT_EVENTS = new Set<string>([
   "resources_discover",
   "before_agent_start",
@@ -105,6 +118,8 @@ const RESULT_EVENTS = new Set<string>([
   "turn_closing",
   "session_before_compact",
   "session_before_fork",
+  "session_before_switch",
+  "session_lifecycle",
   "input",
   "project_trust",
 ]);
@@ -572,15 +587,22 @@ export class TrustedExtensionRunner {
    * Emit one event to every handler in load order, after the runtime slot gate
    * (ADR 0291 rule 2). For result events the results are folded by the
    * caller-supplied reducer; a throwing or stalled handler counts as
-   * `undefined` (spec §6). The reducer also receives the id of the extension
-   * that produced `next`, so a hook that changes control flow can name its
-   * source without a second lookup.
+   * `undefined` (spec §6). The reducer also receives the id and the label of
+   * the extension that produced `next`, so a hook that changes control flow can
+   * name its source — the id for a record, the label for anything the user
+   * reads — without a second lookup.
    */
   async emit<R = unknown>(
     event: TrustedExtensionEventName,
     payload: Record<string, unknown>,
-    fold?: (acc: R | undefined, next: R, extensionId: string) => R,
+    fold?: (
+      acc: R | undefined,
+      next: R,
+      extensionId: string,
+      extensionLabel: string,
+    ) => R,
   ): Promise<R | undefined> {
+    if (this.disposed) return undefined;
     if (this.disposed) return undefined;
     let acc: R | undefined;
     const timed = RESULT_EVENTS.has(event);
@@ -607,7 +629,7 @@ export class TrustedExtensionRunner {
             ? withTimeout(run, TRUSTED_EXTENSION_HANDLER_TIMEOUT_MS)
             : run)) as R | undefined;
           if (result !== undefined && result !== null) {
-            acc = fold ? fold(acc, result, extension.spec.id) : result;
+            acc = fold ? fold(acc, result, extension.spec.id, extension.spec.label) : result;
           }
         } catch (err) {
           const kind: TrustedExtensionDiagnosticKind = /exceeded \d+ms/.test(errorMessage(err))

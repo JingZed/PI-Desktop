@@ -182,7 +182,9 @@ test("compaction runs inline at the hard boundary, never ahead of it", () => {
   // fall through to the retained-tail recovery path.
   assert.match(
     runtime,
-    /private async buildCheckpoint\(\s*signal: AbortSignal,\s*retentionMode: CompactionRetentionMode,?\s*\)/,
+    // The slot-11 hook runs inside the build, because that is where the segment
+    // about to be replaced exists; the build/install split itself is unchanged.
+    /private async buildCheckpoint\(\s*signal: AbortSignal,\s*reason: ContextCompactionReason,\s*retentionMode: CompactionRetentionMode,?\s*\)/,
   );
   assert.match(runtime, /private async installCheckpoint\(/);
 });

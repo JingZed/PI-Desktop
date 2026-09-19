@@ -199,9 +199,168 @@ export const TRUSTED_EXTENSION_EVENT_PERMISSIONS = {
   session_compact: "runtime.session.lifecycle",
   session_compact_failed: "runtime.session.lifecycle",
   session_before_fork: "runtime.session.lifecycle",
+  session_before_switch: "runtime.session.lifecycle",
+  session_lifecycle: "runtime.session.lifecycle",
   // Slot 1: after send, before the message is queued.
   input: "runtime.send.before",
 } as const satisfies Record<string, string>;
+
+/**
+ * The `input` event for a prompt that is about to reach the model (ADR 0291
+ * slot 1).
+ *
+ * The runtime emits it once per prompt, after the desktop has accepted and
+ * persisted the user's message and before that message enters the agent, so a
+ * handler reads exactly what is about to be queued — attachments included —
+ * while the user's own text stays untouched in the transcript.
+ */
+export type TrustedExtensionInputPayload = {
+  type: "input";
+  sessionId: string;
+  turnId: string;
+  /** The text being queued, before and after any handler rewrites it. */
+  text: string;
+  /** Image attachments carried inline for this turn. */
+  images: ReadonlyArray<{ name: string; mimeType?: string; data: string }>;
+  /** Every attachment of the message, images included, by reference. */
+  attachments: ReadonlyArray<{
+    name: string;
+    ref: string;
+    kind: "image" | "file";
+    mimeType?: string;
+    size?: number;
+  }>;
+  /** Where the message came from: a desktop send is `rpc`. */
+  source: "rpc" | "extension";
+};
+
+/**
+ * What an `input` handler may answer (ADR 0291 slot 1). The three actions are
+ * the kernel's own: `continue` passes the message through unchanged, and is
+ * the answer a handler that returns nothing gives.
+ *
+ * `transform` replaces the text the model receives. Transforms chain in load
+ * order — a later handler sees the text an earlier one produced — and the
+ * user's row keeps the text the user typed, with the rewrite recorded at diff
+ * level (rule 5).
+ *
+ * `handled` keeps the message away from the model entirely; the desktop's
+ * variant of that action carries a `reason`, because the user has to be able
+ * to read why their message went nowhere.
+ */
+export type TrustedExtensionInputResult = {
+  action: "continue" | "transform" | "handled";
+  /** Replacement text; only meaningful with `action: "transform"`. */
+  text?: string;
+  /** User-readable explanation; only meaningful with `action: "handled"`. */
+  reason?: string;
+};
+
+/**
+ * One diff-level audit record of a rewrite a slot performed (ADR 0291 rule 5),
+ * as the runtime hands it to the embedding host.
+ *
+ * The host owns persistence: `plugin_rewrites` already stores this shape
+ * (`outgoing_message` with character edits) and `plugin.rewrites.list` reads
+ * it back. The diff itself is computed by the host, so `before` / `after` are
+ * the full texts rather than a second implementation of the same algorithm.
+ * `targetMessageId` is the transcript row the user sees, which is what makes
+ * "rewritten by plugin X" attachable to that row.
+ */
+export type TrustedExtensionRewriteRecord = {
+  sessionId: string;
+  /** The durable turn the rewrite belongs to, when it is known. */
+  turnId?: string;
+  /** `id` of the owning plugin's extension entry. */
+  pluginId: string;
+  /** Short label of the owning plugin, for the row and the audit view. */
+  pluginLabel: string;
+  /** The one kind this slot produces (ADR 0291 table, slot 1). */
+  kind: "outgoing_message";
+  /** Transcript row the rewrite changed what the model saw for. */
+  targetMessageId: string;
+  /** The text as the user sent it. */
+  before: string;
+  /** The text the model received instead. */
+  after: string;
+};
+
+/** Event name the desktop host uses for session create / delete (slot 11). */
+export const TRUSTED_EXTENSION_SESSION_LIFECYCLE_EVENT = "session_lifecycle";
+
+/**
+ * A session lifecycle notice the kernel has no hook for (ADR 0291 slot 11,
+ * rule 11). The host emits it at the moment the desktop creates or deletes a
+ * session; a plugin is told and can veto nothing.
+ *
+ * `change: "created"` reaches the plugins of the sessions that are loaded when
+ * the new session appears (the created session has no runtime yet, so its own
+ * plugin learns about it through its `session_start`). `change: "deleted"`
+ * reaches the plugin of the session being deleted, if that session is loaded.
+ */
+export type TrustedExtensionSessionLifecyclePayload = {
+  type: "session_lifecycle";
+  change: "created" | "deleted";
+  /** Session the notice is about. */
+  sessionId: string;
+};
+
+/**
+ * A session lifecycle moment the embedding host observed, as it reports it to
+ * the session's runtime (ADR 0291 slot 11, rule 11).
+ *
+ * The desktop owns these moments, so it names them here rather than pretending
+ * the kernel produced them: `created` and `deleted` have no kernel hook at all,
+ * and the runtime maps `switch` / `fork` onto the kernel's
+ * `session_before_switch` / `session_before_fork` because the moments match.
+ */
+export type TrustedExtensionSessionLifecycleNotice =
+  | { change: "created" | "deleted"; sessionId: string }
+  | {
+      change: "switch";
+      sessionId: string;
+      reason: "new" | "resume";
+      targetSessionId?: string;
+    }
+  | { change: "fork"; sessionId: string; entryId?: string; position: "before" | "at" };
+
+/**
+ * The kernel's `session_before_switch`, emitted by the desktop host when the
+ * user leaves a session for a new one or for another session (ADR 0291 slot
+ * 11). Informed-only in PI-Desktop: the kernel lets a handler cancel the
+ * switch, rule 11 does not.
+ */
+export type TrustedExtensionSessionBeforeSwitchPayload = {
+  type: "session_before_switch";
+  reason: "new" | "resume";
+  /** Session being left. */
+  sessionId: string;
+  /** Session being opened, when there is one; a new session has none yet. */
+  targetSessionId?: string;
+};
+
+/**
+ * The kernel's `session_before_fork`, emitted by the desktop host before the
+ * session is forked (ADR 0291 slot 11). Informed-only, like the switch above.
+ */
+export type TrustedExtensionSessionBeforeForkPayload = {
+  type: "session_before_fork";
+  sessionId: string;
+  /** Transcript boundary the fork is taken from, when the caller named one. */
+  entryId?: string;
+  position: "before" | "at";
+};
+
+/** The conversation a compaction is about to replace (ADR 0291 rule 7). */
+export type TrustedExtensionCompactionSegment = {
+  /** The messages that will be summarized away, oldest first. */
+  messages: ReadonlyArray<unknown>;
+  messageCount: number;
+  /** Context size the checkpoint replaces. */
+  tokensBefore: number;
+  /** What the checkpoint keeps verbatim, newest last. */
+  retained: ReadonlyArray<unknown>;
+};
 
 /** The events this map knows about: every wired event that has a slot behind it. */
 export type TrustedExtensionSlotEvent = keyof typeof TRUSTED_EXTENSION_EVENT_PERMISSIONS;

@@ -139,3 +139,58 @@ test("every runtime name carries a risk tier, and every high one is in the devki
   assert.equal(EXPECTED_RISK["runtime.turn.watch"], "medium");
   assert.equal(EXPECTED_RISK["runtime.turn.facts"], "low");
 });
+
+// The two slots this round wires are only real if each half is present: the
+// runtime has to emit the event, and the desktop host has to announce the
+// moments only it observes. These are source-shape assertions because the
+// desktop test runner has no Electron and no agent sidecar; the behaviour
+// itself is covered by the agent-runtime suite (slots 1 and 11) and by
+// `context-compaction.test.mjs`.
+test("slot 1 is emitted from the prompt path, with the whole action contract", () => {
+  const runtimeSource = readFileSync(
+    new URL("../../../packages/agent-runtime/src/runtime.ts", import.meta.url),
+    "utf8",
+  );
+  // The emit point: after the desktop accepted the message, before it is
+  // queued for the model.
+  assert.match(runtimeSource, /extensionBeforeSend\(modelInput, nextTurnId, userMessageId\)/);
+  assert.match(runtimeSource, /private async extensionBeforeSend\(/);
+  // Pass through, rewrite, block with a reason the user can read.
+  assert.match(runtimeSource, /result\.action === "handled"/);
+  assert.match(runtimeSource, /result\.action !== "transform"/);
+  assert.match(runtimeSource, /PLUGIN_HANDLED_PROMPT_CODE/);
+  // A rewrite is offered to the audit store, never silently applied.
+  assert.match(runtimeSource, /"extensions\.rewrites\.record"/);
+});
+
+test("slot 11 announces the four host-owned moments and carries the compaction segment", () => {
+  const runtimeSource = readFileSync(
+    new URL("../../../packages/agent-runtime/src/runtime.ts", import.meta.url),
+    "utf8",
+  );
+  const sidecarSource = readFileSync(
+    new URL("../../../packages/agent-runtime/src/sidecar.ts", import.meta.url),
+    "utf8",
+  );
+  const sessionIpcSource = readFileSync(
+    new URL("../electron/main/ipc/session-ipc.ts", import.meta.url),
+    "utf8",
+  );
+  // The kernel's own moments, announced from the host side, plus the desktop's
+  // two moments the kernel has no hook for.
+  assert.match(runtimeSource, /type: "session_before_switch"/);
+  assert.match(runtimeSource, /type: "session_before_fork"/);
+  assert.match(runtimeSource, /TRUSTED_EXTENSION_SESSION_LIFECYCLE_EVENT/);
+  // Informed-only and fire-and-forget: the notice is emitted, never awaited.
+  assert.match(runtimeSource, /void runner\.emit\(event, payload as unknown as Record<string, unknown>\)/);
+  // The compaction handover carries the segment about to be replaced.
+  assert.match(runtimeSource, /messages: preparation\.messagesToSummarize/);
+  // The sidecar delivers notices to live runtimes and answers at once.
+  assert.match(sidecarSource, /case "agent\.notifyLifecycle": \{/);
+  assert.match(sidecarSource, /runtime\.notifySessionLifecycle\(notice\)/);
+  // Electron main owns the four moments.
+  assert.match(sessionIpcSource, /agentSidecar\.call\("agent\.notifyLifecycle", params\)/);
+  for (const change of ['change: "created"', 'change: "deleted"', 'change: "fork"', 'change: "switch"']) {
+    assert.equal(sessionIpcSource.includes(change), true, change);
+  }
+});

@@ -403,6 +403,8 @@ export default function (pi: any) {
       "session_compact",
       "session_compact_failed",
       "session_before_fork",
+      "session_before_switch",
+      "session_lifecycle",
     ]) {
       expect(trustedExtensionEventPermission(event), event).toBe("runtime.session.lifecycle");
     }
@@ -704,6 +706,109 @@ export default function (pi: any) {
     const runner2 = new TrustedExtensionRunner({ specs: [granted], bridge: fakeBridge().bridge });
     await runner2.load();
     expect(runner2.toolResultExtensionAllowed("fx_extend_ok")).toBe(true);
+    expect(runner2.getDiagnostics()).toEqual([]);
+  });
+
+  it("gates the input hook on runtime.send.before, for the whole action contract", async () => {
+    // Slot 1: the hook is consulted once per prompt and may pass the message
+    // through, rewrite it, or keep it away from the model. A plugin without the
+    // grant is skipped with a diagnostic instead (ADR 0291 rule 2).
+    const refused = spec(
+      "input-refused",
+      `export default function (pi: any) {
+  pi.on("input", () => ({ action: "handled", reason: "no" }));
+}`,
+      ["agent.extension"],
+    );
+    const runner = new TrustedExtensionRunner({ specs: [refused], bridge: fakeBridge().bridge });
+    await runner.load();
+    expect(
+      await runner.emit("input", { type: "input", text: "hello" }),
+    ).toBeUndefined();
+    expect(runner.getDiagnostics()).toEqual([
+      expect.objectContaining({
+        kind: "permission_denied",
+        member: "input",
+        message: expect.stringContaining("runtime.send.before"),
+      }),
+    ]);
+
+    const granted = spec(
+      "input-granted",
+      `export default function (pi: any) {
+  pi.on("input", (event: any) => {
+    (globalThis as any).__inputText = event.text;
+    return { action: "transform", text: event.text.toUpperCase() };
+  });
+  pi.on("input", () => ({ action: "continue" }));
+}`,
+      ["agent.extension", "runtime.send.before"],
+    );
+    const runner2 = new TrustedExtensionRunner({ specs: [granted], bridge: fakeBridge().bridge });
+    await runner2.load();
+    const payload: Record<string, unknown> = { type: "input", text: "hello" };
+    const folded = await runner2.emit<{ action?: string; text?: string }>(
+      "input",
+      payload,
+      (acc, next) => (next.action === "transform" ? next : acc ?? next),
+    );
+    delete (globalThis as { __inputText?: string }).__inputText;
+    expect((globalThis as { __inputText?: string }).__inputText).toBeUndefined();
+    expect(folded).toEqual({ action: "transform", text: "HELLO" });
+    expect(runner2.getDiagnostics()).toEqual([]);
+  });
+
+  it("gates the session lifecycle notices and keeps them informed-only", async () => {
+    // Slot 11: switch / fork / create / delete are notifications. A handler may
+    // return anything; the caller ignores it, and the gate still applies.
+    const refused = spec(
+      "lifecycle-refused",
+      `export default function (pi: any) {
+  pi.on("session_before_switch", () => ({ cancel: true }));
+  pi.on("session_lifecycle", () => { (globalThis as any).__lifecycleSeen = true; });
+}`,
+      ["agent.extension"],
+    );
+    const runner = new TrustedExtensionRunner({ specs: [refused], bridge: fakeBridge().bridge });
+    await runner.load();
+    expect(
+      await runner.emit("session_before_switch", { type: "session_before_switch", reason: "resume" }),
+    ).toBeUndefined();
+    expect(
+      await runner.emit("session_lifecycle", { type: "session_lifecycle", change: "deleted" }),
+    ).toBeUndefined();
+    expect((globalThis as { __lifecycleSeen?: boolean }).__lifecycleSeen).toBeUndefined();
+    expect(
+      runner.getDiagnostics().map((diagnostic) => diagnostic.member).sort(),
+    ).toEqual(["session_before_switch", "session_lifecycle"]);
+    for (const diagnostic of runner.getDiagnostics()) {
+      expect(diagnostic.kind).toBe("permission_denied");
+      expect(diagnostic.message).toContain("runtime.session.lifecycle");
+    }
+
+    const granted = spec(
+      "lifecycle-granted",
+      `export default function (pi: any) {
+  pi.on("session_before_switch", (event: any) => {
+    (globalThis as any).__switchEvent = event;
+    return { cancel: true };
+  });
+}`,
+      ["agent.extension", "runtime.session.lifecycle"],
+    );
+    const runner2 = new TrustedExtensionRunner({ specs: [granted], bridge: fakeBridge().bridge });
+    await runner2.load();
+    const result = await runner2.emit(
+      "session_before_switch",
+      { type: "session_before_switch", reason: "resume", sessionId: "s1" },
+      (_acc, next) => next,
+    );
+    const seen = (globalThis as { __switchEvent?: unknown }).__switchEvent;
+    delete (globalThis as { __switchEvent?: unknown }).__switchEvent;
+    expect(seen).toEqual({ type: "session_before_switch", reason: "resume", sessionId: "s1" });
+    // The result is folded only because the caller asked; the runtime never
+    // does for these events, which is what makes them informed-only.
+    expect(result).toEqual({ cancel: true });
     expect(runner2.getDiagnostics()).toEqual([]);
   });
 });

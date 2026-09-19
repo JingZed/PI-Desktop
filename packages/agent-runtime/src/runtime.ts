@@ -46,8 +46,16 @@ import {
 import {
   DEFAULT_COMMAND_TIMEOUT_MS,
   OAUTH_AUTH_KIND,
+  TRUSTED_EXTENSION_SESSION_LIFECYCLE_EVENT,
   type TrustedExtensionCommand,
+  type TrustedExtensionCompactionSegment,
   type TrustedExtensionDiagnostic,
+  type TrustedExtensionInputPayload,
+  type TrustedExtensionRewriteRecord,
+  type TrustedExtensionSessionBeforeForkPayload,
+  type TrustedExtensionSessionBeforeSwitchPayload,
+  type TrustedExtensionSessionLifecycleNotice,
+  type TrustedExtensionSessionLifecyclePayload,
   type TrustedExtensionSpec,
   type TrustedExtensionUiRequest,
   type TrustedExtensionUiResponse,
@@ -56,6 +64,7 @@ import {
   TrustedExtensionRunner,
   type RegisteredTrustedExtensionAgent,
   type TrustedExtensionBridge,
+  type TrustedExtensionEventName,
 } from "./extensions/runner.js";
 import {
   TRUSTED_EXTENSION_TURN_CLOSING_EVENT,
@@ -126,7 +135,7 @@ import {
 } from "@pi-desktop/shared";
 import { createStreamCoalescer, type StreamCoalescer } from "./stream-coalescer.js";
 import type { RuntimeHost } from "./host-client.js";
-import { classifyAgentError } from "./agent-errors.js";
+import { classifyAgentError, PLUGIN_HANDLED_PROMPT_CODE } from "./agent-errors.js";
 import {
   assistantContent,
   isRecord,
@@ -770,6 +779,84 @@ function turnAbortedError(message: string): Error {
   return error;
 }
 
+/**
+ * Outcome of the slot-1 consultation (ADR 0291 slot 1, `input`), before the
+ * audit records are built.
+ */
+type BeforeSendOutcome = {
+  /** The first handler that kept the message away from the model, if any. */
+  handled?: { pluginId: string; pluginLabel: string; reason?: string };
+  /** Text the model receives, when a handler changed it. */
+  text?: string;
+  /** One draft per transforming plugin, in load order. */
+  rewrites: Array<{ pluginId: string; pluginLabel: string; before: string; after: string }>;
+};
+
+/**
+ * Fold one `input` handler's answer (ADR 0291 slot 1).
+ *
+ * A transform writes the current text back into the shared payload, which is
+ * how transforms chain: the next handler reads the text this one produced. An
+ * answer that is not one of the three kernel actions, and a transform that did
+ * not change anything, count as having no opinion.
+ */
+function foldBeforeSend(
+  acc: BeforeSendOutcome | undefined,
+  next: unknown,
+  extensionId: string,
+  extensionLabel: string,
+  payload: { text: string },
+): BeforeSendOutcome {
+  const current = acc ?? { rewrites: [] };
+  // The first handler that takes the message away from the model wins; the
+  // ones after it are not asked to rewrite a message nobody will see.
+  if (current.handled) return current;
+  if (!next || typeof next !== "object") return current;
+  const result = next as { action?: unknown; text?: unknown; reason?: unknown };
+  if (result.action === "handled") {
+    const reason = typeof result.reason === "string" ? result.reason.trim() : "";
+    return {
+      ...current,
+      handled: {
+        pluginId: extensionId,
+        pluginLabel: extensionLabel,
+        ...(reason ? { reason } : {}),
+      },
+    };
+  }
+  if (result.action !== "transform" || typeof result.text !== "string") return current;
+  if (result.text === payload.text) return current;
+  const before = payload.text;
+  payload.text = result.text;
+  return {
+    ...current,
+    text: result.text,
+    rewrites: [
+      ...current.rewrites,
+      { pluginId: extensionId, pluginLabel: extensionLabel, before, after: result.text },
+    ],
+  };
+}
+
+/**
+ * The error a blocked prompt ends with (ADR 0291 slot 1). The message is what
+ * the user reads on the failed turn, so a plugin's own `reason` is preferred
+ * over the generic sentence; the code is the one `classifyAgentError` keeps.
+ */
+function pluginHandledPromptError(handled: {
+  pluginLabel: string;
+  reason?: string;
+}): Error & { errorCode: string } {
+  const reason = handled.reason?.trim();
+  return Object.assign(
+    new Error(
+      reason ||
+        `The plugin "${handled.pluginLabel}" handled this message instead of sending it to the model.`,
+    ),
+    { errorCode: PLUGIN_HANDLED_PROMPT_CODE },
+  );
+}
+
 const CONTEXT_COMPACTION_TOOL_NAME = "new_context";
 const CONTEXT_COMPACTION_TOOL_DESCRIPTION =
   "Start a new context window. Does not clear, reset, or otherwise affect environment state.";
@@ -1039,6 +1126,12 @@ type CheckpointBuildFailure = {
    * durable boundary to anchor any checkpoint to.
    */
   recoverable: boolean;
+  /**
+   * True when a plugin cancelled the compaction (`session_before_compact`,
+   * ADR 0291 slot 11). A cancel is not a failure: nothing was attempted, so
+   * the caller reports no `compaction_end` failure and runs no fallback.
+   */
+  cancelled?: boolean;
 };
 
 type CheckpointBuild = CheckpointBuildSuccess | CheckpointBuildFailure;
@@ -1755,6 +1848,10 @@ export class DesktopAgentRuntime {
   private compactionInProgress = false;
   /** The in-flight checkpoint was cut short by Stop/dispose, not by a failure. */
   private compactionAborted = false;
+  /** True once an un-auditable rewrite has been reported for this session. */
+  private rewriteAuditWarned = false;
+  /** A plugin cancelled the in-flight compaction (ADR 0291 slot 11). */
+  private compactionCancelled = false;
   /** Set by the `new_context` tool, consumed at the next turn boundary. */
   private pendingModelCompaction = false;
   /** One-shot request to finish the current turn at the next boundary. */
@@ -6276,20 +6373,19 @@ Delegation rules:
     });
     try {
       const runner = this.extensionRunner;
-      if (runner?.hasHandlers("session_before_compact")) {
-        const decision = await runner.emit<{ cancel?: boolean }>(
-          "session_before_compact",
-          { type: "session_before_compact", reason, retentionMode },
-          (acc, next) => (acc?.cancel ? acc : next),
-        );
-        if (decision?.cancel) return false;
-      }
+      // `session_before_compact` is emitted from the compaction itself, once
+      // the segment about to be replaced is known (ADR 0291 slot 11, rule 7).
+      // A plugin that cancelled it is not a failure, so nothing is reported
+      // and no fallback runs.
+      this.compactionCancelled = false;
       const compacted = await this.performCompaction(reason, willRetry, retentionMode);
+      if (this.compactionCancelled) return false;
       if (runner) {
         void runner.emit(compacted ? "session_compact" : "session_compact_failed", {
           type: compacted ? "session_compact" : "session_compact_failed",
           reason,
           aborted: this.compactionAbort?.signal.aborted === true,
+          ...(this.activeCompaction ? { tokensBefore: this.activeCompaction.tokensBefore } : {}),
         });
       }
       return compacted;
@@ -6726,9 +6822,15 @@ Delegation rules:
    * `activeCompaction` mutation, no events. Keeping generation separate from
    * installation is what lets a failed build fall through to the retained-tail
    * recovery path without having already changed the session.
+   *
+   * `session_before_compact` is asked here rather than at the top of the
+   * compaction, because this is where the segment about to be replaced is
+   * known: a plugin that cancels sees the conversation it is cancelling for
+   * (ADR 0291 slot 11, rule 7).
    */
   private async buildCheckpoint(
     signal: AbortSignal,
+    reason: ContextCompactionReason,
     retentionMode: CompactionRetentionMode,
   ): Promise<CheckpointBuild> {
     const entries = this.entriesWithCompaction();
@@ -6751,11 +6853,23 @@ Delegation rules:
         recoverable: true,
       };
     }
+    if (!(await this.extensionSessionBeforeCompact(preparation.value, reason, retentionMode))) {
+      this.compactionCancelled = true;
+      return {
+        ok: false,
+        entries,
+        budget,
+        preparation: preparation.value,
+        tokensBefore: preparation.value.tokensBefore,
+        message: "Context compaction was cancelled by a plugin",
+        recoverable: false,
+        cancelled: true,
+      };
+    }
 
     if (this.compactionStrategy === "fresh_window") {
       return this.buildRolloverCheckpoint(entries, budget, preparation.value);
     }
-
     const summaryInput = this.fitSummaryInputToBudget(preparation.value, budget);
     if (!summaryInput) {
       return {
@@ -6916,11 +7030,14 @@ Delegation rules:
     this.compactionAbort = new AbortController();
     let build: CheckpointBuild;
     try {
-      build = await this.buildCheckpoint(this.compactionAbort.signal, retentionMode);
+      build = await this.buildCheckpoint(this.compactionAbort.signal, reason, retentionMode);
     } finally {
       this.compactionAbort = undefined;
     }
     if (!build.ok) {
+      // A plugin cancelled the compaction before anything was attempted: no
+      // failure event and no retained-tail fallback, because nothing failed.
+      if (build.cancelled) return false;
       if (!build.recoverable) {
         this.emitCompactionFailure(reason, build.tokensBefore, build.message);
         return false;
@@ -7854,7 +7971,25 @@ Delegation rules:
     this.requestStartedAt = Date.now();
     this.setAgentActivity({ phase: "starting", since: Date.now() });
     try {
-      const content = promptContent(modelInput);
+      // Slot 1 (ADR 0291 `runtime.send.before`): the desktop has accepted and
+      // persisted the user's message and echoed it to the transcript, and the
+      // message has not reached the agent yet. This is the only point where the
+      // runner can be consulted — Electron main owns the send path but holds no
+      // extension context — and it is late enough that the user's own row
+      // already exists, so a rewrite changes what the model reads while the text
+      // the user typed stays on that row.
+      const outgoing = await this.extensionBeforeSend(modelInput, nextTurnId, userMessageId);
+      if (outgoing.handled) throw pluginHandledPromptError(outgoing.handled);
+      // A rewrite applies to the model's copy only: everything below (the
+      // pre-flight checkpoint, `before_agent_start`, the prompt itself) sees the
+      // text the plugin produced.
+      const queuedInput: string | RuntimePrompt =
+        outgoing.text === undefined
+          ? modelInput
+          : typeof modelInput === "string"
+            ? outgoing.text
+            : { ...modelInput, text: outgoing.text };
+      const content = promptContent(queuedInput);
       const incomingUserMessage: AgentMessage = {
         role: "user",
         content,
@@ -7887,11 +8022,11 @@ Delegation rules:
           return { turnId: this.turnId };
         }
       }
-      await this.extensionBeforeAgentStart(modelInput);
-      if (typeof modelInput === "string") {
-        await this.agent.prompt(modelInput);
+      await this.extensionBeforeAgentStart(queuedInput);
+      if (typeof queuedInput === "string") {
+        await this.agent.prompt(queuedInput);
       } else {
-        await this.agent.prompt(modelInput.text, promptImages(modelInput));
+        await this.agent.prompt(queuedInput.text, promptImages(queuedInput));
       }
       await this.waitForIdleAndSteering();
       void this.extensionRunner?.emit("agent_settled", { type: "agent_settled" });
@@ -7951,6 +8086,172 @@ Delegation rules:
     this.agent.state.systemPrompt =
       typeof result?.systemPrompt === "string" ? result.systemPrompt : base;
   }
+
+  /**
+   * `input` hook — slot 1 (ADR 0291). One consultation per prompt, after the
+   * send and before the message is queued for the model.
+   *
+   * The kernel's three actions are honoured. `continue` (or no answer) passes
+   * the message through; `transform` replaces the text the model reads and
+   * chains, so a later handler sees the text an earlier one produced; `handled`
+   * keeps the message away from the model and names the plugin that did it,
+   * because the user has to be able to read who stopped their message.
+   *
+   * Every `transform` that changed something produces one audit draft, in load
+   * order, so two plugins that both rewrote the message are two records rather
+   * than one attributed to whoever happened to answer last (rule 5).
+   */
+  private async extensionBeforeSend(
+    input: string | RuntimePrompt,
+    turnId: string,
+    userMessageId: string | undefined,
+  ): Promise<BeforeSendOutcome> {
+    const runner = this.extensionRunner;
+    if (!runner?.hasHandlers("input")) return { rewrites: [] };
+    const attachments = typeof input === "string" ? [] : input.attachments ?? [];
+    const payload: TrustedExtensionInputPayload = {
+      type: "input",
+      sessionId: this.sessionId,
+      turnId,
+      text: typeof input === "string" ? input : input.text,
+      images: attachments
+        .filter(
+          (attachment) =>
+            attachment.kind === "image" &&
+            typeof attachment.data === "string" &&
+            attachment.data.length > 0,
+        )
+        .map((attachment) => ({
+          name: attachment.name,
+          ...(attachment.mimeType ? { mimeType: attachment.mimeType } : {}),
+          data: attachment.data!,
+        })),
+      attachments: attachments.map((attachment) => ({
+        name: attachment.name,
+        ref: attachment.path,
+        kind: attachment.kind,
+        ...(attachment.mimeType ? { mimeType: attachment.mimeType } : {}),
+        ...(attachment.size !== undefined ? { size: attachment.size } : {}),
+      })),
+      source: "rpc",
+    };
+    const outcome =
+      (await runner.emit<BeforeSendOutcome>(
+        "input",
+        payload as unknown as Record<string, unknown>,
+        (acc, next, extensionId, extensionLabel) =>
+          foldBeforeSend(acc, next, extensionId, extensionLabel, payload),
+      )) ?? { rewrites: [] };
+    // The records are published without blocking the prompt: an audit write is
+    // a record, never a gate on what the user asked for.
+    if (userMessageId?.trim()) {
+      for (const rewrite of outcome.rewrites) {
+        void this.publishRewrite({
+          sessionId: this.sessionId,
+          turnId,
+          pluginId: rewrite.pluginId,
+          pluginLabel: rewrite.pluginLabel,
+          kind: "outgoing_message",
+          targetMessageId: userMessageId,
+          before: rewrite.before,
+          after: rewrite.after,
+        });
+      }
+    }
+    return outcome;
+  }
+
+  /**
+   * Hand one rewrite to the host that owns the audit store (ADR 0291 rule 5).
+   *
+   * The record carries both full texts plus the transcript row it belongs to;
+   * the character-level diff is computed by the owner of `plugin_rewrites`, so
+   * that algorithm stays in one place. A sink that cannot take the record is
+   * reported once per session and never fails the turn: an un-audited rewrite
+   * must not break the prompt it rewrote.
+   */
+  private async publishRewrite(record: TrustedExtensionRewriteRecord): Promise<void> {
+    try {
+      await this.host.call("extensions.rewrites.record", record);
+    } catch (error) {
+      if (this.rewriteAuditWarned) return;
+      this.rewriteAuditWarned = true;
+      process.stderr.write(
+        `[agent-runtime] rewrite not audited (session=${this.sessionId} ` +
+          `plugin=${record.pluginId} kind=${record.kind}): ` +
+          `${error instanceof Error ? error.message : String(error)}\n`,
+      );
+    }
+  }
+
+  /**
+   * Emit one session lifecycle notice (ADR 0291 slot 11, rule 11).
+   *
+   * The embedding host calls this at the moment it owns — creating, deleting,
+   * switching away from or forking a session — because the kernel has a hook
+   * for at most two of those moments and the runner lives here. Every notice is
+   * informed-only and fire-and-forget: nothing is awaited, so a plugin that
+   * stalls cannot delay a session switch, a delete or a fork, and whatever a
+   * handler returns is ignored. Only `session_before_compact` cancels anything,
+   * and that hook is emitted from the compaction itself.
+   */
+  notifySessionLifecycle(notice: TrustedExtensionSessionLifecycleNotice): void {
+    const runner = this.extensionRunner;
+    if (!runner || this.disposed) return;
+    const base = { sessionId: notice.sessionId };
+    const payload:
+      | TrustedExtensionSessionBeforeSwitchPayload
+      | TrustedExtensionSessionBeforeForkPayload
+      | TrustedExtensionSessionLifecyclePayload =
+      notice.change === "switch"
+        ? {
+            type: "session_before_switch",
+            reason: notice.reason,
+            ...base,
+            ...(notice.targetSessionId ? { targetSessionId: notice.targetSessionId } : {}),
+          }
+        : notice.change === "fork"
+          ? {
+              type: "session_before_fork",
+              ...base,
+              ...(notice.entryId ? { entryId: notice.entryId } : {}),
+              position: notice.position,
+            }
+          : { type: TRUSTED_EXTENSION_SESSION_LIFECYCLE_EVENT, change: notice.change, ...base };
+    const event = payload.type as TrustedExtensionEventName;
+    if (!runner.hasHandlers(event)) return;
+    void runner.emit(event, payload as unknown as Record<string, unknown>);
+  }
+
+  /**
+   * `session_before_compact` hook with the segment (ADR 0291 slot 11, rule 7).
+   *
+   * The payload carries the conversation the checkpoint is about to replace,
+   * which exists for exactly this moment: that is what a "rescue before
+   * compaction" plugin needs. `false` means a plugin cancelled the compaction;
+   * an over-budget handler counts as no opinion and is reported by the runner.
+   */
+  private async extensionSessionBeforeCompact(
+    preparation: ShapedPreparation,
+    reason: ContextCompactionReason,
+    retentionMode: CompactionRetentionMode,
+  ): Promise<boolean> {
+    const runner = this.extensionRunner;
+    if (!runner?.hasHandlers("session_before_compact")) return true;
+    const segment: TrustedExtensionCompactionSegment = {
+      messages: preparation.messagesToSummarize,
+      messageCount: preparation.messagesToSummarize.length,
+      tokensBefore: preparation.tokensBefore,
+      retained: preparation.retainedTail,
+    };
+    const decision = await runner.emit<{ cancel?: boolean }>(
+      "session_before_compact",
+      { type: "session_before_compact", reason, retentionMode, segment },
+      (acc, next) => (acc?.cancel ? acc : next),
+    );
+    return decision?.cancel !== true;
+  }
+
 
   /**
    * `before_provider_request` rides pi-ai's `onPayload`, `after_provider_response`
