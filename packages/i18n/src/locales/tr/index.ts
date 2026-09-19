@@ -1738,6 +1738,13 @@ importConfirm: "İçe aktarılan uzantılar ajan sürecinde, ajanın kendi araç
       "runtime.turn.abort": "Çalışan turu durdur",
       "runtime.turn.closing": "Tur bitmeden hemen önce devreye gir",
       "runtime.turn.facts": "Bir turun yapısal bilgilerini oku",
+      "runtime.request.before": "Modele gönderileni yeniden yaz",
+      "runtime.session.lifecycle": "Oturum ve sıkıştırma olaylarını izle",
+      "runtime.session.read": "Oturum içeriğini oku",
+      "runtime.tool.gate": "Araç çağrılarını engelle ve araç sonuçlarını değiştir",
+      "runtime.turn.continue": "Tur bittikten sonra yeni bir tur başlat",
+      "runtime.turn.recap": "Bir turun içerdiklerini oku",
+      "runtime.turn.watch": "Çalışan turu izle",
       "provider.register": "Model listesine servis ekle",
       "desktop.control": "Masaüstünü kontrol et",
       "models.list": "Kimliği doğrulanmış modelleri listele",
@@ -1793,6 +1800,20 @@ importConfirm: "İçe aktarılan uzantılar ajan sürecinde, ajanın kendi araç
         "Tur hâlâ çalışırken eklentiye danışılır ve eklenti ajanın devam etmesini isteyebilir. Bu, sizden yeni bir ileti olmadan daha fazla token harcar.",
       "runtime.turn.facts":
         "Eklenti bir tura ilişkin yapısal bilgileri okuyabilir: araç çağrıları ve sonuçları, token, harcama, süre, dokunulan dosyalar. Konuşma metni içermez.",
+      "runtime.request.before":
+        "Her istekten önce eklenti sistem istemini, modeli ve düşünme düzeyini, istek gövdesini ve ajanın tuttuğu mesaj listesini değiştirebilir. Her değişiklik diff düzeyinde kaydedilir ve sonradan incelenebilir.",
+      "runtime.session.lifecycle":
+        "Bir oturum oluşturulduğunda, değiştirildiğinde, silindiğinde veya çatallandığında ve sıkıştırma öncesinde eklentiye bildirilir. Eklenti sıkıştırmayı iptal edebilir ve sıkıştırmanın değiştireceği konuşma bölümünü alır; diğer işlemleri veto edemez.",
+      "runtime.session.read":
+        "Eklenti bir oturumun içeriğini, yani kullanıcının ve ajanın söylediklerini okuyabilir. Okumalar tek tek kaydedilmez; bu kurulum incelemesi onay yüzeyidir.",
+      "runtime.tool.gate":
+        "Bir araç çağrısından önce eklentiye danışılır ve gerekçeyle çağrıyı engelleyebilir; araç çalıştıktan sonra da sonucu değiştirebilir. Modelin seçtiği çağrı bağımsız değişkenlerini değiştiremez.",
+      "runtime.turn.continue":
+        "Tur bittikten sonra eklenti sizden mesaj gelmeden yeni bir tur başlatabilir. Bu, model kotanızı daha fazla harcar ve fazladan tur, kaynağı eklenti olarak belirtilen görünür bir satır olarak kaydedilir.",
+      "runtime.turn.recap":
+        "Eklenti bir turun içerdiklerini, konuşma metni dahil okuyabilir. Tek bir tur yerine tüm oturumu okumak için ayrıca oturum okuma izni gerekir.",
+      "runtime.turn.watch":
+        "Eklenti çalışan turun olaylarını alır — akış halindeki mesajlar, araç yürütmeleri, tur ve ajan sınırları — ve yalnızca izleyebilir. Olaylar en iyi çaba ile iletilir: hiçbiri yeniden gönderilmez.",
       "provider.register":
         "Bu eklentinin tanımladığı servisleri Ayarlar’daki servis listesine ekler. Uç noktayı ve modelleri eklenti sağlar; API anahtarınız PI-Desktop’ta kalır.",
       "desktop.control":

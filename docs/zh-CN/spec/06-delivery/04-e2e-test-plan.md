@@ -7025,9 +7025,11 @@ runner 会在运行时的隔离临时目录中生成六个插件形态 fixture�
 
 #### E2E-242：扩展工具与 hooks 在回合中生效
 
-- **前置条件**：一个已启用的夹具扩展，注册工具 `fx_add`，在 `before_agent_start`
-  向系统提示追加标记，在 `tool_call` 以理由阻止 `bash`，在 `tool_result` 替换
-  `fx_add` 的输出。
+- **前置条件**：一个已启用的夹具扩展，除 `agent.extension` 外还持有其 hook 所需的槽位
+  权限 —— `before_agent_start` 需要 `runtime.request.before`，`tool_call` 与
+  `tool_result` 需要 `runtime.tool.gate`，回合事件需要 `runtime.turn.watch`；它注册
+  工具 `fx_add`，在 `before_agent_start` 向系统提示追加标记，在 `tool_call` 以理由
+  阻止 `bash`，在 `tool_result` 替换 `fx_add` 的输出。
 - **步骤**：1）在 Agent 模式开始一个回合，夹具模型先调用 `fx_add` 再调用 `bash`。
   2）检查 provider 请求。3）检查工具结果。4）切换到 Plan 模式重复。5）注册第二个
   声明名为 `read` 的工具的扩展。

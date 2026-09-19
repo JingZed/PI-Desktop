@@ -161,8 +161,9 @@ export const TRUSTED_EXTENSION_HANDLER_TIMEOUT_MS = 30_000;
  * `session_start` and `session_shutdown` are the runner's own boundaries and
  * `session_info_changed` is a rename notice, so none of them changes a turn.
  *
- * A mapped name whose slot is not implemented yet is reserved, not enforced:
- * see {@link REGISTERED_SLOT_PERMISSIONS}.
+ * Every name this map holds is registered with its slot, so the runner enforces
+ * all of them for every plugin, the high-trust tier included (see
+ * {@link REGISTERED_SLOT_PERMISSIONS}).
  */
 export const TRUSTED_EXTENSION_EVENT_PERMISSIONS = {
   // Slot 7: consulted before a turn closes.
@@ -259,25 +260,39 @@ export function trustedExtensionApiPermission(apiCall: string): string | undefin
     : undefined;
 }
 /**
- * Slot permissions the permission registry holds today (spec 13 §2).
+ * Slot permissions the permission registry holds (spec 13 §2).
  *
  * {@link TRUSTED_EXTENSION_EVENT_PERMISSIONS} is the whole contract; this is
- * the subset a plugin can actually be granted, and therefore the subset a gate
- * may refuse on. A name enters the registry together with its slot (ADR 0291,
- * Consequences): a mapped name that is missing here leaves its event
- * unrestricted, exactly as it is today, until that slot's batch registers it.
- * `apps/desktop/test/runtime-slot-permissions.test.mjs` fails when this list
- * and `PLUGIN_PERMISSIONS` disagree.
+ * the subset a plugin can actually be granted, and the subset the gate refuses
+ * on. It is the ADR 0291 slot set with no gaps: every mapped name is registered
+ * together with the slot it gates, so a mapped name never falls back to "no
+ * gate" behavior. A name that is mapped and missing here would silently leave
+ * its event unrestricted, which is the drift
+ * `apps/desktop/test/runtime-slot-permissions.test.mjs` exists to catch: it
+ * fails when this list and `PLUGIN_PERMISSIONS` disagree. The twelfth ADR 0291
+ * slot, `runtime.approval.before`, is not built and is deliberately absent.
  */
 export const REGISTERED_SLOT_PERMISSIONS = [
+  "runtime.request.before",
   "runtime.send.before",
+  "runtime.session.lifecycle",
+  "runtime.session.read",
   "runtime.tool.extend",
+  "runtime.tool.gate",
   "runtime.turn.abort",
   "runtime.turn.closing",
+  "runtime.turn.continue",
   "runtime.turn.facts",
+  "runtime.turn.recap",
+  "runtime.turn.watch",
 ] as const;
 
-/** True when `permission` is a slot permission the registry holds, so a gate may refuse on it. */
+/**
+ * True when `permission` is a slot permission the registry holds. The runner
+ * enforces every mapped slot name directly (ADR 0291 rule 2) and no longer
+ * consults this; the guard test and the docs use it to say which names the
+ * registry actually holds.
+ */
 export function isRegisteredSlotPermission(permission: string): boolean {
   return (REGISTERED_SLOT_PERMISSIONS as readonly string[]).includes(permission);
 }

@@ -494,19 +494,24 @@ are honored where the event type defines a result.
 | `user_bash`, `session_before_switch`, `session_before_tree`, `session_tree`, `ui_prompt_start`, `ui_prompt_end` | Not emitted in v1 | n/a |
 
 A handler runs only when the extension's plugin holds the slot permission behind
-its event (ADR 0291 rule 2): `turn_closing` needs `runtime.turn.closing`, and an
-event whose slot is not implemented yet keeps today's behavior until that name is
-registered with its slot. The runner is handed the plugin's granted permissions —
-an extension with no recorded grants holds none — and skips a handler it may not
-run, reporting the skip as an extension diagnostic of kind `permission_denied`
-that names the permission, on the plugin row. A skipped handler never blocks the
-turn: like a throwing handler, it counts as having no opinion.
+its event (ADR 0291 rule 2): `turn_closing` needs `runtime.turn.closing`,
+`tool_call` and `tool_result` need `runtime.tool.gate`, and every other event in
+the table above that names a slot is gated the same way. The map covers every
+wired event that changes a turn; `session_start`, `session_shutdown` and
+`session_info_changed` have no slot. Every slot permission is registered, so the
+gate is strict for every plugin: `agent.extension` says where the code runs and
+never implies a grant, not even for the high-trust tier. An event mapped to a
+slot the desktop does not emit yet (`input`, `project_trust`,
+`resources_discover`, `session_before_fork`, `model_select`,
+`thinking_level_select`) keeps the gate on the mapping, so no handler runs from
+a hook point that never fires.
 
 Two calls an extension makes for itself are not events, so the same contract
 names the call instead of an event name (`TRUSTED_EXTENSION_API_PERMISSIONS` in
 `@pi-desktop/shared`): `requestTurnAbort` needs `runtime.turn.abort`, and the
-tool-result capability behind §7.6 needs `runtime.tool.extend`. Both are gated
-and reported exactly like an event, in both directions: the call returns a
+tool-result capability behind §7.6 needs `runtime.tool.extend`. Both names are
+registered, so both are gated and reported exactly like an event, in both
+directions: the call returns a
 refusal value (`false` for `requestTurnAbort`) and the plugin row gets a
 `permission_denied` diagnostic that names the permission and the call — never a
 silent no-op and never a throw.

@@ -132,6 +132,10 @@ export default function (pi: any) {
   pi.on("session_start", (e: any, ctx: any) => { (globalThis as any).__started = e.reason + ctx.hasUI; });
 }
 `,
+      // The plugin's own grants: the tier (`agent.extension`) plus the slots its
+      // two hooks exercise — `before_agent_start` (slot 6) and `tool_call`
+      // (slot 4). Without them the runner skips both handlers (ADR 0291 rule 2).
+      ["agent.extension", "runtime.request.before", "runtime.tool.gate"],
     );
     const { bridge, log } = fakeBridge();
     const runner = new TrustedExtensionRunner({ specs: [ext], bridge, reservedToolNames: () => ["read"] });
@@ -337,7 +341,10 @@ export default function (pi: any) {
   pi.on("context", (e: any) => ({ messages: [...e.messages, { role: "user", content: "extra" }] }));
   pi.on("context", (e: any) => ({ messages: e.messages.slice(0, 1) }));
   pi.on("tool_result", () => { throw new Error("nope"); });
-}`);
+}`,
+      // `context` is slot 6 and `tool_result` is slot 4 (ADR 0291 rule 2).
+      ["runtime.request.before", "runtime.tool.gate"],
+    );
     const { bridge } = fakeBridge();
     const runner = new TrustedExtensionRunner({ specs: [ext], bridge });
     await runner.load();
@@ -417,10 +424,19 @@ export default function (pi: any) {
     expect(trustedExtensionEventPermission("not_an_event")).toBeUndefined();
     expect(trustedExtensionEventPermission("constructor")).toBeUndefined();
 
-    // A name no registry holds yet cannot be granted by anyone, so it cannot be
-    // the reason a handler is refused.
-    expect(REGISTERED_SLOT_PERMISSIONS).toContain("runtime.turn.closing");
-    expect(REGISTERED_SLOT_PERMISSIONS).not.toContain("runtime.tool.gate");
+    // The reservation window is over: every mapped slot name is in the
+    // registry, so the runner enforces all of them and none is left
+    // unrestricted (ADR 0291 Consequences, spec 13 §2C).
+    const mapped = new Set<string>(Object.values(TRUSTED_EXTENSION_EVENT_PERMISSIONS));
+    for (const name of mapped) {
+      expect(REGISTERED_SLOT_PERMISSIONS as readonly string[], name).toContain(name);
+    }
+    // The one slot ADR 0291 does not build is reserved and absent: nothing is
+    // mapped to it, so no handler can depend on it.
+    expect(mapped.has("runtime.approval.before")).toBe(false);
+    expect(REGISTERED_SLOT_PERMISSIONS as readonly string[]).not.toContain("runtime.approval.before");
+    // The high-trust tier is no exception: `tool_call` is mapped to slot 4.
+    expect(REGISTERED_SLOT_PERMISSIONS).toContain("runtime.tool.gate");
   });
 
   it("skips a turn_closing handler the plugin holds no slot permission for", async () => {
@@ -474,16 +490,52 @@ export default function (pi: any) {
     expect(runner.getDiagnostics()).toEqual([]);
   });
 
-  it("leaves an event whose slot is not registered yet unrestricted", async () => {
-    // The gate follows the permission registry: `runtime.tool.gate` is mapped
-    // but reserved, so a `tool_call` handler keeps today's behavior and is not
-    // reported (spec 13 §2C, ADR 0291 phasing).
+  it("refuses a tool_call handler from a plugin that holds only the tier grant", async () => {
+    // Slot 4 is registered, so the high-trust tier is not enough: the handler
+    // is skipped with a diagnostic and its answer never reaches the caller
+    // (ADR 0291 rule 2).
     const ext = spec(
-      "tool-call",
+      "tool-call-refused",
+      `export default function (pi: any) {
+  pi.on("tool_call", (e: any) => {
+    (globalThis as any).__toolCall = e.toolName;
+    return { block: true, reason: "no bash" };
+  });
+}`,
+      ["agent.extension"],
+    );
+    const { bridge } = fakeBridge();
+    const runner = new TrustedExtensionRunner({ specs: [ext], bridge });
+    await runner.load();
+    delete (globalThis as { __toolCall?: string }).__toolCall;
+
+    const blocked = await runner.emit<{ block?: boolean }>("tool_call", {
+      type: "tool_call",
+      toolName: "bash",
+      toolCallId: "t",
+      input: {},
+    });
+
+    expect(blocked).toBeUndefined();
+    expect((globalThis as { __toolCall?: string }).__toolCall).toBeUndefined();
+    expect(runner.getDiagnostics()).toEqual([
+      {
+        extensionId: ext.id,
+        kind: "permission_denied",
+        message: 'handler for "tool_call" skipped: the plugin does not hold runtime.tool.gate',
+        member: "tool_call",
+        count: 1,
+      },
+    ]);
+  });
+
+  it("runs the tool_call handler once the plugin holds runtime.tool.gate", async () => {
+    const ext = spec(
+      "tool-call-granted",
       `export default function (pi: any) {
   pi.on("tool_call", (e: any) => (e.toolName === "bash" ? { block: true, reason: "no bash" } : undefined));
 }`,
-      ["agent.extension"],
+      ["agent.extension", "runtime.tool.gate"],
     );
     const { bridge } = fakeBridge();
     const runner = new TrustedExtensionRunner({ specs: [ext], bridge });

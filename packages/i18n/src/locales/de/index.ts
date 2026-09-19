@@ -1720,6 +1720,13 @@ sklm: {
       "runtime.turn.abort": "Die laufende Runde stoppen",
       "runtime.turn.closing": "Kurz vor Ende einer Runde eingreifen",
       "runtime.turn.facts": "Strukturierte Fakten zu einer Runde lesen",
+      "runtime.request.before": "Umschreiben, was an das Modell geht",
+      "runtime.session.lifecycle": "Sitzungs- und Kompaktierungsereignisse verfolgen",
+      "runtime.session.read": "Inhalt einer Sitzung lesen",
+      "runtime.tool.gate": "Tool-Aufrufe blockieren und Ergebnisse ersetzen",
+      "runtime.turn.continue": "Nach einer Runde eine weitere starten",
+      "runtime.turn.recap": "Lesen, was eine Runde enthielt",
+      "runtime.turn.watch": "Der laufenden Runde zusehen",
       "provider.register": "Anbieter zur Modellliste hinzufügen",
       "desktop.control": "Desktop steuern",
       "models.list": "Authentifizierte Modelle auflisten",
@@ -1768,6 +1775,20 @@ sklm: {
         "Das Plugin wird befragt, während eine Runde noch läuft, und kann den Agenten bitten, weiterzumachen. Das verbraucht mehr Token, ohne dass Sie eine neue Nachricht senden.",
       "runtime.turn.facts":
         "Das Plugin kann strukturierte Fakten zu einer Runde lesen: Tool-Aufrufe und Ergebnisse, Token, Kosten, Dauer, berührte Dateien. Gesprächstext ist nicht enthalten.",
+      "runtime.request.before":
+        "Vor jeder Anfrage darf das Plugin den System-Prompt, das Modell und die Denkstufe, die Anfrage-Nutzlast und die Nachrichtenliste des Agenten ändern. Jede Änderung wird auf Diff-Ebene festgehalten und ist danach einsehbar.",
+      "runtime.session.lifecycle":
+        "Das Plugin erfährt, wenn eine Sitzung erstellt, gewechselt, gelöscht oder geforkt wird, und vor einer Kompaktierung. Es kann eine Kompaktierung abbrechen und erhält den Gesprächsausschnitt, den sie ersetzen würde; die übrigen Aktionen kann es nicht verhindern.",
+      "runtime.session.read":
+        "Das Plugin darf den Inhalt einer Sitzung lesen — was Sie und der Agent gesagt haben. Einzelne Lesezugriffe werden nicht protokolliert; diese Installationsprüfung ist die Zustimmung.",
+      "runtime.tool.gate":
+        "Vor einem Tool-Aufruf wird das Plugin gefragt und kann ihn mit Begründung blockieren; nach der Ausführung kann es das Ergebnis ersetzen. Die Argumente, die das Modell gewählt hat, kann es nicht ändern.",
+      "runtime.turn.continue":
+        "Nach einer Runde darf das Plugin ohne Nachricht von Ihnen eine weitere starten. Das verbraucht mehr Modellkontingent, und die zusätzliche Runde wird als sichtbare Zeile mit dem Plugin als Quelle gespeichert.",
+      "runtime.turn.recap":
+        "Das Plugin darf lesen, was eine Runde enthielt, einschließlich des Gesprächstextes. Für die ganze Sitzung statt einer Runde ist zusätzlich die Sitzungs-Leseberechtigung nötig.",
+      "runtime.turn.watch":
+        "Das Plugin erhält die Ereignisse der laufenden Runde — Nachrichten im Stream, Tool-Ausführungen, Runden- und Agent-Grenzen — und kann nur zusehen. Ereignisse werden nach bestem Bemühen geliefert: nichts wird wiederholt.",
       "provider.register": "Fügt die Anbieter, die dieses Plugin definiert, zur Anbieterliste in den Einstellungen hinzu. Das Plugin liefert den Endpunkt und die Modelle; Ihr API-Schlüssel bleibt in PI-Desktop.",
       "desktop.control": "Erlaubt den Aufruf des geprüften PI-Desktop-Katalogs; destruktive Vorgänge benötigen weiterhin confirm=true, und das MCP-Bearer-Token wird nicht offengelegt.",
       "models.list": "Kann sehen, für welche Modelle Sie sich angemeldet haben. Es erhält keine Schlüssel.",

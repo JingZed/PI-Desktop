@@ -1720,6 +1720,13 @@ sklm: {
       "runtime.turn.abort": "Detener el turno en curso",
       "runtime.turn.closing": "Actuar justo antes de que termine un turno",
       "runtime.turn.facts": "Leer datos estructurados de un turno",
+      "runtime.request.before": "Reescribir lo que se envía al modelo",
+      "runtime.session.lifecycle": "Seguir los eventos de sesión y compactación",
+      "runtime.session.read": "Leer el contenido de una sesión",
+      "runtime.tool.gate": "Bloquear llamadas a herramientas y sustituir resultados",
+      "runtime.turn.continue": "Iniciar otro turno tras terminar uno",
+      "runtime.turn.recap": "Leer lo que contenía un turno",
+      "runtime.turn.watch": "Observar el turno en curso",
       "provider.register": "Agregar proveedores a la lista de modelos",
       "desktop.control": "Controlar el escritorio",
       "models.list": "Listar modelos autenticados",
@@ -1768,6 +1775,20 @@ sklm: {
         "Se consulta al complemento mientras un turno sigue en curso y puede pedirle al agente que continúe. Eso gasta más tokens sin un mensaje nuevo de su parte.",
       "runtime.turn.facts":
         "El complemento puede leer datos estructurados de un turno: llamadas de herramienta y resultados, tokens, gasto, duración y archivos tocados. No incluye el texto de la conversación.",
+      "runtime.request.before":
+        "Antes de cada petición el plugin puede cambiar el prompt del sistema, el modelo y el nivel de razonamiento, el cuerpo de la petición y la lista de mensajes que mantiene el agente. Cada cambio se registra a nivel de diff para poder revisarlo después.",
+      "runtime.session.lifecycle":
+        "El plugin recibe aviso cuando una sesión se crea, se cambia, se elimina o se bifurca, y antes de una compactación. Puede cancelar una compactación y recibe el fragmento de conversación que esta reemplazaría; no puede vetar las demás acciones.",
+      "runtime.session.read":
+        "El plugin puede leer el contenido de una sesión, es decir, lo que dijeron el usuario y el agente. Las lecturas no se registran una a una; esta revisión de instalación es la superficie de consentimiento.",
+      "runtime.tool.gate":
+        "Antes de una llamada a herramienta se consulta al plugin, que puede bloquearla con un motivo; después de ejecutarse puede sustituir su resultado. No puede cambiar los argumentos que eligió el modelo.",
+      "runtime.turn.continue":
+        "Cuando termina un turno, el plugin puede iniciar otro sin un mensaje tuyo. Eso gasta más cuota del modelo, y el turno extra se guarda como una fila visible que indica el plugin de origen.",
+      "runtime.turn.recap":
+        "El plugin puede leer lo que contenía un turno, incluido su texto de conversación. Leer toda la sesión y no solo un turno requiere además el permiso de lectura de sesión.",
+      "runtime.turn.watch":
+        "El plugin recibe los eventos del turno en curso — mensajes mientras se transmiten, ejecuciones de herramientas, límites de turno y de agente — y solo puede observar. Los eventos se entregan con el mejor esfuerzo: nada se reenvía.",
       "provider.register": "Agregue los proveedores que define este complemento a la lista de proveedores de Configuración. El complemento aporta el punto final y los modelos; su clave API permanece en PI-Desktop.",
       "desktop.control": "Permite invocar el catálogo de control de PI-Desktop revisado; las operaciones destructivas siguen requiriendo confirm=true y el token bearer de MCP no se expone.",
       "models.list": "Puede ver en qué modelos se ha registrado. No recibe llaves.",

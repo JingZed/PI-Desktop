@@ -1720,6 +1720,13 @@ sklm: {
       "runtime.turn.abort": "停止正在运行的轮次",
       "runtime.turn.closing": "在轮次结束前介入",
       "runtime.turn.facts": "读取本轮的结构化事实",
+      "runtime.request.before": "改写发给模型的内容",
+      "runtime.session.lifecycle": "跟踪会话与压缩事件",
+      "runtime.session.read": "读取会话内容",
+      "runtime.tool.gate": "拦截工具调用并替换工具结果",
+      "runtime.turn.continue": "在轮次结束后再发起一轮",
+      "runtime.turn.recap": "读取某一轮的内容",
+      "runtime.turn.watch": "观察运行中的轮次",
       "provider.register": "将服务添加到模型列表",
       "desktop.control": "控制桌面操作",
       "models.list": "列出已登录的模型",
@@ -1768,6 +1775,20 @@ sklm: {
         "轮次仍在运行时插件会被征询，并可以要求智能体继续做下去。这会在你没有新消息的情况下消耗更多额度。",
       "runtime.turn.facts":
         "插件可以读取本轮的结构化事实：工具调用与结果、token、花费、耗时、改动的文件。不包含对话正文。",
+      "runtime.request.before":
+        "每次请求前，插件可以修改系统提示词、模型与思考等级、请求负载，以及 agent 保留的消息列表。每处改动都会以 diff 级别记录，事后可以查看。",
+      "runtime.session.lifecycle":
+        "会话创建、切换、删除、fork 时会通知插件，压缩前也会通知。插件可以取消压缩，并收到压缩即将替换掉的对话片段；其他操作它无法否决。",
+      "runtime.session.read":
+        "插件可以读取会话内容，也就是用户和 agent 说过的话。读取不会逐次记录；这次安装确认就是授权的决定点。",
+      "runtime.tool.gate":
+        "工具调用前会咨询插件，它可以带理由拦截该调用；工具执行后也会咨询，它可以替换工具结果。它不能改动模型给出的调用参数。",
+      "runtime.turn.continue":
+        "轮次结束后，插件可以在没有新用户消息的情况下再发起一轮。这会消耗更多模型额度，多出的一轮会作为可见行落库并标注来源插件。",
+      "runtime.turn.recap":
+        "插件可以读取某一轮的内容，包括其中的对话正文。要读取整个会话而不只是一轮，还需要单独的会话读取授权。",
+      "runtime.turn.watch":
+        "插件会收到运行中轮次的事件：流式消息、工具执行、轮次与 agent 边界，只能观察。事件是尽力送达：不会补发。",
       "provider.register": "把此插件定义的服务添加到设置的服务列表。接口地址和模型由插件提供，API 密钥则留在 PI-Desktop 中。",
       "desktop.control":
         "允许插件调用经过审查的 PI-Desktop 操作目录；破坏性操作仍需 confirm=true，插件永远拿不到 MCP bearer token。",

@@ -8270,8 +8270,9 @@ describe("DesktopAgentRuntime turn-closing hook (#561 item 7)", () => {
       `export default function (pi: any) {
   pi.on("turn_end", () => {});
 }`,
-      // Only the tier grant: this test is about a run nobody closes.
-      ["agent.extension"],
+      // The tier grant plus the slot the observation handler needs: this test
+      // is about a run nobody closes, not about the gate.
+      ["agent.extension", "runtime.turn.watch"],
     );
     const { runtime, models } = await startRuntime([ext]);
     expect((runtime as any).extensionRunner.getLoadReports()).toEqual([

@@ -1742,6 +1742,13 @@ importConfirm: "Imported extensions run inside the agent process with the same a
       "runtime.turn.abort": "Stop the running turn",
       "runtime.turn.closing": "Act just before a turn ends",
       "runtime.turn.facts": "Read structured facts about a turn",
+      "runtime.request.before": "Rewrite what is sent to the model",
+      "runtime.session.lifecycle": "Follow session and compaction events",
+      "runtime.session.read": "Read a session's content",
+      "runtime.tool.gate": "Block tool calls and replace tool results",
+      "runtime.turn.continue": "Start another turn after one ends",
+      "runtime.turn.recap": "Read what a turn contained",
+      "runtime.turn.watch": "Watch the running turn",
       "provider.register": "Add providers to the model list",
       "desktop.control": "Control the desktop",
       "models.list": "List authenticated models",
@@ -1798,6 +1805,20 @@ importConfirm: "Imported extensions run inside the agent process with the same a
         "The plugin is consulted while a turn is still running and can ask the agent to keep going. That spends more tokens without a new message from you.",
       "runtime.turn.facts":
         "The plugin may read structured facts about a turn: tool calls and outcomes, tokens, spend, duration, files touched. It carries no conversation text.",
+      "runtime.request.before":
+        "Before each request the plugin may change the system prompt, the model and thinking level, the request payload, and the message list the agent keeps. Every change is recorded at diff level so you can inspect it afterwards.",
+      "runtime.session.lifecycle":
+        "The plugin is told when a session is created, switched, deleted or forked, and before a compaction. It can cancel a compaction and receives the conversation segment the compaction is about to replace; it cannot veto the other actions.",
+      "runtime.session.read":
+        "The plugin may read a session's content — what you and the agent said. Reads are not recorded one by one; this install review is where the grant is decided.",
+      "runtime.tool.gate":
+        "The plugin is consulted before a tool call and may block it with a reason, and again after the tool runs and may replace its result. It cannot change the arguments the model chose for the call.",
+      "runtime.turn.continue":
+        "After a turn ends the plugin may start another one without a message from you. That spends more of your model quota, and the extra turn is stored as a visible row naming the plugin.",
+      "runtime.turn.recap":
+        "The plugin may read what a turn contained, including its conversation text. Reading the whole session rather than one turn also needs the session-read grant.",
+      "runtime.turn.watch":
+        "The plugin receives the running turn's events as they happen — messages as they stream, tool executions, turn and agent boundaries — and can only watch. Events are best-effort: nothing is replayed.",
       "provider.register":
         "Adds the providers this plugin defines to Settings' provider list. The plugin supplies the endpoint and models; your API key stays in PI-Desktop.",
       "desktop.control":

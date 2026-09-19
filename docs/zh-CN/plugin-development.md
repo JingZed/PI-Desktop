@@ -611,7 +611,7 @@ unsubscribe = await pi.bus.subscribe("example.build.*", async (message) => {
 ```json
 {
   "contributes": { "agentExtensions": ["src/index.ts"] },
-  "permissions": ["agent.extension"]
+  "permissions": ["agent.extension", "runtime.tool.gate"]
 }
 ```
 
@@ -646,6 +646,10 @@ export default function (pi) {
 - **没有沙箱。** 模块在 agent 进程内运行，拥有与 agent 自身工具相同的权限。
   `agent.extension` 是需要用户显式确认的高风险权限；列出模块却没有它的 manifest
   会被拒绝。
+- **钩子需要各自的槽位权限。** `agent.extension` 只说明模块在 agent 进程内运行。
+  只有插件同时持有事件背后的槽位权限时，钩子才会被咨询 —— 这里因为示例要拦截
+  `tool_call`，所以是 `runtime.tool.gate`；缺少该授权时处理器会被跳过，插件行会收到
+  一条 `permission_denied` 诊断。
 - **可以直接写 TypeScript。** 模块由 jiti 加载，`.ts` 不需要构建步骤。`typebox`、
   `@earendil-works/pi-agent-core`、`@earendil-works/pi-ai` 和
   `@earendil-works/pi-coding-agent` 解析到应用自带的副本；`@earendil-works/pi-tui`

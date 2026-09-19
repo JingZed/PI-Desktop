@@ -135,13 +135,27 @@ export default function (pi: any) {
 }
 `);
 
+/**
+ * Slot grants each fixture's hooks need (ADR 0291 rule 2). `agent.extension`
+ * says where the code runs; a wired event is skipped with a `permission_denied`
+ * diagnostic unless the plugin also holds the slot its event maps to. `fx`
+ * exercises every gated event the driver asserts on:
+ *   runtime.request.before — before_agent_start, context, before_provider_*
+ *   runtime.tool.gate      — tool_call, tool_result
+ *   runtime.turn.watch     — turn_start, turn_end, agent_end,
+ *                            after_provider_response
+ */
+const SLOT_PERMISSIONS = {
+  fx: ["runtime.request.before", "runtime.tool.gate", "runtime.turn.watch"],
+};
+
 /** Wrap one fixture module in a plugin directory holding `agent.extension`. */
 function pluginFor(name) {
   const dir = join(pluginsDir, name);
   mkdirSync(join(dir, "src"), { recursive: true });
   writeFileSync(join(dir, "src", `${name}.ts`), readFileSync(join(extDir, `${name}.ts`)));
   writeFileSync(join(dir, "main.js"), "module.exports = {};\n");
-  const permissions = ["agent.extension"];
+  const permissions = ["agent.extension", ...(SLOT_PERMISSIONS[name] ?? [])];
   const contributes = { agentExtensions: [`src/${name}.ts`] };
   // The agent fixture also declares a provider row (ADR 0259): the declaration
   // materializes in the native provider list, owned by this plugin.

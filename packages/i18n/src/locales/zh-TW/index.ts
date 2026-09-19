@@ -1720,6 +1720,13 @@ sklm: {
       "runtime.turn.abort": "停止正在執行的輪次",
       "runtime.turn.closing": "在輪次結束前介入",
       "runtime.turn.facts": "讀取本輪的結構化事實",
+      "runtime.request.before": "改寫送給模型的內容",
+      "runtime.session.lifecycle": "追蹤工作階段與壓縮事件",
+      "runtime.session.read": "讀取工作階段內容",
+      "runtime.tool.gate": "攔截工具呼叫並替換工具結果",
+      "runtime.turn.continue": "在輪次結束後再發起一輪",
+      "runtime.turn.recap": "讀取某一輪的內容",
+      "runtime.turn.watch": "觀察執行中的輪次",
       "provider.register": "將服務新增到模型列表",
       "desktop.control": "控制桌面操作",
       "models.list": "列出已登入的模型",
@@ -1768,6 +1775,20 @@ sklm: {
         "輪次仍在執行時外掛會被徵詢，並可以要求智慧體繼續進行。這會在你沒有新訊息的情況下消耗更多額度。",
       "runtime.turn.facts":
         "外掛可以讀取本輪的結構化事實：工具呼叫與結果、token、花費、耗時、改動的檔案。不包含對話正文。",
+      "runtime.request.before":
+        "每次請求前，外掛可以修改系統提示詞、模型與思考等級、請求負載，以及 agent 保留的訊息清單。每處變更都會以 diff 層級記錄，事後可以檢視。",
+      "runtime.session.lifecycle":
+        "工作階段建立、切換、刪除、fork 時會通知外掛，壓縮前也會通知。外掛可以取消壓縮，並收到壓縮即將替換掉的對話片段；其他動作它無法否決。",
+      "runtime.session.read":
+        "外掛可以讀取工作階段內容，也就是使用者與 agent 說過的話。讀取不會逐次記錄；這次安裝確認就是授權的決定點。",
+      "runtime.tool.gate":
+        "工具呼叫前會諮詢外掛，它可以帶理由攔截該呼叫；工具執行後也會諮詢，它可以替換工具結果。它不能改動模型給出的呼叫參數。",
+      "runtime.turn.continue":
+        "輪次結束後，外掛可以在沒有新使用者訊息的情況下再發起一輪。這會消耗更多模型額度，多出的一輪會作為可見列落庫並標註來源外掛。",
+      "runtime.turn.recap":
+        "外掛可以讀取某一輪的內容，包括其中的對話正文。要讀取整個工作階段而不只是一輪，還需要另外的工作階段讀取授權。",
+      "runtime.turn.watch":
+        "外掛會收到執行中輪次的事件：串流訊息、工具執行、輪次與 agent 邊界，只能觀察。事件是盡力送達：不會補發。",
       "provider.register": "把此外掛定義的服務新增到設定的服務列表。介面地址和模型由外掛提供，API 金鑰則留在 PI-Desktop 中。",
       "desktop.control": "允許外掛呼叫經過審查的 PI-Desktop 操作目錄；破壞性操作仍需 confirm=true，外掛永遠拿不到 MCP bearer token。",
       "models.list": "可以看到你已登入的模型，但拿不到金鑰。",

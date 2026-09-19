@@ -390,15 +390,21 @@ main、渲染层或插件宿主进程中。
 | `user_bash`、`session_before_switch`、`session_before_tree`、`session_tree`、`ui_prompt_start`、`ui_prompt_end` | v1 不触发 | 不适用 |
 
 处理器只有在扩展所属插件持有其事件背后的槽位权限时才会运行（ADR 0291 规则 2）：
-`turn_closing` 需要 `runtime.turn.closing`；某个槽位尚未实现时，对应事件在该名字随槽位
-注册之前保持今天的行为。runner 会拿到该插件被授予的权限清单 —— 没有记录授权的扩展
-不持有任何权限 —— 对无权运行的处理器直接跳过，并把跳过作为插件行上 kind 为
-`permission_denied`、写明权限名的扩展诊断上报。被跳过的处理器不会阻塞回合：与抛错的
-处理器一样，它只是没有意见。
+`turn_closing` 需要 `runtime.turn.closing`，`tool_call` 与 `tool_result` 需要
+`runtime.tool.gate`，上表中其他写明槽位的事件同理。该映射覆盖每一个会改变轮次的已接线
+事件；`session_start`、`session_shutdown` 与 `session_info_changed` 没有槽位。所有槽位
+权限都已注册，因此门禁对所有插件都是严格的：`agent.extension` 只说明代码在哪里运行，
+绝不隐含授权，高信任层级也不例外。映射到桌面尚未触发的事件（`input`、`project_trust`、
+`resources_discover`、`session_before_fork`、`model_select`、`thinking_level_select`）
+按映射保留门禁，因此不会从不触发的钩子点运行任何处理器。
+
+runner 会拿到该插件被授予的权限清单 —— 没有记录授权的扩展不持有任何权限 —— 对无权运行的
+处理器直接跳过，并把跳过作为插件行上 kind 为 `permission_denied`、写明权限名的扩展诊断
+上报。被跳过的处理器不会阻塞回合：与抛错的处理器一样，它只是没有意见。
 
 有两类调用是扩展为自己发出的、并非事件，因此同一份契约改为给调用本身命名（`@pi-desktop/shared`
 中的 `TRUSTED_EXTENSION_API_PERMISSIONS`）：`requestTurnAbort` 需要 `runtime.turn.abort`，
-§7.6 的工具结果能力需要 `runtime.tool.extend`。两者的门禁与上报方式与事件完全一致：调用返回
+§7.6 的工具结果能力需要 `runtime.tool.extend`。两个名字都已注册，因此与事件完全一样受门禁并上报：调用返回
 拒绝值（`requestTurnAbort` 返回 `false`），插件行得到一条写明权限与调用名的 `permission_denied`
 诊断 —— 既不静默跳过，也不抛错。
 

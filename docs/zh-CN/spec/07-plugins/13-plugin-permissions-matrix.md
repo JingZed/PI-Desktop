@@ -52,11 +52,18 @@
 | `agent.complete` | 高 | `pi.agent.complete` | 安装时确认 | 宿主代发一次性补全；消耗用户额度；`includeSessionContext` 还需要 `session.read` |
 | `speech.adapter.register` | 高 | `pi.speech.registerAdapter` / `unregisterAdapter` | 安装时确认 | 注册语音协议。handle 留在插件进程；HTTP 计划由宿主用绑定密钥代发且必须同 origin |
 | `renderer.extension` | 高 | 在宿主渲染器内以 ES 模块运行 `manifest.renderer`，把组件注册进宿主持有的槽位 | 显式确认；按层级，绝不逐槽位 | 模块在应用窗口内、宿主自己的 realm 中运行，没有进程隔离。一个权限覆盖全部组件槽位（规格 16 §2A、ADR 0287） |
-| `runtime.send.before` | 高 | 运行时槽位咨询：Before Send | 安装时确认 | 插件在轮次运行中被咨询：用户按下发送之后、消息到达模型之前，它可以拦下这条消息。已声明；该槽位尚未接入内核，因此还没有任何处理器受它门禁（见 §2C） |
-| `runtime.tool.extend` | 高 | 运行时槽位咨询：Tool Extend | 安装时确认 | 插件工具可以在 agent 运行中向工具目录添加工具，并上报自己的花费；运行时引入的工具会在界面上标注来源。随槽位 5 注册，该槽位正在本批次实现；目前还没有处理器受它门禁（见 §2C） |
-| `runtime.turn.abort` | 高 | 运行时槽位咨询：Abort Turn | 安装时确认 | 插件不必先问就能结束正在运行的轮次；已经进行中的工作会被丢弃。已声明；该槽位尚未接入内核，因此还没有任何处理器受它门禁（见 §2C） |
-| `runtime.turn.closing` | 高 | 运行时槽位咨询：Turn Closing | 安装时确认 | 插件在轮次运行中被咨询，可以要求 agent 继续，从而在没有新用户消息的情况下消耗更多 token。该钩子（`shouldStopAfterTurn`）只在插件持有本权限时触发：sidecar 会在处理器运行前解析该事件的槽位权限，不持有就跳过，并把跳过作为插件行上的 `permission_denied` 诊断上报（ADR 0291 规则 2） |
-| `runtime.turn.facts` | 低 | 运行时槽位咨询：Turn Facts | 安装时确认 | 一轮对话的结构化事实：工具调用与结果、token、花费、耗时、改动的文件，不含对话正文。随槽位 9 注册，该槽位正在本批次实现；其背后的查询面尚未交付（见 §2C） |
+| `runtime.request.before` | 高 | 运行时槽位咨询：Before Request | 安装时确认 | 改写一次请求的内容：系统提示词、模型与思考等级、请求负载，以及消息列表（可删除 / 替换 / 重排）。每处改写都以 diff 级别记录，事后可查（ADR 0291 规则 5） |
+| `runtime.send.before` | 高 | 运行时槽位咨询：Before Send | 安装时确认 | 用户按下发送之后、消息进入队列之前被咨询：可以读取它（含附件）、拦下它，或改写模型收到的内容；改写会在消息行上标注。该槽位挂在 `input` 事件上 |
+| `runtime.session.lifecycle` | 高 | 运行时槽位咨询：Session Lifecycle | 安装时确认 | 会话创建 / 切换 / 删除 / fork 与压缩时都会收到通知。销毁性动作只有知情权；它可以取消压缩，并收到即将被压缩掉的片段；会话切换或删除永远不会等待插件（ADR 0291 规则 11） |
+| `runtime.session.read` | 高 | 运行时槽位咨询：Session Read | 安装时确认 | 读取会话内容。读取不会逐次记录；安装审查与插件行就是授权面（ADR 0291 规则 7） |
+| `runtime.tool.extend` | 高 | 运行时槽位咨询：Tool Extend | 安装时确认 | 插件工具可以在运行时引入新工具、上报自己的花费，并请求提前结束这一批；运行时引入的工具会在界面上标注来源。按工具结果逐次门禁，入口是 `TRUSTED_EXTENSION_API_PERMISSIONS.toolResult` |
+| `runtime.tool.gate` | 高 | 运行时槽位咨询：Tool Gate | 安装时确认 | `tool_call` 处理器可以带理由拦下一次调用；`tool_result` 处理器可以替换工具结果。修改调用参数已被永久排除（ADR 0291 规则 4），要不要先问用户是插件自己的事（规则 6） |
+| `runtime.turn.abort` | 高 | 运行时槽位咨询：Abort Turn | 安装时确认 | 请求宿主停止当前轮次；插件自己的长任务会收到同一个取消信号。两半一起交付（ADR 0291 槽位 3） |
+| `runtime.turn.closing` | 高 | 运行时槽位咨询：Turn Closing | 安装时确认 | 在轮次仍在运行时被咨询，可以要求 agent 继续，从而在没有新用户消息的情况下消耗更多 token。续跑会作为带插件来源的可见行落库（ADR 0289） |
+| `runtime.turn.continue` | 高 | 运行时槽位咨询：Turn Continue | 安装时确认 | 在一轮结束后再发起一次续跑。不设数字配额：宿主自己的循环也没有上限，控制手段是可见性与审计留痕（ADR 0291 规则 9） |
+| `runtime.turn.facts` | 低 | 运行时槽位咨询：Turn Facts | 安装时确认 | 一轮的结构化事实：工具调用与结果、token、花费、耗时、改动的文件，不含对话正文。其背后的按轮查询面（`artifacts` 暴露 `turn_id`）属于 host-core 工作，尚未交付 |
+| `runtime.turn.recap` | 高 | 运行时槽位咨询：Turn Recap | 安装时确认 | 读取某一轮的内容，包括对话正文。读取整个会话还需要 `runtime.session.read`（ADR 0291 规则 7） |
+| `runtime.turn.watch` | 中 | 运行时槽位咨询：Turn Watch | 安装时确认 | 实时观察运行中的轮次：内核的消息、工具执行、轮次与 agent 事件，尽力送达、无回执、不补发。它只能看，别的都不能做（ADR 0291 槽位 2） |
 
 ## 2A. 权限是开关，manifest 承载范围
 
@@ -106,22 +113,28 @@ manifest 里的字段负责回答「能做到多远」。两个字段都由主�
 组件槽位绝不逐个授权。`renderer.extension` 是覆盖它们的唯一授权（规格 16 §2A、
 ADR 0287）；没有声明 `renderer` 的插件不能注册槽位，注册尝试会被跳过并作为诊断
 上报，而不是被静默丢弃。§2 中的运行时权限形状不同 —— 每个槽位一个权限名，因为
-各自改变运行中轮次的不同位置。目前只有 Turn Closing 槽位到达内核（issue #561 第 7 项），
-形式是 `turn_closing` 事件，而且它已受门禁：agent sidecar 会在处理器运行前解析该事件
-的槽位权限，插件不持有 `runtime.turn.closing` 就跳过处理器，并把跳过作为插件行上的
-`permission_denied` 诊断上报。这一节此前描述的 D1 偏离就此消除（ADR 0291 规则 2）。
+各自改变运行中轮次的不同位置。
 
-门禁跟随权限表：权限表里已有的槽位权限会对所有已接线事件解析；某个已映射的名字若其
-槽位尚未实现，则只是预留、暂不实施门禁，也就是该事件在其名字随槽位注册之前保持今天的
-行为。`runtime.send.before` 与 `runtime.turn.abort` 只是已声明的权限名，背后尚无实现，
-因此没有处理器受它们门禁；本批次注册 `runtime.tool.extend`（槽位 5）与
-`runtime.turn.facts`（槽位 9），因为这两个槽位正在实现；其余运行时槽位尚未交付。
-修改工具调用的参数不属于它们，且已被永久排除（ADR 0291 规则 4）：`tool_call`
-处理器只能带理由阻止，别的都不能做。ADR 0291 为其余槽位预留了十二个 `runtime.*`
-名称；它们随各自的槽位逐个注册。
+ADR 0291 要建的每一个运行时槽位都已注册并受门禁。agent sidecar 会在处理器运行前解析
+该事件的槽位权限，插件不持有就跳过处理器，并把跳过作为插件行上的 `permission_denied`
+诊断上报。层级权限只说明代码在哪里运行，绝不隐含任何槽位授权（ADR 0291 规则 2）：
+只持有 `agent.extension` 的插件，所有受槽位门禁的处理器都会被跳过 —— 而且会大声跳过，
+诊断里写明权限名。`TRUSTED_EXTENSION_API_PERMISSIONS` 里命名的非事件调用同样如此：
+`requestTurnAbort` 需要 `runtime.turn.abort`，插件工具的扩展结果需要
+`runtime.tool.extend`。
+
+门禁读的是权限表本身，而不是把它当过滤器：ADR 0291 落地的十二个 `runtime.*` 名字都在
+`PLUGIN_PERMISSIONS` 里，`@pi-desktop/shared` 的 `REGISTERED_SLOT_PERMISSIONS` 与它们
+一一对应，两份清单一旦漂移，桌面端守卫测试就会失败。`runtime.approval.before` 是记录
+明确不建的那个槽位：没有事件映射到它，也没有权限表持有它。修改工具调用的参数不是槽位，
+且已被永久排除（ADR 0291 规则 4）：`tool_call` 处理器只能带理由阻止，别的都不能做。
+
+有些已映射事件挂在桌面尚未触发的钩子点上（`input`、`project_trust`、`resources_discover`、
+`session_before_fork`、`model_select`、`thinking_level_select`）。它们的权限按映射关系
+强制执行，因此钩子点一接线门禁就已就位；在那之前没有处理器会运行，因为事件根本不会触发。
 
 与权限问题无关的另一件事：受信任扩展 sidecar 的结果型事件集合
-（`packages/agent-runtime/src/extensions/runner.ts:95-109`）把 30 秒处理器预算给了
+（`packages/agent-runtime/src/extensions/runner.ts:96-110`）把 30 秒处理器预算给了
 桌面从不触发的事件（`project_trust`、`resources_discover`、`session_before_fork`、
 `input`），并把 `message_end` 计为结果型事件，尽管桌面的转发路径会丢弃该结果。
 这是 sidecar 侧需要代码修复的缺陷；不涉及任何权限或信任决定。
@@ -198,6 +211,13 @@ Agent，在 Plan 中不可见。主机返回 `PLUGIN_DISABLED_IN_PLAN`
 | `runtime.turn.abort` | Stop the running turn | 停止正在运行的轮次 |
 | `runtime.turn.closing` | Act just before a turn ends | 在轮次结束前介入 |
 | `runtime.turn.facts` | Read structured facts about a turn | 读取本轮的结构化事实 |
+| `runtime.request.before` | Rewrite what is sent to the model | 改写发给模型的内容 |
+| `runtime.session.lifecycle` | Follow session and compaction events | 跟踪会话与压缩事件 |
+| `runtime.session.read` | Read a session's content | 读取会话内容 |
+| `runtime.tool.gate` | Block tool calls and replace tool results | 拦截工具调用并替换工具结果 |
+| `runtime.turn.continue` | Start another turn after one ends | 在轮次结束后再发起一轮 |
+| `runtime.turn.recap` | Read what a turn contained | 读取某一轮的内容 |
+| `runtime.turn.watch` | Watch the running turn | 观察运行中的轮次 |
 
 ## 5. 添加升级权限
 

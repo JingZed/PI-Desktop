@@ -94,13 +94,18 @@ Local plugins usable → developer-friendly → marketplace distribution → sig
 - Spec: [16-trusted-extensions.md](16-trusted-extensions.md) §2A; ADR 0287
 
 ### R9 — Runtime slots (issue #561)
-- Batch A is **not complete**. Of the three declared names only Turn Closing (7)
-  reaches the kernel, through `shouldStopAfterTurn`, and it does so without a
-  permission check: the hook fires for any extension loaded under
-  `agent.extension`, which is a defect against D1 (spec 13 §2C).
-- Before Send (1) → `runtime.send.before` and Abort Turn (3) →
-  `runtime.turn.abort` are declared permission names with no implementation
-  behind them: nothing consults them while a turn is running.
+- Batch A's slot gate is complete: every `runtime.*` name ADR 0291 builds is
+  registered, and the sidecar resolves a wired event's slot permission before a
+  handler runs, so a plugin that holds only `agent.extension` is refused with a
+  `permission_denied` diagnostic (spec 13 §2C, ADR 0291 rule 2). That retires
+  the D1 deviation this section used to describe.
+- Turn Closing (7) reaches the kernel through `shouldStopAfterTurn`; Abort Turn
+  (3) and Tool Extend (5) have their own entry points (`requestTurnAbort`, the
+  tool-result fold). Turn Facts (9) is registered while the per-turn query
+  surface behind it is still host-core work.
+- Before Send (1) → `runtime.send.before` is registered and enforced on the
+  mapped `input` event, but the desktop does not emit that hook point yet, so
+  nothing consults it during a turn.
 - The slot set, the per-slot permissions and the order of work are fixed in
   [ADR 0291](../../adr/0291-runtime-slots-and-their-permissions.md); the
   remaining runtime slots are **not shipped yet**, and Before Request (6) stays

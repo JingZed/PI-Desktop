@@ -701,7 +701,7 @@ permission:
 ```json
 {
   "contributes": { "agentExtensions": ["src/index.ts"] },
-  "permissions": ["agent.extension"]
+  "permissions": ["agent.extension", "runtime.tool.gate"]
 }
 ```
 
@@ -737,6 +737,11 @@ What to know before you use it:
   same access as the agent's own tools. `agent.extension` is a high-risk
   permission the user confirms explicitly; the manifest is rejected if you
   list modules without it.
+- **Hooks need their own slot permission.** `agent.extension` only says the
+  module runs inside the agent process. A hook is consulted only when the
+  plugin also holds the slot behind its event — `runtime.tool.gate` here,
+  because the example blocks a `tool_call`; without that grant the handler is
+  skipped and the plugin row reports a `permission_denied` diagnostic.
 - **TypeScript is fine.** Modules are loaded with jiti, so `.ts` needs no
   build step. `typebox`, `@earendil-works/pi-agent-core`, `@earendil-works/pi-ai`,
   and `@earendil-works/pi-coding-agent` resolve to the app's copies;

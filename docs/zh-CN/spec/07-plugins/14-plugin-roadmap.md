@@ -86,11 +86,15 @@ Local plugins usable → developer-friendly → marketplace distribution → sig
 - 规格：[16-trusted-extensions.md](/zh-CN/spec/07-plugins/16-trusted-extensions) §2A；ADR 0287
 
 ### R9 — 运行时槽位（issue #561）
-- 批次 A **并未完成**。三个已声明的名称里只有 Turn Closing (7) 到达内核（经
-  `shouldStopAfterTurn`），而且没有任何代码校验 `runtime.turn.closing`：只要插件在
-  `agent.extension` 下加载，该钩子就会触发，这是对 D1 的偏离（规格 13 §2C）。
-- Before Send (1) → `runtime.send.before` 与 Abort Turn (3) → `runtime.turn.abort`
-  只是已声明的权限名，背后没有实现：轮次运行期间没有任何东西咨询它们。
+- 批次 A 的槽位门禁已完成：ADR 0291 要建的每个 `runtime.*` 名字都已注册，sidecar 会在
+  处理器运行前解析该事件的槽位权限，只持有 `agent.extension` 的插件会被拒绝并收到
+  `permission_denied` 诊断（规格 13 §2C、ADR 0291 规则 2）。本节此前描述的 D1 偏离
+  就此消除。
+- Turn Closing (7) 经 `shouldStopAfterTurn` 到达内核；Abort Turn (3) 与 Tool Extend
+  (5) 有各自的入口（`requestTurnAbort`、工具结果折叠）。Turn Facts (9) 已注册，其
+  背后的按轮查询面仍属 host-core 工作。
+- Before Send (1) → `runtime.send.before` 已注册，并按映射对 `input` 事件受门禁，但
+  桌面尚未触发该钩子点，所以轮次运行期间还没有东西咨询它。
 - 槽位集合、逐槽位权限与实施顺序由
   [ADR 0291](../../../adr/0291-runtime-slots-and-their-permissions.md) 固定；其余
   运行时槽位**尚未交付**，Before Request (6) 被明确排除在本轮之外。

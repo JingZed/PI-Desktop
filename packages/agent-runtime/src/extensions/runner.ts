@@ -21,7 +21,6 @@ import {
   type SimpleStreamOptions,
 } from "@earendil-works/pi-ai";
 import {
-  isRegisteredSlotPermission,
   trustedExtensionAgentProviderId,
   trustedExtensionApiPermission,
   trustedExtensionEventPermission,
@@ -665,17 +664,20 @@ export class TrustedExtensionRunner {
   }
 
   /**
-   * A mapped permission the registry does not hold yet is reserved, not
-   * enforced: no plugin can be granted it, so refusing on it would remove a
-   * working call to answer a question nobody asked. The gate starts applying
-   * the moment the name is registered with its slot (see
-   * `REGISTERED_SLOT_PERMISSIONS` in `@pi-desktop/shared`).
+   * The slot permission that refuses this extension, or `undefined` when it
+   * holds the permission and may proceed (ADR 0291 rule 2).
+   *
+   * Every mapped slot name is registered, so there is no exception: the gate
+   * applies to every plugin, and the high-trust tier is no different —
+   * `agent.extension` says where the code runs and never implies a slot grant.
+   * A handler the plugin may not run is skipped and reported, never silently
+   * allowed (see `emit`, `refuseApi`, and `toolResultExtensionAllowed`).
    */
   private refusedPermission(
     extension: LoadedExtension,
     permission: string | undefined,
   ): string | undefined {
-    if (!permission || !isRegisteredSlotPermission(permission)) return undefined;
+    if (!permission) return undefined;
     return extension.permissions.has(permission) ? undefined : permission;
   }
 

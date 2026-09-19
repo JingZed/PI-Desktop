@@ -1720,6 +1720,13 @@ sklm: {
       "runtime.turn.abort": "Arrêter le tour en cours",
       "runtime.turn.closing": "Agir juste avant la fin d'un tour",
       "runtime.turn.facts": "Lire les faits structurés d'un tour",
+      "runtime.request.before": "Réécrire ce qui est envoyé au modèle",
+      "runtime.session.lifecycle": "Suivre les événements de session et de compactage",
+      "runtime.session.read": "Lire le contenu d'une session",
+      "runtime.tool.gate": "Bloquer des appels d'outil et remplacer les résultats",
+      "runtime.turn.continue": "Lancer un nouveau tour après la fin d'un tour",
+      "runtime.turn.recap": "Lire ce que contenait un tour",
+      "runtime.turn.watch": "Observer le tour en cours",
       "provider.register": "Ajouter des fournisseurs à la liste de modèles",
       "desktop.control": "Contrôler le bureau",
       "models.list": "Liste des modèles authentifiés",
@@ -1768,6 +1775,20 @@ sklm: {
         "Le plugin est consulté pendant qu'un tour est encore en cours et peut demander à l'agent de continuer. Cela consomme plus de tokens sans nouveau message de votre part.",
       "runtime.turn.facts":
         "Le plugin peut lire les faits structurés d'un tour : appels d'outil et résultats, tokens, dépense, durée, fichiers touchés. Le texte de la conversation n'est pas inclus.",
+      "runtime.request.before":
+        "Avant chaque requête, le plugin peut modifier le prompt système, le modèle et le niveau de réflexion, la charge utile de la requête et la liste des messages conservée par l'agent. Chaque modification est enregistrée au niveau du diff pour être consultée ensuite.",
+      "runtime.session.lifecycle":
+        "Le plugin est averti lorsqu'une session est créée, changée, supprimée ou dupliquée, et avant un compactage. Il peut annuler un compactage et reçoit l'extrait de conversation que celui-ci remplacerait ; il ne peut pas bloquer les autres actions.",
+      "runtime.session.read":
+        "Le plugin peut lire le contenu d'une session, c'est-à-dire ce que l'utilisateur et l'agent ont dit. Les lectures ne sont pas enregistrées une par une ; cette validation d'installation est la surface de consentement.",
+      "runtime.tool.gate":
+        "Avant un appel d'outil, le plugin est consulté et peut le bloquer avec un motif ; après l'exécution, il peut remplacer le résultat. Il ne peut pas modifier les arguments choisis par le modèle.",
+      "runtime.turn.continue":
+        "À la fin d'un tour, le plugin peut en lancer un autre sans message de votre part. Cela consomme davantage de quota du modèle, et le tour supplémentaire est enregistré comme une ligne visible nommant le plugin.",
+      "runtime.turn.recap":
+        "Le plugin peut lire ce que contenait un tour, y compris son texte de conversation. Lire toute la session et pas seulement un tour exige aussi l'autorisation de lecture de session.",
+      "runtime.turn.watch":
+        "Le plugin reçoit les événements du tour en cours — messages au fil du flux, exécutions d'outils, limites de tour et d'agent — et peut seulement observer. Les événements sont livrés au mieux : rien n'est rejoué.",
       "provider.register": "Ajoute les fournisseurs définis par ce plugin à la liste des fournisseurs des Paramètres. Le plugin fournit le point de terminaison et les modèles ; votre clé API reste dans PI-Desktop.",
       "desktop.control": "Permet d'appeler le catalogue PI-Desktop contrôlé ; les opérations destructrices exigent toujours confirm=true et le bearer token MCP n'est pas exposé.",
       "models.list": "Peut voir pour quels modèles vous vous êtes connecté. Il ne reçoit pas de clés.",

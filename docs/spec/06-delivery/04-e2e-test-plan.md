@@ -11872,9 +11872,12 @@ plugin-form fixtures in an isolated temporary directory at runtime.
 
 #### E2E-242: Extension tools and hooks take effect in a turn
 
-- **Preconditions**: An enabled fixture extension that registers tool `fx_add`,
-  handles `before_agent_start` by appending a marker to the system prompt,
-  `tool_call` by blocking `bash` with a reason, and `tool_result` by
+- **Preconditions**: An enabled fixture extension that holds
+  `agent.extension` plus the slots its hooks need — `runtime.request.before`
+  for `before_agent_start`, `runtime.tool.gate` for `tool_call` and
+  `tool_result`, `runtime.turn.watch` for the turn events — registers tool
+  `fx_add`, handles `before_agent_start` by appending a marker to the system
+  prompt, `tool_call` by blocking `bash` with a reason, and `tool_result` by
   replacing `fx_add` output.
 - **Steps**: 1) Start a turn in Agent mode whose fixture model calls `fx_add`
   then `bash`. 2) Inspect the provider request. 3) Inspect the tool results.
