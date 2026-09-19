@@ -61,7 +61,7 @@
 | `runtime.turn.abort` | 高 | 运行时槽位咨询：Abort Turn | 安装时确认 | 请求宿主停止当前轮次；插件自己的长任务会收到同一个取消信号。两半一起交付（ADR 0291 槽位 3） |
 | `runtime.turn.closing` | 高 | 运行时槽位咨询：Turn Closing | 安装时确认 | 在轮次仍在运行时被咨询，可以要求 agent 继续，从而在没有新用户消息的情况下消耗更多 token。续跑会作为带插件来源的可见行落库（ADR 0289） |
 | `runtime.turn.continue` | 高 | 运行时槽位咨询：Turn Continue | 安装时确认 | 在一轮结束后再发起一次续跑。不设数字配额：宿主自己的循环也没有上限，控制手段是可见性与审计留痕（ADR 0291 规则 9） |
-| `runtime.turn.facts` | 低 | 运行时槽位咨询：Turn Facts | 安装时确认 | 一轮的结构化事实：工具调用与结果、token、花费、耗时、改动的文件，不含对话正文。其背后的按轮查询面（`artifacts` 暴露 `turn_id`）属于 host-core 工作，尚未交付 |
+| `runtime.turn.facts` | 低 | 运行时槽位咨询：Turn Facts | 安装时确认 | 一轮的结构化事实：工具调用与结果、token、花费、耗时、改动的文件，不含对话正文。其背后的按轮查询面已交付：host-core 在架构 v21 上直接用自己的表回答 `turn.facts`（`artifacts` 带 `turn_id`；见 04-data-storage §4.16）。插件侧目前还没有读取入口，所以持有该授权的插件还没有可调用的东西 |
 | `runtime.turn.recap` | 高 | 运行时槽位咨询：Turn Recap | 安装时确认 | 读取某一轮的内容，包括对话正文。读取整个会话还需要 `runtime.session.read`（ADR 0291 规则 7） |
 | `runtime.turn.watch` | 中 | 运行时槽位咨询：Turn Watch | 安装时确认 | 实时观察运行中的轮次：内核的消息、工具执行、轮次与 agent 事件，尽力送达、无回执、不补发。它只能看，别的都不能做（ADR 0291 槽位 2） |
 

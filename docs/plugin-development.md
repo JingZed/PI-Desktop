@@ -741,7 +741,15 @@ What to know before you use it:
   module runs inside the agent process. A hook is consulted only when the
   plugin also holds the slot behind its event — `runtime.tool.gate` here,
   because the example blocks a `tool_call`; without that grant the handler is
-  skipped and the plugin row reports a `permission_denied` diagnostic.
+  skipped and the plugin row reports a `permission_denied` diagnostic. The
+  per-slot names are listed in the
+  [permission matrix](spec/07-plugins/13-plugin-permissions-matrix.md) §2.
+- **Two calls have no event behind them.** `pi.requestTurnAbort()` needs
+  `runtime.turn.abort`, and a tool result that carries `usage`,
+  `addedToolNames`, or `terminate` needs `runtime.tool.extend`. Declare those
+  names too: a call the plugin may not make is refused (`false` from
+  `requestTurnAbort`) and reported as the same `permission_denied` diagnostic
+  instead of silently doing nothing.
 - **TypeScript is fine.** Modules are loaded with jiti, so `.ts` needs no
   build step. `typebox`, `@earendil-works/pi-agent-core`, `@earendil-works/pi-ai`,
   and `@earendil-works/pi-coding-agent` resolve to the app's copies;

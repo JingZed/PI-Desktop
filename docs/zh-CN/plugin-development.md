@@ -649,7 +649,12 @@ export default function (pi) {
 - **钩子需要各自的槽位权限。** `agent.extension` 只说明模块在 agent 进程内运行。
   只有插件同时持有事件背后的槽位权限时，钩子才会被咨询 —— 这里因为示例要拦截
   `tool_call`，所以是 `runtime.tool.gate`；缺少该授权时处理器会被跳过，插件行会收到
-  一条 `permission_denied` 诊断。
+  一条 `permission_denied` 诊断。逐槽位的权限名见
+  [权限矩阵](/zh-CN/spec/07-plugins/13-plugin-permissions-matrix) §2。
+- **有两个调用背后没有事件。** `pi.requestTurnAbort()` 需要 `runtime.turn.abort`；
+  工具结果里带 `usage`、`addedToolNames` 或 `terminate` 需要 `runtime.tool.extend`。
+  这些名字同样要声明：插件无权发起的调用会被拒绝（`requestTurnAbort` 返回 `false`），
+  并报出同一条 `permission_denied` 诊断，而不是静默地什么都不做。
 - **可以直接写 TypeScript。** 模块由 jiti 加载，`.ts` 不需要构建步骤。`typebox`、
   `@earendil-works/pi-agent-core`、`@earendil-works/pi-ai` 和
   `@earendil-works/pi-coding-agent` 解析到应用自带的副本；`@earendil-works/pi-tui`

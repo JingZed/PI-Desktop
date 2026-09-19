@@ -94,22 +94,28 @@ Local plugins usable → developer-friendly → marketplace distribution → sig
 - Spec: [16-trusted-extensions.md](16-trusted-extensions.md) §2A; ADR 0287
 
 ### R9 — Runtime slots (issue #561)
-- Batch A's slot gate is complete: every `runtime.*` name ADR 0291 builds is
+- The slot-permission model is shipped: every `runtime.*` name ADR 0291 builds is
   registered, and the sidecar resolves a wired event's slot permission before a
   handler runs, so a plugin that holds only `agent.extension` is refused with a
   `permission_denied` diagnostic (spec 13 §2C, ADR 0291 rule 2). That retires
   the D1 deviation this section used to describe.
-- Turn Closing (7) reaches the kernel through `shouldStopAfterTurn`; Abort Turn
-  (3) and Tool Extend (5) have their own entry points (`requestTurnAbort`, the
-  tool-result fold). Turn Facts (9) is registered while the per-turn query
-  surface behind it is still host-core work.
-- Before Send (1) → `runtime.send.before` is registered and enforced on the
-  mapped `input` event, but the desktop does not emit that hook point yet, so
-  nothing consults it during a turn.
-- The slot set, the per-slot permissions and the order of work are fixed in
-  [ADR 0291](../../adr/0291-runtime-slots-and-their-permissions.md); the
-  remaining runtime slots are **not shipped yet**, and Before Request (6) stays
-  out of this cycle explicitly.
+- Batch A of ADR 0291's phasing is shipped: Abort Turn (3) has its entry point
+  (`requestTurnAbort`) plus the turn's cancellation signal that plugin work
+  observes; Tool Extend (5) reaches the tool-result fold; and Turn Facts (9) is
+  answered by host-core through the `turn.facts` RPC on schema v21
+  (04-data-storage §4.16). A plugin-facing reader for those facts is not built
+  yet, so the slot's grant has nothing a plugin can call.
+- Turn Closing (7) still reaches the kernel through `shouldStopAfterTurn`, and
+  the hooks that were already wired — Turn Watch (2), Tool Gate (4) and the
+  request hooks of Before Request (6) — keep the behaviour they had; spec 13 §2C
+  states per event which hook points the desktop emits today.
+- Not shipped: Before Send (1) — registered and enforced on the mapped `input`
+  event, but the desktop does not emit that hook point yet, so nothing consults
+  it during a turn; Turn Recap (8) and Turn Continue (10) — a registered name
+  with no hook or call behind it; Approval Before (12) — not built.
+- Before Request (6) stays out of this cycle in ADR 0291's phasing, and the slot
+  set, the per-slot permissions and the order of work are all fixed in
+  [ADR 0291](../../adr/0291-runtime-slots-and-their-permissions.md).
 
 ## 3. Mapping to product milestones
 

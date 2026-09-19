@@ -154,8 +154,14 @@ type HandshakeResult = {
 9. 版本 11 撤回 A2A 协议栈（ADR 0165 / D326）。`a2a.*` 方法和通知
    已移除，握手不再声明 `a2a`；v10 主机或客户端必须在 UI 交互前拒绝。
 
-协议 v11 与 host-core 存储架构 v14 配对。v14 增加插件会话来源 sidecar
-和软删除字段；架构版本是内部持久性不变量，而不是额外的 JSON-RPC 字段，
+协议 v11 与 host-core 存储架构 v21 配对。架构 v12 通过 `migrate_v11_to_v12` 增加了
+A2A 表（`a2a_tasks`、`a2a_messages`、`a2a_artifacts`、`a2a_push_configs`）；
+`migrate_v12_to_v13` 删除这些表，v14 增加插件会话来源 sidecar 与软删除字段。
+v15 增加宿主拥有的回合队列，v16 增加会话协作账本及其回合队列绑定，v17 增加插件自有的
+provider 列，v18 增加回合队列的优先级，v19 把 `artifacts` 改成逐次接触一行，
+v20 增加插件改写审计，v21 增加 `turn.facts` 所读的 `audit_log.turn_id` 列
+（04-data-storage §4.15、§4.16）。全新数据库既不会创建 A2A 表，也不会创建无归属的
+插件会话行。架构版本是内部持久性不变量，而不是额外的 JSON-RPC 字段，
 检查点架构仍然由主机拥有。
 
 ## 4. 方法目录(MVP)

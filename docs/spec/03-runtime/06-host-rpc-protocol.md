@@ -166,13 +166,16 @@ Rules:
    advertises `"a2a"`. A v10 host or client is rejected before the UI becomes
    interactive, so a mixed pair cannot call a missing domain.
 
-Protocol v11 is paired with host-core storage schema v16. Schema v12 had added
+Protocol v11 is paired with host-core storage schema v21. Schema v12 had added
 the A2A tables (`a2a_tasks`, `a2a_messages`, `a2a_artifacts`,
 `a2a_push_configs`) via `migrate_v11_to_v12`; `migrate_v12_to_v13` drops those
 tables, and v14 adds the plugin-session ownership sidecar and soft-delete
-column. Schema v15 adds the Host-owned turn queue, and schema v16 adds the
-session collaboration ledger and its turn-queue binding. A fresh database
-creates neither A2A tables nor unowned plugin-session rows. The schema version is an
+column. Schema v15 adds the Host-owned turn queue, v16 the session collaboration
+ledger and its turn-queue binding, v17 the plugin-owned provider column, v18 the
+turn queue's priority, v19 the per-touch `artifacts` shape, v20 the
+plugin-rewrite audit, and v21 the `audit_log.turn_id` column that `turn.facts`
+reads (04-data-storage §4.15, §4.16). A fresh database creates neither A2A
+tables nor unowned plugin-session rows. The schema version is an
 internal persistence invariant, not an additional JSON-RPC field; the
 checkpoint architecture remains host-owned.
 

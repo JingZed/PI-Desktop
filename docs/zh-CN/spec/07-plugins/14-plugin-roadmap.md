@@ -86,18 +86,24 @@ Local plugins usable → developer-friendly → marketplace distribution → sig
 - 规格：[16-trusted-extensions.md](/zh-CN/spec/07-plugins/16-trusted-extensions) §2A；ADR 0287
 
 ### R9 — 运行时槽位（issue #561）
-- 批次 A 的槽位门禁已完成：ADR 0291 要建的每个 `runtime.*` 名字都已注册，sidecar 会在
+- 槽位权限模型已交付：ADR 0291 要建的每个 `runtime.*` 名字都已注册，sidecar 会在
   处理器运行前解析该事件的槽位权限，只持有 `agent.extension` 的插件会被拒绝并收到
   `permission_denied` 诊断（规格 13 §2C、ADR 0291 规则 2）。本节此前描述的 D1 偏离
   就此消除。
-- Turn Closing (7) 经 `shouldStopAfterTurn` 到达内核；Abort Turn (3) 与 Tool Extend
-  (5) 有各自的入口（`requestTurnAbort`、工具结果折叠）。Turn Facts (9) 已注册，其
-  背后的按轮查询面仍属 host-core 工作。
-- Before Send (1) → `runtime.send.before` 已注册，并按映射对 `input` 事件受门禁，但
-  桌面尚未触发该钩子点，所以轮次运行期间还没有东西咨询它。
-- 槽位集合、逐槽位权限与实施顺序由
-  [ADR 0291](../../../adr/0291-runtime-slots-and-their-permissions.md) 固定；其余
-  运行时槽位**尚未交付**，Before Request (6) 被明确排除在本轮之外。
+- ADR 0291 分期中的批次 A 已交付：Abort Turn (3) 有自己的入口（`requestTurnAbort`）
+  以及插件任务可观察到的该轮取消信号；Tool Extend (5) 接入工具结果折叠；Turn Facts
+  (9) 由 host-core 在架构 v21 上通过 `turn.facts` RPC 回答（04-data-storage §4.16）。
+  面向插件的读取入口尚未实现，所以该槽位目前没有插件可调用的东西。
+- Turn Closing (7) 仍经 `shouldStopAfterTurn` 到达内核；此前已接线的钩子 —— Turn
+  Watch (2)、Tool Gate (4) 与 Before Request (6) 的请求类钩子 —— 行为保持不变；
+  桌面当前触发哪些钩子点，规格 13 §2C 按事件逐一说明。
+- 尚未交付：Before Send (1) —— `runtime.send.before` 已注册，并按映射对 `input`
+  事件受门禁，但桌面尚未触发该钩子点，所以轮次运行期间还没有东西咨询它；Turn Recap
+  (8) 与 Turn Continue (10) —— 只有已注册的名字，背后没有钩子或调用；Approval
+  Before (12) —— 未实现。
+- Before Request (6) 按 ADR 0291 的分期仍排除在本轮之外；槽位集合、逐槽位权限与实施
+  顺序都由
+  [ADR 0291](../../../adr/0291-runtime-slots-and-their-permissions.md) 固定。
 
 ## 3. 映射到产品里程碑
 
