@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "id": "acme.plugin-showcase",
+  "name": "Plugin Showcase",
+  "version": "0.1.0",
+  "description": "PI-Desktop example plugin: both plugin interfaces in one package — renderer UI slots (entryExtra, codeBlock, a host-callable function) plus agent runtime slots (tool gate, turn watch, turn facts, session lifecycle, turn abort)",
+  "author": "PI-Desktop",
+  "main": "main.js",
+  "renderer": "renderer/index.mjs",
+  "rendererData": ["entry", "code"],
+  "rendererActions": ["ui.toast"],
+  "contributes": {
+    "commands": [
+      {
+        "id": "acme.plugin-showcase.about",
+        "title": "Plugin Showcase: What this plugin adds",
+        "keywords": ["showcase", "slots", "runtime", "renderer", "agent", "demo"],
+        "category": "Demo"
+      }
+    ],
+    "agentExtensions": ["agent/extension.js"]
+  },
+  "permissions": [
+    "renderer.extension",
+    "agent.extension",
+    "runtime.tool.gate",
+    "runtime.turn.watch",
+    "runtime.turn.facts",
+    "runtime.session.lifecycle",
+    "runtime.turn.abort"
+  ],
+  "engines": {
+    "piDesktop": ">=0.1.0"
+  },
+  "activationEvents": ["onStartup"]
+}

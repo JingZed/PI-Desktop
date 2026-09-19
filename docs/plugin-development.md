@@ -744,12 +744,15 @@ What to know before you use it:
   skipped and the plugin row reports a `permission_denied` diagnostic. The
   per-slot names are listed in the
   [permission matrix](spec/07-plugins/13-plugin-permissions-matrix.md) §2.
-- **Two calls have no event behind them.** `pi.requestTurnAbort()` needs
-  `runtime.turn.abort`, and a tool result that carries `usage`,
-  `addedToolNames`, or `terminate` needs `runtime.tool.extend`. Declare those
-  names too: a call the plugin may not make is refused (`false` from
-  `requestTurnAbort`) and reported as the same `permission_denied` diagnostic
-  instead of silently doing nothing.
+- **Some calls have no event behind them.** Each one names its own slot:
+  `pi.requestTurnAbort()` needs `runtime.turn.abort`, `pi.turnFacts()` needs
+  `runtime.turn.facts`, `pi.recap()` needs `runtime.turn.recap` (and
+  `runtime.session.read` as well for `scope: "session"`), `pi.continueTurn()` and
+  `pi.sendUserMessage()` need `runtime.turn.continue`, and a tool result that
+  carries `usage`, `addedToolNames`, or `terminate` needs `runtime.tool.extend`.
+  Declare those names too: a call the plugin may not make is refused (`false`
+  from `requestTurnAbort`, `undefined` from the others) and reported as the same
+  `permission_denied` diagnostic instead of silently doing nothing.
 - **TypeScript is fine.** Modules are loaded with jiti, so `.ts` needs no
   build step. `typebox`, `@earendil-works/pi-agent-core`, `@earendil-works/pi-ai`,
   and `@earendil-works/pi-coding-agent` resolve to the app's copies;
