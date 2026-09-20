@@ -20,7 +20,9 @@ the host hands it, the agent half is consulted while a turn runs.
 |---|---|---|
 | A component for each of the ten declared UI slots | `renderer.extension` | the slot tour below: a whole-message card, a tool card, a fenced-block renderer, a badge under every transcript row, two composer control rows, completion rows, a composer chip, and the inline-confirm, modal and overlay layers |
 | `pi.functions.register` — pure, synchronous functions the host may call *while it renders* | `renderer.extension` | the badge prints `fn entry-facts() → assistant`, the block prints `fn kv-rows() → N row(s)`: both values come out of the registered functions. No host position calls one yet |
-| Three buttons that dispatch `ui.toast` | `renderer.extension`, plus `rendererActions: ["ui.toast"]` | the toast names the entry or the tool card it came from, and the button then prints `toast sent` — or the refusal code, never a silent nothing |
+| Buttons that dispatch `ui.toast` | `renderer.extension`, plus `rendererActions: ["ui.toast"]` | the toast names the entry or the tool card it came from, and the button then prints `toast sent` — or the refusal code, never a silent nothing |
+| Composer draft round trip from a mounted slot | `renderer.extension`, plus `rendererActions: ["composer.readDraft", "composer.replaceDraft"]` | the left composer row reads the live draft (`{ sessionId, generation, text, fileReferences }`), writes the same text back through `composer.replaceDraft` with the generation it just read, and then drives the documented refusal: the same write with an out-of-date `expectedGeneration` answers `DRAFT_CONFLICT` and changes nothing |
+| One declared action the host has no handler for | `renderer.extension`, plus `rendererActions: ["composer.insertText"]` | `composer.insertText` is in the vocabulary and unrouted, so the control's `Showcase: declared but unrouted` button answers `PLUGIN_ACTION_UNROUTED` — the same code the plugin row's Renderer diagnostics records, printed in the window *and* sent to the plugin process as a receipt |
 | One agent tool of its own, `showcase_note` | `agent.tool.register` | the model can call `plugin_acme_plugin_showcase_showcase_note`; that row's card body is the `toolCard` component, and the host offers that position only to the tool's owner |
 | An agent-side module | `agent.extension` | the module's hooks are consulted inside the agent sidecar; without the grant the manifest is refused at install |
 | Tool gate: refuse a dangerous shell command with a readable reason | `runtime.tool.gate` | the `Bash` call is refused before it runs: the transcript carries the reason and the plugin also raises a warning toast |
@@ -57,16 +59,39 @@ SDK.
 
 | Slot | To see it | What appears | What it needs | Its honest limit |
 |---|---|---|---|---|
-| `entry` | Open any session with a message: the registration takes every message row. | A card replaces the row: `acme.plugin-showcase · entry`, `this registration replaced the host's own row for a <role> message (<id>)`, the session id, and a **Send a toast from the entry slot** button. Props read: `entry` (`{ id, role, pluginId? }`), `sessionId`, `dispatch`. | `renderer.extension`, the module's `rendererData` covers `entry` and `session`, and `rendererActions` declares `ui.toast` for the button. | It stands in for the row rather than re-drawing it: while it is registered the host's bubble, attachments and actions are not drawn (unload the plugin to get them back), and the entry arrives as a shape — not the message text. While a row is being edited the host keeps its own message form and skips this position for that row, plugin or not. |
-| `toolCard` | Ask the model to call the plugin's own tool — *"use the showcase_note tool to format the note hello"*. The row opens itself while this plugin's card is drawn. | The tool row's card body: `acme.plugin-showcase · toolCard`, `this is the plugin's own tool row (<id>), so the host offered it its card body instead of its detail blocks`, the session id, and a **Send a toast from the tool card** button. Props read: `entry` (`{ id, role, pluginId }`), `sessionId`, `dispatch`. | A tool of its own: `contributes.agentTools` + `agent.tool.register`, registered from `main.js`. The forced name `plugin_acme_plugin_showcase_showcase_note` is the attribution — the host offers the position only to the plugin whose own prefix the row starts with, never to a host tool or a neighbour's tool. | Only the plugin's own tool row is offered. The mount sits inside the row's own detail body, so a tool row the host decides has no details has no position at all; the component checks `entry.pluginId` against its own id anyway, because a contract is worth making visible. |
+| `entry` | Open any session with a message: the registration takes every message row the transcript draws itself (a user message, a system notice; an assistant *turn* is drawn by the turn renderer and keeps its own Markdown). | The row's content, re-drawn by the plugin: the role/id/timestamp/session facts, then **the message text itself** (a multi-line text keeps its line breaks), any attachments as chips, the host actions the position stands in for (`copy`, `edit`, `delete`, `revisions` — printed as facts, because a plugin cannot trigger them), and the card's own controls beside that text: **Send a toast from the entry slot** and **Release this claim**. Props read: `entry` (`{ id, role, pluginId? }`), `message` (`{ text, attachments, createdAt?, command?, streaming, actions }`), `sessionId`, `dispatch`. | `renderer.extension`, the module's `rendererData` covers `entry` and `session`, and `rendererActions` declares `ui.toast` for the button and `plugin.call` for the report button. | It replaces the host's own rendering of that row (bubble and actions alike), so it has to re-draw what it was handed — that is the rule below. Pressing **Release this claim** withdraws the registration and the host draws its own row again. The text arrives as text: a plugin that wanted the host's Markdown would have to render it itself, because the position owns the whole row. While a row is being edited the host keeps its own message form and skips this position for that row, plugin or not. |
+| `toolCard` | Ask the model to call the plugin's own tool — *"use the showcase_note tool to format the note hello"*. The row opens itself while this plugin's card is drawn. | The tool row's card body, re-drawn by the plugin: the owner line, the tool name with its status and duration, **the call's arguments and its result as JSON**, the session, and the card's own **Send a toast from the tool card** / **Release this claim** controls. Props read: `entry` (`{ id, role, pluginId }`), `tool` (`{ name, args, result?, status?, durationMs? }`), `sessionId`, `dispatch`. | A tool of its own: `contributes.agentTools` + `agent.tool.register`, registered from `main.js`. The forced name `plugin_acme_plugin_showcase_showcase_note` is the attribution — the host offers the position only to the plugin whose own prefix the row starts with, never to a host tool or a neighbour's tool. | Only the plugin's own tool row is offered. The mount sits inside the row's own detail body, so a tool row the host decides has no details has no position at all; the component checks `entry.pluginId` against its own id anyway, because a contract is worth making visible. The arguments and result are printed raw (`JSON.stringify`, capped at 600 characters), not through the host's own detail blocks. |
 | `codeBlock` | Ask for (or write) a fenced block in the language this plugin claimed: a fence whose info string is `acme.plugin-showcase:kv`, with a `covered = 42` line and a `disk! = 91% used` line. | Rows instead of source text: `covered = 42`, `disk = 91% used` with the `disk` row underlined, under a head line `acme.plugin-showcase draws fenced acme.plugin-showcase:kv · fn kv-rows() → 2 row(s)`. Props read: `language`, `code` (the host also passes `isIncomplete` and `theme`). | The module's `rendererData` covers `code`, and the registration carries the option `{ language: "acme.plugin-showcase:kv" }`. A language has exactly one renderer and must be namespaced with the registering plugin's own id, so a plugin cannot claim `json`, `ts` or `mermaid`. | A component sees only a closed, in-limit block: an open fence and an oversized block stay the host's own source rendering, and `isIncomplete` is therefore always `false` in a component that runs. It draws what it was given and cannot decorate the host's other blocks. |
-| `entryExtra` | Open any session: one badge is appended below every transcript message row. | `acme.plugin-showcase · entryExtra · assistant · <entry id>`, then `fn entry-facts() → assistant`, and the **Notify the host** button. Props read: `entry` (`{ id, role, pluginId? }`), `dispatch`. | `renderer.extension`, the module's `rendererData` covers `entry` and `session`, and `rendererActions` declares `ui.toast` for the button. | The entry is a shape, not the message: the component cannot read the text, attachments or tokens of the row it sits under, and `pluginId` is only set when the host attributes a row to a producer — the transcript does not report one today, which is why the badge prints the role and id alone. |
-| `composerControl` | Open a session: the controls are at the end of the composer's own left and right control rows. | Left row: **Showcase: inline card**. Right row: **Showcase: modal** and **Showcase: overlay**. Every title carries the live draft length and the session, and each label flips to "close …" while the layer is up. Props read: `position`, `draft`, `sessionId`. | The module's `rendererData` covers `draft` and `session`. | One registration is asked for both rows and the component decides which one it draws in (`null` for the other leaves no hole). The host's own controls are already in place, so a plugin control can only follow them — it cannot reorder, wrap or remove them, and the draft is read-only. |
+| `entryExtra` | Open any session: one badge is appended below every transcript message row. | `acme.plugin-showcase · entryExtra · assistant · <entry id>`, then `fn entry-facts() → assistant`, and the **Notify the host** button. Props read: `entry` (`{ id, role, pluginId? }`), `dispatch`. | `renderer.extension`, the module's `rendererData` covers `entry` and `session`, and `rendererActions` declares `ui.toast` for the button. | An additive position, not a replace one: it is handed the entry's *identity* only — no text, no attachments — because it adds to a row the host still draws. `pluginId` is set only when the host attributes a row to a producer, which the transcript does not report today, which is why the badge prints the role and id alone. |
+| `composerControl` | Open a session: the controls are at the end of the composer's own left and right control rows. | Left row: **Showcase: inline card**, then the draft controls — **Showcase: read the draft**, **Showcase: write it back**, **Showcase: stale write (DRAFT_CONFLICT)** and **Showcase: declared but unrouted**. The last read/write answer is printed on the group (`data-pi-showcase-draft-outcome`, `-generation`, `-text`). Right row: **Showcase: modal** and **Showcase: overlay**. Every layer title carries the live draft length and the session, and each label flips to "close …" while the layer is up. Props read: `position`, `draft`, `sessionId`. | The module's `rendererData` covers `draft` and `session`, and `rendererActions` declares `composer.readDraft`, `composer.replaceDraft` and the unrouted `composer.insertText`. | One registration is asked for both rows and the component decides which one it draws in (`null` for the other leaves no hole). The host's own controls are already in place, so a plugin control can only follow them — it cannot reorder, wrap or remove them, and the `draft` prop itself is read-only: changing the draft goes through `composer.replaceDraft`, which the host applies to the mounted composer and answers with `{ ok, generation, previous }`. A write made against a generation that has moved on is refused with `DRAFT_CONFLICT` instead of silently overwriting. |
 | `completionSource` | Type `/showcase` in the composer (slash trigger), or `@acme` (file trigger). | Rows inside the completion popover, below the host's own: `/showcase-inline — demo row: it cannot insert a command into the draft yet`, or `@acme — demo row: it cannot add a reference to the draft yet`. Props read: `mode`, `query`. | `renderer.extension` only. | It is a candidate source, not a filter: the host's rows keep their own order, and the keyboard highlight and `Enter`/`Tab` acceptance stay host-owned. Nothing in this release inserts a candidate into the draft, so these rows say so and carry `aria-disabled` rather than pretending to be selectable. |
-| `inlineConfirm` | Click **Showcase: inline card** (left composer row), then make the host ask for a permission — for example, ask the model to run a command that needs approval. | The plugin's card where the host's permission card would be drawn, below the transcript: the host's card is not drawn there while this registration is up, and the card's own button closes it and brings the host's card back. Props read: `sessionId`. | `renderer.extension` only. | The position exists only while a permission request is pending, so the registration can be up with nothing on screen — that is why it is opened from a control instead of at load. The slot hands over a session id and nothing else: the card cannot approve or deny anything, and closing it (or unloading the plugin) is the only action it has. |
-| `modal` | Click **Showcase: modal** (right composer row). | A blocking dialog over the window: `acme.plugin-showcase · modal`, a line saying the host owns the scrim and the blocking, the session id, and a **Close the modal** button. Props read: `sessionId`. | `renderer.extension` only. | Registration is appearance, removal is disappearance: there is no "hide" state, and unloading, disabling or uninstalling the plugin reclaims the layer. Escape is the host's own dismissal — it hides the layer without touching the plugin's own state, while the button withdraws the registration for good. |
+| `inlineConfirm` | Click **Showcase: inline card** (left composer row), then make the host ask for a permission — for example, ask the model to run a command that needs approval. | The plugin's card where the host's permission card would be drawn, below the transcript, re-drawing **the request the host's card would have shown**: the tool, its argument preview, the risk, the host's own reason and how many requests wait behind it — plus the card's own **Send a toast from the inline card** and **Close this card** controls. Props read: `sessionId`, `confirm` (`{ requestId, toolName, args, risk, reason, queued, agentName? }`), `dispatch`. | `renderer.extension` only. | The position exists only while a permission request is pending, so the registration can be up with nothing on screen — that is why it is opened from a control instead of at load. Approving or denying stays host-owned: the slot has no action for a decision, and closing the card (or unloading the plugin) brings the host's own card back. |
+| `modal` | Click **Showcase: modal** (right composer row). | A blocking dialog over the window: `acme.plugin-showcase · modal`, a line naming **the host surface it occupies** (the app-level modal layer, with the host's own scrim, blocking and Escape dismissal), the session id, and a **Close the modal** button. Props read: `sessionId`. | `renderer.extension` only. | Registration is appearance, removal is disappearance: there is no "hide" state, and unloading, disabling or uninstalling the plugin reclaims the layer. A layer is the one replace position with no host content of its own: the plugin's registration *is* the layer, so the card states the surface instead of re-drawing one. Escape is the host's own dismissal — it hides the layer without touching the plugin's own state, while the button withdraws the registration for good. |
 | `overlay` | Click **Showcase: overlay** (right composer row). | A non-blocking box in the window: `acme.plugin-showcase · overlay`, and a line saying that only this box takes the pointer. The rest of the window stays usable. Props read: `sessionId`. | `renderer.extension` only. | Same lifecycle as the modal, and the difference is the host's decision, not the plugin's: the host adds no scrim here, and the plugin cannot draw one, reach behind the window, or open an overlay without a registration. Escape dismisses it like the modal. |
 | `composerReference` | Attach a file in the composer, or accept an `@` reference: the chip follows the host's own chips, after the editor. | A chip reading `acme.plugin-showcase chip · 2 ref · 9 ch`, plus the first three host chip names. Props read: `references[i].name` and the list length, `draft`, `sessionId` (the host also passes each chip's `path` and `kind`). | The module's `rendererData` covers `draft` and `session`. | The chip is a React element beside the editor, not an atomic editor token: it cannot add a reference to the draft, remove a host chip, or change what the draft sends. The host's reference list is read-only, and a component with nothing to draw for the current draft renders nothing. |
+
+### The replace-slot rule this example follows
+
+`entry`, `toolCard`, `inlineConfirm` and `modal` are **replace positions**: at
+most one plugin holds each of them (`PLUGIN_RENDERER_REPLACE_SLOTS`). A
+registration takes the place of a host surface, so the host hands the component
+**the data that surface was going to display** — a message's text, attachments
+and timestamp; a tool row's name, arguments and result; the pending
+confirmation's request. The whole point of taking the position over is to
+**re-render that same data in the plugin's own form**, with the plugin's own
+controls *beside* it:
+
+```text
+host surface ──(position + its data)──▶ plugin component ──▶ same content, plugin's presentation
+                                                    └──────▶ plugin's own controls, beside it
+```
+
+A card that announces "I replaced the host's row" and draws nothing of what the
+host handed it is hiding the content it was given, which is the one thing a
+replace position must not do. Every replace component in this example re-draws
+its data, and each one carries a control that hands the position back
+(**Release this claim**, or the layer's own close button) so the host's own
+rendering can be seen again.
 
 The two host-callable functions are registered next to these components:
 `entry-facts` (used by the badge) and `kv-rows` (used by the block). Both are
@@ -74,14 +99,59 @@ pure, synchronous and defensive — a host position may call one on every render
 with whatever input it has, and the host discards an answer that takes longer
 than one frame (16 ms) and trips a per-function breaker after three failures.
 
+## The self-check console (docked panel and work-panel view)
+
+`views/console.html` is the plugin's own page, and the manifest declares it
+twice on purpose:
+
+* as `ui: { panel: "views/console.html" }` — the **docked panel** surface, for a
+  plugin that wants a panel window (`ui.panel`);
+* as `contributes.views: [{ id: "console", title: { en: "Showcase Console", … },
+  entry: … }]` — a **work-panel view** beside the app's own destinations
+  (`ui.view`). The host reads views from `contributes.views`, which is where the
+  work-panel launcher's own menu comes from: the entry has to sit there, and a
+  top-level `views` array is never listed.
+
+Both point at one file, so opening the view and opening the panel show the same
+page. It exists to answer the question the rest of this example cannot: *what
+does the plugin's own process think is going on?* The renderer half and the
+agent half cannot read each other, and the console page cannot read the window
+(`showcase.console.status`, `…log`, `…session`, `…ai`, `…models`, `…panel`,
+`…runtime`) and the renderer half pushes its live state to the process with
+`plugin.call` (`renderer.report` / `renderer.slot`, and `renderer.refusal` for a
+coded refusal it caught). The first report is sent when a position really
+mounts — `ComposerControl` reports on mount — so the console's "slot-side
+reports" tile is non-zero on a window nobody has clicked in; the cards'
+**Report to the plugin process** button re-reports on demand and prints the
+process's own answer (`ok`, or the code a manifest mistake produced).
+
+The page is deliberately in the plugin's own copy and layout: a plugin page is
+the plugin's HTML, and the host's i18n strings are not available inside it. Its
+inventory shows the slots the module reported holding (which is how a card's
+**Release this claim** becomes visible: the slot leaves the list), the function
+call counts the module measured itself, the manifest's permissions, and the log
+lines the plugin wrote — including the **runtime receipts** the plugin process
+really holds about the agent half (one per host-pushed `session:turnEnded`, one
+per execution of this plugin's own agent tool), which its runtime group reads
+with `showcase.console.runtime`. The tool gate's own verdict (block or allow) is
+written by the agent sidecar into the window (the extension's warning toast and
+the modified tool result) and into the plugin row's diagnostics; the sidecar has
+no channel to the plugin process or to this page, so the console lists the
+receipts it really has and says that instead of inventing a hit count.
+
+Permission-wise the console needs `ui.panel` (the docked panel) and `ui.view`
+(the work-panel view); the renderer-reported numbers need `renderer.extension`
+and `plugin.call`, which the renderer table above explains.
+
 ## Files
 
 | File | Role |
 |---|---|
-| `manifest.json` | Declares `main`, `renderer`, `rendererData: ["entry", "session", "code", "draft"]`, `rendererActions: ["ui.toast"]`, `contributes.agentExtensions`, one command, one agent tool, and the eight permissions the three entries actually use |
-| `main.js` | Plugin-process entry: registers the declared command and the plugin's own `showcase_note` tool, whose card body the renderer half draws. A manifest needs one of `main`, `renderer`, or a plugin page — `contributes.agentExtensions` alone is not an entry |
-| `renderer/index.mjs` | Renderer entry: `onLoad(pi)` injects one namespaced stylesheet, registers two host-callable functions and a component for each of the ten slots — the three layer positions on demand |
+| `manifest.json` | Declares `main`, `renderer`, `rendererData: ["entry", "session", "code", "draft"]`, `rendererActions: ["ui.toast", "plugin.call", "composer.readDraft", "composer.replaceDraft", "composer.insertText"]`, `contributes.agentExtensions`, `ui.panel` + `contributes.views[]` for the console page, one command, one agent tool, and the eleven permissions the four entries actually use |
+| `main.js` | Plugin-process entry: registers the declared command and the plugin's own `showcase_note` tool, whose card body the renderer half draws; answers the console's own channels; and keeps the runtime receipts it really holds (host turn pushes, its own tool executions, the renderer's refusal reports). A manifest needs one of `main`, `renderer`, or a plugin page — `contributes.agentExtensions` alone is not an entry |
+| `renderer/index.mjs` | Renderer entry: `onLoad(pi)` injects one namespaced stylesheet, registers two host-callable functions and a component for each of the ten slots — the three layer positions on demand. The composer control reports on mount, and its draft buttons drive `composer.readDraft` / `composer.replaceDraft` (including the `DRAFT_CONFLICT` and unrouted paths) |
 | `agent/extension.js` | Agent-side entry: the tool gate, the turn watcher, the turn-facts summary, the session lifecycle notice and the abort request |
+| `views/console.html` | The plugin's own self-check console, served both as the docked `ui.panel` and as the `views[]` work-panel destination: it reads the plugin process's own state (including the runtime receipts `showcase.console.runtime` answers) and prints what the renderer half reported holding |
 
 ## Install (development folder)
 
@@ -93,14 +163,17 @@ There is no CLI install step for a plugin folder — the app loads it:
    The same button is offered in the empty state. Older documentation calls this
    action "Load development plugin".
 3. Select the `examples/plugins/plugin-showcase` directory.
-4. Accept the permission review. All eight grants are needed for the full tour:
+4. Accept the permission review. The full tour needs all eleven grants:
    `renderer.extension`, `agent.extension`, `agent.tool.register`,
-   `runtime.tool.gate`, `runtime.turn.watch`, `runtime.turn.facts`,
-   `runtime.session.lifecycle`, `runtime.turn.abort`. Without
+   `agent.model.complete` (the console's own `pi.ai.complete` controls),
+   `ui.view`, `ui.panel`, `runtime.tool.gate`, `runtime.turn.watch`,
+   `runtime.turn.facts`, `runtime.session.lifecycle`, `runtime.turn.abort`. Without
    `renderer.extension` the renderer module is never served, without
-   `agent.extension` the manifest is refused, and without a slot grant the
-   behaviour behind that slot is skipped and reported as a `permission_denied`
-   diagnostic on the plugin row.
+   `agent.extension` the manifest is refused, without `ui.view` / `ui.panel` the
+   console has no surface, and without a slot grant the behaviour behind that
+   slot is skipped and reported as a `permission_denied` diagnostic on the
+   plugin row. Loading the folder as a **development plugin** grants what the
+   manifest asks for, which is how the e2e suites load it.
 
 Use **Load local plugin** for this example — **Import pi extension** is for pi CLI
 extension packages and is a different flow.
@@ -111,9 +184,10 @@ extension packages and is a different flow.
 message, then walk the table above in this order:
 
 1. The badge appears under every transcript row, and the whole-message card
-   (`entry`) takes over the row itself — that is the one slot that replaces host
-   UI, so read its line and remember that unloading the plugin gets the host's
-   bubble back.
+   (`entry`) takes over the row itself — it draws the message the host handed
+   it, with its own two controls beside the text. That is the one slot that
+   replaces host UI: **Release this claim** (or unloading the plugin) hands the
+   row back to the host's own rendering.
 2. Click **Notify the host** in the badge: a toast appears with the entry's role
    and id, and the badge prints `toast sent`. If the action were not declared,
    the badge would print `PLUGIN_ACTION_UNDECLARED` instead — the same is true
@@ -135,10 +209,17 @@ message, then walk the table above in this order:
 4. Ask the model to use `showcase_note`, then look at the tool row: the
    `toolCard` card body replaces the host's detail blocks, and the row is open
    because the plugin draws it.
-5. Use the composer controls: the left row's **Showcase: inline card** takes the
+5. Use the composer controls. The left row's **Showcase: inline card** takes the
    host's inline-confirmation position (it needs a pending permission request to
-   be visible), and the right row's **Showcase: modal** and **Showcase:
-   overlay** are the two layer positions. Close each from its own button.
+   be visible), the right row's **Showcase: modal** and **Showcase: overlay**
+   are the two layer positions, and each closes from its own button. The left
+   row also carries the draft controls: type something, press **Showcase: read
+   the draft** (the group prints the snapshot and its generation), press
+   **Showcase: write it back** (the host writes it, the generation moves on),
+   then press **Showcase: stale write (DRAFT_CONFLICT)**: the host refuses that
+   one and the composer keeps its text. **Showcase: declared but unrouted**
+   answers `PLUGIN_ACTION_UNROUTED`, and the same code shows up on the plugin
+   row's Renderer diagnostics when the Extensions page is open.
 6. While the completion popover is open, type `/showcase` or `@acme` to see the
    plugin's candidate rows, and attach a file to see the composer chip.
 
@@ -194,10 +275,20 @@ renderer/index.mjs        main.js                agent/extension.js
   host renders.
 - The **headless half** (`main.js`) is a third process. It registers the command
   and the plugin's own agent tool, which is what the `toolCard` slot needs. The
-  only way the renderer reaches it is the forwarded action `plugin.call` (see
-  `examples/plugins/slots-demo`), which this manifest deliberately does not
-  declare: nothing here needs the relay, and the `toolCard` position does not use
-  it either — the host draws the card, not the plugin process.
+  only way the renderer reaches it is the forwarded action `plugin.call` — a
+  mounted control reports on mount and the cards' **Report to the plugin
+  process** buttons re-report on demand — and the answer they print is this
+  process's own reply, so the console's inventory is a report rather than a
+  claim made up in the window. The same channel carries the renderer's
+  `renderer.refusal` reports, which is why the unrouted `composer.insertText`
+  refusal appears in the console log as well as on the plugin row.
+
+The runtime receipts the console shows are what this process really holds about
+the agent half: the host's `session:turnEnded` push (this process subscribes
+with `pi.events.on`) and one entry per execution of the plugin's own agent tool
+(whose `execute` runs here, with the host's own session/turn in its context).
+The agent half's own verdicts stay in the sidecar and reach the window, not this
+process — see the console section above.
 
 So the two halves communicate *through the host*: the renderer draws what the
 host read from its own state, and the agent half changes what the host does next
@@ -216,13 +307,32 @@ Honest gaps, all of them observed while writing this example:
   props today, so the only callers of a registered function are tests. The badge
   and the block call their own registered functions to show the shape; the value
   the host would use is the same value.
-- **The entry data is a shape, not the entry.** The `entry` data a component is
-  handed is `{ id, role, pluginId? }` — not the entry's text, attachments or
-  tokens. A component cannot read the message it is mounted under.
+- **The entry position re-draws text, not the host's Markdown.** The `message`
+  a replace component is handed is the message's *content* (text, attachments,
+  timestamp, slash form, streaming state), so the host's Markdown rendering,
+  its fenced-code handling and its link chips are the host's own and are not
+  drawn while a plugin holds the row. The plugin's card has to render whatever
+  form it wants; this example draws readable plain text.
+- **A card cannot trigger the host's own row actions.** `message.actions` names
+  them (`copy`, `edit`, `delete`, `revisions`) so a card can say what it stands
+  in for, and the vocabulary has no action to invoke one: an `entry` claim
+  really does take those controls away until the claim is released.
 - **No action reaches the agent half.** The whole `rendererActions` vocabulary is
   host-performed (`ui.toast`, `composer.*`) or forwarded to the plugin's own
   entry (`plugin.call`). There is no "ask my agent extension" action, and none of
-  the slot permissions can be requested from the window.
+  the slot permissions can be requested from the window. `composer.insertText`
+  and `composer.attachPath` are declared but unrouted: this example declares
+  `composer.insertText` on purpose so the control can show the
+  `PLUGIN_ACTION_UNROUTED` refusal, which is a real host answer rather than a
+  missing button.
+- **The console cannot read the agent sidecar.** The tool gate's verdict, the
+  turn-facts summary and the status-line counts are written by
+  `agent/extension.js` inside the sidecar, and the only channels it has are the
+  host's own (`ctx.ui.notify` / `setStatus`), which the window renders. The
+  sidecar has no channel to the plugin process or to the console page, so the
+  console shows the runtime receipts the plugin process really holds (host turn
+  pushes, its own agent-tool executions) and names that gap instead of printing
+  a gate hit count nobody can read back.
 - **A plugin cannot modify a tool call's arguments.** A `tool_call` handler may
   block a call and give a reason, and that is all; argument rewriting is
   permanently excluded (ADR 0295 rule 4), so nothing should be built on it.
@@ -251,8 +361,26 @@ Run while writing it, and repeatable:
   explicit grant.
 - The manifest through the SDK path the app uses (`validateManifest` from
   `packages/plugin-sdk/dist`): accepted, `id` matches `PLUGIN_ID_PATTERN`, the
-  entry rule is satisfied, all eight permissions exist in `PLUGIN_PERMISSIONS`,
-  and `main.js`, `renderer/index.mjs` and `agent/extension.js` all exist.
+  entry rule is satisfied, all eleven permissions exist in `PLUGIN_PERMISSIONS`,
+  the console's destination is declared under `contributes.views` (where the
+  host reads it), and `main.js`, `renderer/index.mjs`, `agent/extension.js` and
+  `views/console.html` all exist.
+- The replace positions are pinned at the mount, not only in prose:
+  `apps/desktop/test/plugin-renderer-slots.test.mjs` mounts a component for
+  `entry`, `toolCard` and `inlineConfirm` through `PluginSlot` and asserts the
+  display data each one is handed (the message text/attachments/timestamp, the
+  tool call, the pending confirmation). A host that stopped passing that data
+  fails there.
+  `pnpm test:e2e:plugin-showcase` walks the ten positions in a real window —
+  including a user message whose own text has to stay readable inside the
+  plugin's `entry` card, with the card's own controls beside it — opens the
+  docked console view through the work-panel launcher and reads the inventory
+  the page publishes (ten slots, ten actions, eight data keys, eleven runtime
+  slots), drives the AI controls' receipts and the runtime group's own
+  receipts, and answers a real tool permission through the run's own
+  `e2e-auto-consent` marker instead of a native dialog. `pnpm
+  test:e2e:plugin-slots` covers the renderer scheme, the import map and the
+  action channel.
 - The renderer module with the app's own React: `react` resolved to the app's
   copy, `onLoad` run against a recording `pi`, and all ten components
   server-rendered with the props their mount position passes — the mount points
@@ -271,10 +399,9 @@ Run while writing it, and repeatable:
   again. Both registered functions were exercised, including a 2000-row input
   well inside the 16 ms budget, and the toast button's dispatch path was driven
   with a resolved and a refusing `dispatch`.
-- **Not run here:** a live turn in the running desktop, and any `verify:ui:*`
-  suite. The behaviour described under "Try it" is what this code produces
-  against the host contracts above, not something observed in a real session
-  while this example was written.
+- **Not run here:** `verify:ui:*`. The two e2e suites above cover the plugin in
+  the running app; `verify:ui:*` is the host's own UI suite and is not run for
+  an example plugin.
 - The agent half was checked when it was written (through the sidecar's own
   loader, with a stubbed `pi` and `ctx`); it is unchanged in this pass and was
   **not re-run** here.

@@ -58,6 +58,7 @@ const CONSOLE_CHANNELS = {
   log: "showcase.console.log",
   session: "showcase.console.session",
   panel: "showcase.console.panel",
+  runtime: "showcase.console.runtime",
 };
 
 /** The model key the console deliberately asks for and the host cannot resolve. */
@@ -66,10 +67,14 @@ const UNRESOLVABLE_MODEL_KEY = "pi-showcase-missing/none";
 /** Receipts kept for surfaces other than the console page itself. */
 const MAX_RECEIPTS = 40;
 
+/** Runtime receipts kept for the console's runtime group (bounded, newest last). */
+const MAX_RUNTIME_RECEIPTS = 20;
+
 /**
  * The plugin process's own state, per loaded lifetime. The console reads it
  * through `showcase.console.status`; `renderer` is filled from what the
- * renderer half reports through `plugin.call`.
+ * renderer half reports through `plugin.call`, and `runtime` from what this
+ * process itself observed about the agent half.
  */
 const state = {
   loadedAt: Date.now(),
@@ -87,6 +92,17 @@ const state = {
     functions: { served: 0, overBudget: 0 },
     functionsBy: {},
     lastSlotChange: null,
+  },
+  /**
+   * What this process really witnessed about the plugin's agent half: one entry
+   * per host-pushed `session:turnEnded` and one per execution of this plugin's
+   * own agent tool. Both are produced here, in this process, so the console can
+   * show them as receipts instead of a number nobody can read back.
+   */
+  runtime: {
+    receipts: [],
+    lastAt: 0,
+    toolCalls: 0,
   },
 };
 
@@ -119,6 +135,23 @@ function recordReceipt(surface, action, code, detail) {
   };
   state.receipts.push(entry);
   while (state.receipts.length > MAX_RECEIPTS) state.receipts.shift();
+  return entry;
+}
+
+/**
+ * One runtime receipt: something this process really observed about the
+ * plugin's agent half. Kept in both lists on purpose — the console's runtime
+ * group reads `state.runtime.receipts` explicitly, and a status refresh merges
+ * `state.receipts` into the same log, so a receipt is never counted twice (the
+ * page de-duplicates by id).
+ */
+function recordRuntimeReceipt(action, code, detail) {
+  state.runtime.lastAt = Date.now();
+  const entry = recordReceipt("运行时", action, code, detail);
+  state.runtime.receipts.push(entry);
+  while (state.runtime.receipts.length > MAX_RUNTIME_RECEIPTS) {
+    state.runtime.receipts.shift();
+  }
   return entry;
 }
 
@@ -177,7 +210,40 @@ async function handlePanelChannel(channel, payload) {
         turnEnded: state.turnEnded,
         lastTurn: state.lastTurn,
         renderer: state.renderer,
+        runtime: {
+          receipts: state.runtime.receipts.length,
+          turnEnded: state.turnEnded,
+          toolCalls: state.runtime.toolCalls,
+          lastAt: state.runtime.lastAt,
+        },
         receipts: state.receipts,
+      },
+    };
+  }
+
+  if (channel === CONSOLE_CHANNELS.runtime) {
+    // What this process really holds about the agent half — no number is
+    // invented here. The sidecar's own slot verdicts (the tool gate's block or
+    // allow) reach the window and the plugin row's diagnostics; there is no
+    // host channel from the sidecar to this process or to the console page, so
+    // the page shows the receipts below and names that missing channel instead
+    // of pretending to have counted the verdicts.
+    const receipts = state.runtime.receipts;
+    return {
+      ok: true,
+      code: "ok",
+      detail:
+        `${receipts.length} 条运行时回执：宿主推送 turn ended ${state.turnEnded} 次、` +
+        `本插件自己的 agent 工具执行 ${state.runtime.toolCalls} 次。` +
+        "扩展侧自己的槽位判定（tool gate 的 block/allow）只到窗口与插件行诊断，" +
+        "agent sidecar 没有到插件进程或本页的通道，所以这里不编造 gate 命中数。",
+      receipts,
+      runtime: {
+        receipts: receipts.length,
+        turnEnded: state.turnEnded,
+        toolCalls: state.runtime.toolCalls,
+        lastAt: state.runtime.lastAt,
+        lastTurn: state.lastTurn,
       },
     };
   }
@@ -313,6 +379,19 @@ async function handleRendererCall(method, args) {
     return { ok: true, code: "ok", slot: name, registered, slots: state.renderer.slots };
   }
 
+  if (method === "renderer.refusal") {
+    // The renderer half's own refusal report: it caught a coded refusal from a
+    // dispatched action and sends the code here, so the console shows the same
+    // code the window shows. The host's own plugin row keeps its diagnostic
+    // too — this is the second place to read one refusal, not a replacement.
+    const action = String(args?.action ?? "");
+    const code = String(args?.code ?? "UNKNOWN");
+    state.renderer.reports += 1;
+    state.renderer.lastAt = Date.now();
+    recordReceipt("槽位", `refusal ${action}`, code, `渲染模块捕获的动作拒绝：${action}`);
+    return { ok: true, code: "ok", action, refusal: code };
+  }
+
   const error = new Error(`plugin does not expose renderer method: ${method}`);
   error.code = "PLUGIN_CALL_NO_HANDLER";
   throw error;
@@ -347,8 +426,20 @@ async function onLoad() {
       },
       required: ["text"],
     },
-    execute: async (args) => {
+    execute: async (args, context) => {
       const text = typeof args?.text === "string" ? args.text : "";
+      // This function runs in the plugin's own process, and the model calls it
+      // during a turn, so the call is a runtime receipt this process really
+      // produced: the session and turn come from the host's execution context,
+      // never from anything guessed here.
+      state.runtime.toolCalls += 1;
+      recordRuntimeReceipt(
+        `agent tool ${TOOL_NAME}`,
+        "ok",
+        `session ${typeof context?.sessionId === "string" ? context.sessionId : "?"} · ` +
+          `turn ${typeof context?.turnId === "string" ? context.turnId : "?"} · ` +
+          `${text.length} 字符`,
+      );
       return {
         ok: true,
         note: `Plugin Showcase note: ${text}`,
@@ -360,6 +451,8 @@ async function onLoad() {
   // The one host-pushed fact this process really receives: a turn reached a
   // terminal state. Delivery is best-effort (no replay), which is why the
   // console prints "宿主推送" for it and never calls it an extension report.
+  // It is also the runtime receipt the console can honestly show: this process
+  // witnessed the turn the plugin's agent half took part in.
   pi.events?.on?.("session:turnEnded", (payload) => {
     state.turnEnded += 1;
     state.lastTurn = {
@@ -368,6 +461,12 @@ async function onLoad() {
       turnId: typeof payload?.turnId === "string" ? payload.turnId : null,
       at: Date.now(),
     };
+    recordRuntimeReceipt(
+      "session:turnEnded（宿主推送）",
+      "ok",
+      `session ${state.lastTurn.sessionId ?? "?"} · turn ${state.lastTurn.turnId ?? "?"} · ` +
+        `${state.lastTurn.status ?? "?"}`,
+    );
   });
 }
 

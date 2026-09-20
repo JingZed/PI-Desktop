@@ -5,6 +5,7 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import type { UiMessage } from "@pi-desktop/shared";
+import type { PiRendererEntryAction } from "@pi-desktop/plugin-sdk";
 import { useOpenChatFileRef } from "../../../hooks/use-preview-target";
 import { splitChatText } from "../../../lib/chat-links";
 import { useAppStore } from "../../../stores/app-store";
@@ -19,7 +20,12 @@ import {
 import { TooltipButton } from "../../../components/ui";
 import { PluginSlot } from "../../../plugins/renderer-slots/SlotOutlet";
 import { rendererCandidates } from "../../../plugins/renderer-slots/candidates";
-import { entryExtraSlotProps, transcriptEntryIdentity } from "./model";
+import {
+  entryExtraSlotProps,
+  entrySlotProps,
+  transcriptEntryIdentity,
+  transcriptEntryMessage,
+} from "./model";
 import { SessionMessageOrigin } from "./SessionMessageOrigin";
 import {
   CopyButton,
@@ -69,7 +75,7 @@ export const MessageRow = memo(function MessageRow({
   // D14: `pluginId` stays unset because no producer reports one yet (model.ts).
   // Without a session the slot has no `sessionId` to report, so it is not
   // mounted at all rather than handed a made-up one.
-  const entrySlotProps = useMemo(
+  const entryIdentityProps = useMemo(
     () =>
       sessionId
         ? entryExtraSlotProps(transcriptEntryIdentity(message), sessionId)
@@ -93,6 +99,30 @@ export const MessageRow = memo(function MessageRow({
   const revisionCount = message.revisionCount ?? 0;
   const activeRevision = message.activeRevision ?? revisionCount;
   const showRevisionPager = editableUserMessage && revisionCount > 1;
+  // Slot 1 (`entry`) replaces the row, so the host hands it what the row was
+  // going to draw — text, attachments, timestamp, the typed slash form, whether
+  // the text is still arriving — plus which of the row's own actions the
+  // position stands in for. The action list follows the same conditions the
+  // host's own action bar below uses, so the two can never drift apart.
+  const hostActions = useMemo<PiRendererEntryAction[]>(() => {
+    if (editing) return [];
+    const actions: PiRendererEntryAction[] = [];
+    if (hasAnswer) actions.push("copy");
+    if (showRevisionPager) actions.push("revisions");
+    if (editableUserMessage) actions.push("edit", "delete");
+    return actions;
+  }, [editing, hasAnswer, editableUserMessage, showRevisionPager]);
+  const entryProps = useMemo(
+    () =>
+      sessionId
+        ? entrySlotProps(
+            transcriptEntryIdentity(message),
+            transcriptEntryMessage(message, hostActions),
+            sessionId,
+          )
+        : undefined,
+    [message, sessionId, hostActions],
+  );
   const extraAttachments = useMemo(() => {
     const attachments = message.attachments;
     if (!attachments?.length) return [];
@@ -142,13 +172,15 @@ export const MessageRow = memo(function MessageRow({
       <div className="message-col">
         {message.sessionMessage ? <SessionMessageOrigin origin={message.sessionMessage} /> : null}
         {/* Slot 1 (`entry`): a whole transcript message. A registration replaces
-          * the message the host draws — bubble and actions alike — and without
-          * one this is the host's own rendering unchanged (ADR 0291). While the
-          * user is editing the row the form is host-owned, so the position
-          * renders the host's own message instead of a plugin's card. */}
+          * the message the host draws — bubble and actions alike — so the mount
+          * hands the component the message the row was going to draw, not just
+          * the row's identity (spec 07-plugins/16 2A.5). Without a registration
+          * this is the host's own rendering unchanged (ADR 0291). While the user
+          * is editing the row the form is host-owned, so the position renders the
+          * host's own message instead of a plugin's card. */}
         <PluginSlot
           slot="entry"
-          slotProps={entrySlotProps}
+          slotProps={entryProps}
           candidates={entryCandidates}
           registrations={editing ? NO_REGISTRATIONS : undefined}
         >
@@ -368,11 +400,12 @@ export const MessageRow = memo(function MessageRow({
         </PluginSlot>
         {/* Slot 13: appended below everything the host itself renders. This
           * area only adds to the entry — slot 1 owns replacing it — so the
-          * boundary's fallback is nothing (ADR 0291). */}
+          * boundary's fallback is nothing (ADR 0291). It is handed the entry's
+          * identity alone: nothing here replaces a host surface. */}
         {sessionId ? (
           <PluginSlot
             slot="entryExtra"
-            slotProps={entrySlotProps}
+            slotProps={entryIdentityProps}
             candidates={entryCandidates}
           />
         ) : null}

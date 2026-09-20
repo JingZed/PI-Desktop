@@ -17,17 +17,26 @@
  * This example registers a component for every one of the ten declared slots:
  *
  *   `entry`            — the whole-message position. A registration replaces
- *     the row the host draws, so this component states that it is standing in
- *     for the host's bubble rather than trying to re-draw it.
- *   `entryExtra`       — a block appended below a transcript entry.
+ *     the row the host draws, so the host hands the component the message that
+ *     row was going to display (`text`, `attachments`, `createdAt`, the typed
+ *     slash form, `streaming`, and the host `actions` the position covers) and
+ *     this component re-draws that message in its own form with its own
+ *     controls beside it. That is the rule for every replace position here:
+ *     the position comes with its data, and this example always re-renders it.
+ *   `entryExtra`       — a block appended below a transcript entry. An additive
+ *     position: it is handed the entry's identity only and adds to the row.
  *   `codeBlock`        — a component that owns one fenced language, namespaced
  *     with this plugin's id so it cannot shadow `json`, `ts` or `mermaid`.
  *   `toolCard`         — the card body of this plugin's own tool. The host
  *     offers this position only to the tool row's owner (the forced
  *     `plugin_<id>_<tool>` prefix), which is why this plugin contributes
- *     `showcase_note` from its headless half.
+ *     `showcase_note` from its headless half. The card re-draws the call it
+ *     stands in for — its name, arguments and result — beside its own controls.
  *   `composerControl`  — one registration asked for both composer control rows;
- *     it decides for itself which row it draws in (`position`).
+ *     it decides for itself which row it draws in (`position`), opens the layer
+ *     positions, and drives the draft through the declared
+ *     `composer.readDraft` / `composer.replaceDraft` actions (including one
+ *     deliberate `DRAFT_CONFLICT` and one unrouted `composer.insertText`).
  *   `completionSource` — rows inside the completion popover, below the host's.
  *   `composerReference`— the plugin's own chip beside the composer's chips.
  *   `inlineConfirm`, `modal`, `overlay` — the three layer positions. They are
@@ -36,7 +45,9 @@
  *     replaces the host's permission card, so both are opened from this
  *     plugin's own composer controls and closed by removing the registration.
  *     That is the position's whole lifecycle: registration is appearance,
- *     removal is disappearance (spec 07-plugins/16 2A.5, D10).
+ *     removal is disappearance (spec 07-plugins/16 2A.5, D10). The inline card
+ *     re-draws the pending permission request the host's own card would have
+ *     shown; approving or denying stays host-owned.
  *
  * Nothing here touches `window` or `document`: the props are the whole input
  * and `dispatch` is the whole output (ADR 0294 decision 1). The module shares
@@ -102,16 +113,43 @@ function nowMs() {
   return typeof performance?.now === "function" ? performance.now() : Date.now();
 }
 
+/**
+ * slot -> registration for every position this module holds outside the
+ * on-demand layers. Held here so a replace-slot card can hand its own position
+ * back to the host: this module registers `entry` and `toolCard` once, at load,
+ * and without the handle a card could only *say* it was standing in for the
+ * host's row.
+ */
+const heldRegistrations = new Map();
+
 /** Registers one slot and remembers that this module holds it. */
 function registerSlot(slot, component, options) {
   const handle = hostApi.slots.register(slot, component, options);
   heldSlots.add(slot);
-  return {
+  const registration = {
     remove: () => {
       heldSlots.delete(slot);
+      heldRegistrations.delete(slot);
       handle.remove();
     },
   };
+  heldRegistrations.set(slot, registration);
+  return registration;
+}
+
+/**
+ * Withdraw one position this module holds. Registration is appearance and
+ * removal is disappearance (D10), so this is the only way a card can give a
+ * position back; the host then draws its own rendering again. A layer's
+ * registration is tracked by `openLayers` as well, so both stores are cleared.
+ */
+function releaseSlot(slot) {
+  const registration = openLayers.get(slot) ?? heldRegistrations.get(slot);
+  if (!registration) return false;
+  openLayers.delete(slot);
+  registration.remove();
+  for (const listener of [...layerListeners]) listener();
+  return true;
 }
 
 /** Every function count, plus their totals. */
@@ -293,6 +331,38 @@ const STYLES = `
   opacity: 0.85;
 }
 
+/* The message a replace position re-draws. pre-wrap keeps a multi-line
+ * message readable: the card is presentation, not concealment. */
+.acme-plugin-showcase__entry-text {
+  display: block;
+  margin: 0.25rem 0;
+  white-space: pre-wrap;
+  color: var(--pi-slot-text, inherit);
+}
+
+/* Tool arguments and results, printed as JSON. Bounded by the component, not
+ * by CSS, so the card never grows without limit. */
+.acme-plugin-showcase__args {
+  display: block;
+  margin-top: 0.125rem;
+  padding: 0.25rem 0.375rem;
+  border-radius: var(--pi-slot-radius-sm, 0.375rem);
+  background: var(--pi-slot-bg, transparent);
+  color: var(--pi-slot-text-muted, inherit);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--pi-slot-text-xs, 0.75rem);
+  white-space: pre-wrap;
+}
+
+/* The card's own controls, beside the content it re-draws — never instead. */
+.acme-plugin-showcase__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+  margin-top: 0.375rem;
+}
+
 /* A row the block marked with a trailing "!": the plugin's own emphasis. */
 .acme-plugin-showcase__kv-flagged {
   text-decoration: underline;
@@ -421,16 +491,17 @@ function setLayerOpen(slot, open, dispatch) {
   if (open) {
     if (!hostApi) return false;
     openLayers.set(slot, registerSlot(slot, layerComponent(slot)));
+    for (const listener of [...layerListeners]) listener();
   } else {
-    openLayers.get(slot).remove();
-    openLayers.delete(slot);
+    // `releaseSlot` re-renders the controls and the cards itself, so the close
+    // path notifies once and still reaches the report below.
+    releaseSlot(slot);
   }
-  for (const listener of [...layerListeners]) listener();
-  // The three layer positions are handed a session id and nothing else, so a
-  // close from a layer card's own button has no dispatcher and cannot report
-  // its own change; the console then keeps the previous state until the next
-  // control-driven toggle. That is stated on the console page rather than
-  // papered over with a report this realm cannot send.
+  // The layer positions are handed the pending confirmation (inlineConfirm) or a
+  // session id and nothing else, so a close from a layer card's own button has
+  // no dispatcher and cannot report its own change; the console then keeps the
+  // previous state until the next control-driven toggle. That is stated on the
+  // console page rather than papered over with a report this realm cannot send.
   if (typeof dispatch === "function") {
     void reportToProcess(dispatch, "renderer.slot", {
       slot,
@@ -539,48 +610,267 @@ function ProcessReportButton({ dispatch, label = "Report to the plugin process" 
 }
 
 /**
+ * The report a mounted position sends by itself.
+ *
+ * The console's live tile counts "slot-side reports", and a report that only
+ * happens when a human presses a button reads zero on a window nobody has
+ * touched. A mount is the one moment this module knows a position is live, so
+ * the report goes out from here — once per mount, carrying the state this
+ * module really holds at that moment. The button below stays: it re-reports on
+ * demand and prints the host's own answer.
+ */
+function useMountReport(dispatch) {
+  useEffect(() => {
+    void reportToProcess(dispatch, "renderer.report", selfReport());
+  }, []);
+}
+
+/**
+ * The draft half of the composer control (spec 07-plugins/16 2A.7).
+ *
+ * Three real host actions and one deliberate refusal:
+ *
+ * - `composer.readDraft` answers the live snapshot
+ *   `{ sessionId, generation, text, fileReferences }`, which the control shows
+ *   and keeps for the next two buttons.
+ * - `composer.replaceDraft` writes a whole draft back. `expectedGeneration` is
+ *   the host's optimistic lock, so the control passes the generation it just
+ *   read and the host answers `{ ok, generation, previous }` once a mounted
+ *   composer consumed the write.
+ * - the same action with a deliberately stale `expectedGeneration` is the
+ *   refusal path: the host answers `DRAFT_CONFLICT` and writes nothing.
+ * - `composer.insertText` is declared in the manifest and has no host handler
+ *   at all, so dispatching it is refused with `PLUGIN_ACTION_UNROUTED` — the
+ *   same code the plugin row's Renderer diagnostics records.
+ *
+ * Every outcome is printed on the control and reported to the plugin process,
+ * because an action that only ever answers inside this realm is not evidence of
+ * anything. The refusal report is what the console shows next to the row's own
+ * diagnostic: one refusal, two places to read it.
+ */
+function ComposerDraftControls({ dispatch }) {
+  const [outcome, setOutcome] = useState("idle");
+  const [snapshot, setSnapshot] = useState(null);
+
+  const run = (label, action, payload, onOk) => {
+    if (typeof dispatch !== "function") {
+      setOutcome(`${label}: no dispatch prop`);
+      return Promise.resolve(null);
+    }
+    setOutcome(`${label}: asking`);
+    return dispatch(action, payload)
+      .then((answer) => {
+        if (onOk) onOk(answer);
+        setOutcome(`${label}: ok`);
+        return answer;
+      })
+      .catch((error) => {
+        const code = error?.code ?? String(error);
+        setOutcome(`${label}: ${code}`);
+        // Reported, never swallowed: the code the window shows is the code the
+        // console shows, and the row keeps the host's own diagnostic as well.
+        void reportToProcess(dispatch, "renderer.refusal", { action, code });
+        return null;
+      });
+  };
+
+  const generation = typeof snapshot?.generation === "number" ? snapshot.generation : null;
+  const draftText = typeof snapshot?.text === "string" ? snapshot.text : null;
+  return createElement(
+    "span",
+    {
+      className: "acme-plugin-showcase__action",
+      "data-pi-showcase-draft-outcome": outcome,
+      "data-pi-showcase-draft-generation": generation === null ? "" : String(generation),
+      "data-pi-showcase-draft-text": draftText === null ? "" : draftText,
+      title:
+        "composer.readDraft / composer.replaceDraft, driven from a mounted slot. " +
+        "The stale write is the documented DRAFT_CONFLICT path; the insert is declared " +
+        "and unrouted, so the host answers PLUGIN_ACTION_UNROUTED.",
+    },
+    [
+      createElement(
+        "button",
+        {
+          key: "read",
+          type: "button",
+          className: "acme-plugin-showcase__button pi-slot-btn",
+          "data-pi-showcase-trigger": "readDraft",
+          onClick: () =>
+            run("readDraft", "composer.readDraft", {}, (answer) => setSnapshot(answer ?? null)),
+        },
+        "Showcase: read the draft",
+      ),
+      createElement(
+        "button",
+        {
+          key: "write",
+          type: "button",
+          className: "acme-plugin-showcase__button pi-slot-btn",
+          "data-pi-showcase-trigger": "replaceDraft",
+          onClick: () =>
+            run("replaceDraft", "composer.replaceDraft", {
+              text: draftText ?? "",
+              // The generation this control last read is the lock the write is
+              // made against; without a read there is nothing to write back.
+              ...(generation === null ? {} : { expectedGeneration: generation }),
+            }),
+        },
+        "Showcase: write it back",
+      ),
+      createElement(
+        "button",
+        {
+          key: "stale",
+          type: "button",
+          className: "acme-plugin-showcase__button pi-slot-btn",
+          "data-pi-showcase-trigger": "staleDraft",
+          onClick: () =>
+            run("staleDraft", "composer.replaceDraft", {
+              text: draftText ?? "a stale showcase write",
+              // Deliberately out of date: the host must refuse this one.
+              expectedGeneration: (generation ?? 0) + 99,
+            }),
+        },
+        "Showcase: stale write (DRAFT_CONFLICT)",
+      ),
+      createElement(
+        "button",
+        {
+          key: "unrouted",
+          type: "button",
+          className: "acme-plugin-showcase__button pi-slot-btn",
+          "data-pi-showcase-trigger": "unroutedAction",
+          onClick: () => run("insertText", "composer.insertText", { text: "showcase insert" }),
+        },
+        "Showcase: declared but unrouted",
+      ),
+      outcome === "idle"
+        ? null
+        : createElement(
+            "span",
+            { key: "outcome", className: "acme-plugin-showcase__muted" },
+            outcome,
+          ),
+    ],
+  );
+}
+
+/**
  * `entry`: the whole-message position.
  *
  * The host draws a registration *instead of* the message it would otherwise
- * render — bubble and actions alike — and hands this component the same
- * `{ entry, sessionId }` shape `entryExtra` gets. The entry is a shape, not the
- * message text, so this component cannot re-draw the host's bubble; it states
- * what it is standing in for instead of pretending. Every prop is read
- * defensively: the host may mount a slot before the data a plugin declared is
- * ready.
+ * render — bubble and actions alike — so it hands this component the message
+ * that row was going to display: `message.text`, `message.attachments`, the
+ * timestamp, the typed slash form, whether the text is still arriving, and the
+ * host `actions` the position covers. This card re-draws exactly that message in
+ * its own form and puts its own controls beside it. Stating "I took the row
+ * over" while hiding the text would be concealing the data the position exists
+ * to present, which is the one thing a replace slot must not do.
+ *
+ * Everything is read defensively: the host may mount a position before the data
+ * is ready, and a component written against an older host is handed no
+ * `message` at all.
  */
-function EntryCard({ entry, sessionId, dispatch }) {
+function EntryCard({ entry, message, sessionId, dispatch }) {
   const facts = entryFacts(entry);
-  return createElement("div", { className: "acme-plugin-showcase__card", "data-pi-showcase-slot": "entry" }, [
-    createElement(
-      "span",
-      { key: "title", className: "acme-plugin-showcase__card-title" },
-      `${PLUGIN_ID} · entry`,
-    ),
-    createElement(
-      "span",
-      { key: "what", className: "acme-plugin-showcase__line" },
-      `this registration replaced the host's own row for a ${facts.role} message (${facts.id}` +
-        (facts.attributedTo ? `, added by ${facts.attributedTo}` : "") +
-        ").",
-    ),
-    createElement(
-      "span",
-      { key: "session", className: "acme-plugin-showcase__line acme-plugin-showcase__muted" },
-      sessionId ? `session ${sessionId}` : "no session id in props",
-    ),
-    createElement(
-      "span",
-      { key: "hint", className: "acme-plugin-showcase__line acme-plugin-showcase__muted" },
-      "The host's bubble, attachments and actions are not drawn while this slot is registered; unload the plugin to get them back.",
-    ),
-    createElement(HostToastButton, {
-      key: "notify",
-      dispatch,
-      message: `${PLUGIN_ID} · entry slot · message ${facts.id}`,
-      label: "Send a toast from the entry slot",
-    }),
-  ]);
+  const text = message && typeof message.text === "string" ? message.text : "";
+  const attachments = message && Array.isArray(message.attachments) ? message.attachments : [];
+  const actions = message && Array.isArray(message.actions) ? message.actions : [];
+  const meta = [
+    `${facts.role} message`,
+    facts.id,
+    facts.attributedTo ? `added by ${facts.attributedTo}` : null,
+    sessionId ? `session ${sessionId}` : "no session id in props",
+    message && message.createdAt ? message.createdAt : null,
+    message && message.command ? `typed as ${message.command}` : null,
+    message && message.streaming ? "still streaming" : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  return createElement(
+    "div",
+    { className: "acme-plugin-showcase__card", "data-pi-showcase-slot": "entry" },
+    [
+      createElement(
+        "span",
+        { key: "title", className: "acme-plugin-showcase__card-title" },
+        `${PLUGIN_ID} · entry`,
+      ),
+      createElement(
+        "span",
+        { key: "meta", className: "acme-plugin-showcase__line acme-plugin-showcase__muted" },
+        meta,
+      ),
+      // The message itself, in the card's own form. `data-pi-showcase-entry-text`
+      // is what the e2e read: a card that stopped drawing the text would fail
+      // there rather than quietly showing its own chrome instead.
+      createElement(
+        "span",
+        {
+          key: "text",
+          className: "acme-plugin-showcase__entry-text",
+          "data-pi-showcase-entry-text": "1",
+        },
+        text || "(this entry has no text)",
+      ),
+      attachments.length
+        ? createElement(
+            "span",
+            { key: "attachments", className: "acme-plugin-showcase__row" },
+            attachments.map((attachment, index) =>
+              createElement(
+                "span",
+                {
+                  key: `attachment-${index}`,
+                  className: "acme-plugin-showcase__chip pi-slot-chip",
+                  "data-pi-showcase-entry-attachment": attachment?.name ?? "",
+                },
+                `${attachment?.name ?? "attachment"} (${attachment?.kind ?? "file"} · ${attachment?.ref ?? "no ref"})`,
+              ),
+            ),
+          )
+        : null,
+      createElement(
+        "span",
+        { key: "actions", className: "acme-plugin-showcase__line acme-plugin-showcase__muted" },
+        actions.length
+          ? `the host's own row actions this card stands in for: ${actions.join(", ")} (this card cannot trigger them)`
+          : "the host's own row actions would be none here",
+      ),
+      createElement(
+        "span",
+        { key: "session", className: "acme-plugin-showcase__line acme-plugin-showcase__muted" },
+        sessionId ? `session ${sessionId}` : "no session id in props",
+      ),
+      createElement(
+        "span",
+        { key: "controls", className: "acme-plugin-showcase__controls" },
+        [
+          createElement(HostToastButton, {
+            key: "notify",
+            dispatch,
+            message: `${PLUGIN_ID} · entry slot · message ${facts.id}`,
+            label: "Send a toast from the entry slot",
+          }),
+          createElement(
+            "button",
+            {
+              key: "release",
+              type: "button",
+              className: "acme-plugin-showcase__button pi-slot-btn",
+              "data-pi-showcase-release": "entry",
+              title:
+                "Removes this module's registration for the whole-message position. " +
+                "The host then draws its own row again — registration is the claim.",
+              onClick: () => releaseSlot("entry"),
+            },
+            "Release this claim (give the row back to the host)",
+          ),
+        ],
+      ),
+    ],
+  );
 }
 
 /**
@@ -620,43 +910,107 @@ function EntryExtraCard({ entry, dispatch }) {
   ]);
 }
 
+/** The JSON of a value the host handed over, bounded so a card stays readable. */
+function preview(value, empty = "nothing to show", limit = 600) {
+  if (value === undefined) return empty;
+  let text;
+  try {
+    text = JSON.stringify(value, null, 2);
+  } catch (error) {
+    text = `unprintable value: ${error?.message ?? String(error)}`;
+  }
+  if (typeof text !== "string") text = String(value);
+  return text.length > limit ? `${text.slice(0, limit)}… (${text.length} characters)` : text;
+}
+
 /**
  * `toolCard`: the card body of this plugin's own tool.
- *
  * The host asks a plugin to draw this position only for a tool row whose forced
  * prefix names that plugin (D015), and it hands over the row as
- * `{ entry, sessionId }` with `entry.pluginId` set to the owner. The component
- * checks that attribution anyway, because "the host only offers me my own rows"
- * is a contract worth making visible rather than assuming.
+ * `{ entry, tool, sessionId }` with `entry.pluginId` set to the owner. The
+ * component checks that attribution anyway, because "the host only offers me my
+ * own rows" is a contract worth making visible rather than assuming.
+ *
+ * The card body replaces the host's own detail blocks, so the host hands over
+ * what those blocks are built from: the tool's name, the call's arguments, its
+ * result and status. This card re-draws all of it and adds its own controls;
+ * a card that only announced "the host's blocks are hidden" would throw away
+ * the call the user asked to see.
  */
-function ToolCard({ entry, sessionId, dispatch }) {
+function ToolCard({ entry, tool, sessionId, dispatch }) {
   const facts = entryFacts(entry);
   const owned = facts.attributedTo === PLUGIN_ID;
-  return createElement("div", { className: "acme-plugin-showcase__card", "data-pi-showcase-slot": "toolCard" }, [
-    createElement(
-      "span",
-      { key: "title", className: "acme-plugin-showcase__card-title" },
-      `${PLUGIN_ID} · toolCard`,
-    ),
-    createElement(
-      "span",
-      { key: "owner", className: "acme-plugin-showcase__line" },
-      owned
-        ? `this is the plugin's own tool row (${facts.id}), so the host offered it its card body instead of its detail blocks.`
-        : `not this plugin's tool row (owner: ${facts.attributedTo ?? "unknown"}); the host does not offer the position for it.`,
-    ),
-    createElement(
-      "span",
-      { key: "session", className: "acme-plugin-showcase__line acme-plugin-showcase__muted" },
-      sessionId ? `session ${sessionId}` : "no session id in props",
-    ),
-    createElement(HostToastButton, {
-      key: "notify",
-      dispatch,
-      message: `${PLUGIN_ID} · toolCard for ${facts.id}`,
-      label: "Send a toast from the tool card",
-    }),
-  ]);
+  const call = tool && typeof tool === "object" ? tool : {};
+  const name = typeof call.name === "string" && call.name ? call.name : "no tool name in props";
+  const status = typeof call.status === "string" && call.status ? call.status : "unknown status";
+  const duration =
+    typeof call.durationMs === "number" && call.durationMs > 0
+      ? ` · ${(call.durationMs / 1000).toFixed(2)}s`
+      : "";
+  return createElement(
+    "div",
+    { className: "acme-plugin-showcase__card", "data-pi-showcase-slot": "toolCard" },
+    [
+      createElement(
+        "span",
+        { key: "title", className: "acme-plugin-showcase__card-title" },
+        `${PLUGIN_ID} · toolCard`,
+      ),
+      createElement(
+        "span",
+        { key: "owner", className: "acme-plugin-showcase__line" },
+        owned
+          ? `this is the plugin's own tool row (${facts.id}), so the host offered it its card body instead of its detail blocks.`
+          : `not this plugin's tool row (owner: ${facts.attributedTo ?? "unknown"}); the host does not offer the position for it.`,
+      ),
+      createElement(
+        "span",
+        { key: "tool", className: "acme-plugin-showcase__line", "data-pi-showcase-tool-name": name },
+        `${name} · ${status}${duration}`,
+      ),
+      createElement(
+        "span",
+        { key: "args", className: "acme-plugin-showcase__args" },
+        `arguments: ${preview(call.args)}`,
+      ),
+      createElement(
+        "span",
+        { key: "result", className: "acme-plugin-showcase__args" },
+        `result: ${preview(call.result, "nothing yet (the call is still running)")}`,
+      ),
+      createElement(
+        "span",
+        { key: "session", className: "acme-plugin-showcase__line acme-plugin-showcase__muted" },
+        sessionId ? `session ${sessionId}` : "no session id in props",
+      ),
+      createElement(
+        "span",
+        { key: "controls", className: "acme-plugin-showcase__controls" },
+        [
+          createElement(HostToastButton, {
+            key: "notify",
+            dispatch,
+            message: `${PLUGIN_ID} · toolCard for ${facts.id}`,
+            label: "Send a toast from the tool card",
+          }),
+          createElement(
+            "button",
+            {
+              key: "release",
+              type: "button",
+              className: "acme-plugin-showcase__button pi-slot-btn",
+              "data-pi-showcase-release": "toolCard",
+              title:
+                "Removes this module's registration for the tool card body. " +
+                "The row then draws the host's own detail blocks again.",
+              onClick: () => releaseSlot("toolCard"),
+            },
+            "Release this claim (give the card body back)",
+          ),
+        ],
+      ),
+    ],
+  );
 }
 
 /**
@@ -666,44 +1020,90 @@ function ToolCard({ entry, sessionId, dispatch }) {
  * It is deliberately opened on demand. The host mounts this position only while
  * a permission request is pending and draws the host's own permission card
  * there when no plugin holds it, so a registration at load would replace the
- * user's approval UI. The card says so and closes itself by removing the
- * registration, which is the one action this component needs.
+ * user's approval UI. Because the position replaces a host surface, the host
+ * hands over the confirmation that surface would have shown (`confirm`): the
+ * tool, its argument preview, the risk the host classified it with, the reason
+ * it is asking and how many requests wait behind this one. The card re-draws
+ * that request in its own form. Deciding it stays host-owned — there is no
+ * action for allow or deny here — so the card's own control closes the
+ * registration, which brings the host's card back.
  */
-function InlineConfirmCard({ sessionId }) {
+function InlineConfirmCard({ sessionId, confirm, dispatch }) {
   useLayerState();
-  return createElement("div", { className: "acme-plugin-showcase__card", "data-pi-showcase-slot": "inlineConfirm" }, [
-    createElement(
-      "span",
-      { key: "title", className: "acme-plugin-showcase__card-title" },
-      `${PLUGIN_ID} · inlineConfirm`,
-    ),
-    createElement(
-      "span",
-      { key: "what", className: "acme-plugin-showcase__line" },
-      "A plugin card at the host's inline-confirmation position. While this registration is up, the host's own permission request card is not drawn here.",
-    ),
-    createElement(
-      "span",
-      { key: "limit", className: "acme-plugin-showcase__line acme-plugin-showcase__muted" },
-      "The slot gives this component a session id and nothing else, so it cannot approve or deny the request: close it to bring the host's card back.",
-    ),
-    createElement(
-      "span",
-      { key: "session", className: "acme-plugin-showcase__line acme-plugin-showcase__muted" },
-      sessionId ? `session ${sessionId}` : "no session id in props",
-    ),
-    createElement(
-      "button",
-      {
-        key: "close",
-        type: "button",
-        className: "acme-plugin-showcase__button pi-slot-btn",
-        "data-pi-showcase-close": "inlineConfirm",
-        onClick: () => setLayerOpen("inlineConfirm", false),
-      },
-      "Close this card (removes its registration)",
-    ),
-  ]);
+  const request = confirm && typeof confirm === "object" ? confirm : null;
+  const facts = request
+    ? [
+        `tool ${request.toolName}`,
+        `risk ${request.risk}`,
+        request.agentName ? `asked by subagent ${request.agentName}` : null,
+        request.queued > 0 ? `${request.queued} request(s) waiting behind it` : "no request waiting behind it",
+        `request ${request.requestId}`,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : "no confirmation in props";
+  return createElement(
+    "div",
+    { className: "acme-plugin-showcase__card", "data-pi-showcase-slot": "inlineConfirm" },
+    [
+      createElement(
+        "span",
+        { key: "title", className: "acme-plugin-showcase__card-title" },
+        `${PLUGIN_ID} · inlineConfirm`,
+      ),
+      createElement(
+        "span",
+        { key: "what", className: "acme-plugin-showcase__line" },
+        "This card holds the host's inline-confirmation position, so the host's own permission card is not drawn here. What follows is the request it would have shown.",
+      ),
+      createElement(
+        "span",
+        { key: "request", className: "acme-plugin-showcase__line", "data-pi-showcase-confirm": facts },
+        facts,
+      ),
+      createElement(
+        "span",
+        { key: "args", className: "acme-plugin-showcase__args" },
+        `arguments: ${preview(request ? request.args : undefined)}`,
+      ),
+      createElement(
+        "span",
+        { key: "reason", className: "acme-plugin-showcase__line" },
+        `why the host is asking: ${request && request.reason ? request.reason : "no reason in props"}`,
+      ),
+      createElement(
+        "span",
+        { key: "session", className: "acme-plugin-showcase__line acme-plugin-showcase__muted" },
+        sessionId ? `session ${sessionId}` : "no session id in props",
+      ),
+      createElement(
+        "span",
+        { key: "controls", className: "acme-plugin-showcase__controls" },
+        [
+          createElement(HostToastButton, {
+            key: "notify",
+            dispatch,
+            message: `${PLUGIN_ID} · inlineConfirm card`,
+            label: "Send a toast from the inline card",
+          }),
+          createElement(
+            "button",
+            {
+              key: "close",
+              type: "button",
+              className: "acme-plugin-showcase__button pi-slot-btn",
+              "data-pi-showcase-close": "inlineConfirm",
+              title:
+                "Removes this module's registration for the confirmation position. " +
+                "Approving or denying is host-owned, so this is the card's only control.",
+              onClick: () => setLayerOpen("inlineConfirm", false),
+            },
+            "Close this card (removes its registration)",
+          ),
+        ],
+      ),
+    ],
+  );
 }
 
 /**
@@ -711,6 +1111,10 @@ function InlineConfirmCard({ sessionId }) {
  * blocking; the plugin owns this box. Escape is the host's dismissal of a
  * plugin layer (it hides the layer without touching the plugin's own state),
  * and this button withdraws the registration for good.
+ *
+ * A layer is the one replace position with no content of the host's own to
+ * re-draw — the host owns the scrim and the blocking, the plugin's registration
+ * *is* the layer — so the card states which host surface it occupies instead.
  */
 function ModalCard({ sessionId }) {
   useLayerState();
@@ -730,8 +1134,13 @@ function ModalCard({ sessionId }) {
       ),
       createElement(
         "span",
+        { key: "surface", className: "acme-plugin-showcase__line" },
+        "Host surface occupied: the app-level modal layer (the host's own `data-pi-plugin-layer=\"modal\"` box over the window). The host adds the scrim and the blocking, and owns the Escape dismissal — this plugin owns only this card.",
+      ),
+      createElement(
+        "span",
         { key: "what", className: "acme-plugin-showcase__line" },
-        "This layer is on screen because this plugin registered a component for the modal position; it is blocking because the host adds its own scrim (D8-like: the host's decision, not the plugin's).",
+        "This layer is on screen because this plugin registered a component for the modal position; registration is appearance and removal is disappearance.",
       ),
       createElement(
         "span",
@@ -803,30 +1212,41 @@ function OverlayCard({ sessionId }) {
  * The host mounts the same registration at the end of the composer's left row
  * and at the end of its right row, and hands it `{ position, draft, sessionId? }`.
  * The component decides for itself which row it draws in and returns `null` for
- * the other, which leaves no hole. The draft is read-only; the host's own
- * controls stay where they are (D8). These buttons control this plugin's own
- * layer registrations, which is something a composer control can really do
- * today.
+ * the other, which leaves no hole. The `draft` prop is what the host handed over
+ * at render time and is read-only; the left row's own buttons drive the same
+ * draft through the declared `composer.readDraft` / `composer.replaceDraft`
+ * actions (D8 keeps the host's own controls where they are). These buttons also
+ * control this plugin's own layer registrations, which is something a composer
+ * control can really do today.
+ *
+ * A mount reports this module's live state to the plugin process (see
+ * `useMountReport`), so the console's "slot-side reports" tile reflects a window
+ * a user has really mounted a position in, with no button press needed.
  */
 function ComposerControl({ position, draft, sessionId, dispatch }) {
   useLayerState();
+  useMountReport(dispatch);
   const draftLength = typeof draft === "string" ? draft.length : 0;
   const sessionNote = sessionId ? `session ${sessionId}` : "no session yet";
   if (position === "left") {
     const open = openLayers.has("inlineConfirm");
-    return createElement(
-      "button",
-      {
-        type: "button",
-        className: "acme-plugin-showcase__button pi-slot-btn",
-        "data-pi-showcase-trigger": "inlineConfirm",
-        title:
-          `Showcase demo · left composer position · draft ${draftLength} char(s) · ${sessionNote}. ` +
-          "While this registration is up it takes the host's inline-confirmation position.",
-        onClick: () => setLayerOpen("inlineConfirm", !open, dispatch),
-      },
-      open ? "Showcase: close inline card" : "Showcase: inline card",
-    );
+    return createElement("span", { className: "acme-plugin-showcase__row" }, [
+      createElement(
+        "button",
+        {
+          key: "inlineConfirm",
+          type: "button",
+          className: "acme-plugin-showcase__button pi-slot-btn",
+          "data-pi-showcase-trigger": "inlineConfirm",
+          title:
+            `Showcase demo · left composer position · draft ${draftLength} char(s) · ${sessionNote}. ` +
+            "While this registration is up it takes the host's inline-confirmation position.",
+          onClick: () => setLayerOpen("inlineConfirm", !open, dispatch),
+        },
+        open ? "Showcase: close inline card" : "Showcase: inline card",
+      ),
+      createElement(ComposerDraftControls, { key: "draft", dispatch }),
+    ]);
   }
   if (position === "right") {
     const modalOpen = openLayers.has("modal");
@@ -1015,9 +1435,11 @@ function KeyValueBlock({ language, code }) {
 export function onLoad(pi) {
   // A reload re-runs `onLoad` on the module instance the module cache kept, and
   // the host already reclaimed the previous load's registrations on unload, so
-  // any handle left in `openLayers` is stale and the slot inventory starts from
-  // what this load really registers.
+  // every handle kept here is stale and the slot inventory starts from what this
+  // load really registers. That matters for the release buttons: a card may have
+  // given its position back since the last load, and a fresh load takes it again.
   openLayers.clear();
+  heldRegistrations.clear();
   heldSlots.clear();
   hostApi = pi;
   pi.ui.injectStyle(STYLES);

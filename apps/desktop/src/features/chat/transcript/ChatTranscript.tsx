@@ -22,6 +22,7 @@ import { TranscriptSearchContext } from "../../../lib/transcript-search-context"
 import { PluginSlot } from "../../../plugins/renderer-slots/SlotOutlet";
 import { useRendererCandidates } from "../../../plugins/renderer-slots/use-renderer-candidates";
 import { DisclosureAnchorContext } from "../../../lib/disclosure-anchor-context";
+import { inlineConfirmSlotProps } from "./model";
 
 export const ChatTranscript = memo(function ChatTranscript({
   sessionId,
@@ -68,11 +69,16 @@ export const ChatTranscript = memo(function ChatTranscript({
   const transcriptRunning = isRunning && !readingWindow;
   // Slot 7 (`inlineConfirm`): the host's inline confirmation card is the
   // permission request it renders below the transcript, so that is the position
-  // a plugin's own card takes. Its data is the session the card belongs to.
+  // a plugin's own card takes. A replace position is handed the data it stands
+  // in for, so the mount hands the pending request over in the slot's own
+  // shape — the component re-renders the confirmation instead of a blank card.
   const inlineConfirmCandidates = useRendererCandidates();
   const inlineConfirmProps = useMemo(
-    () => (sessionId ? { sessionId } : {}),
-    [sessionId],
+    () =>
+      pendingPermission
+        ? inlineConfirmSlotProps(pendingPermission, queuedPermissions ?? 0)
+        : undefined,
+    [pendingPermission, queuedPermissions],
   );
   const latestTurnResult = useAppStore((state) =>
     sessionId ? state.latestTurnResults[sessionId] : undefined,

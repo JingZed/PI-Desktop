@@ -412,6 +412,7 @@
         log: "showcase.console.log",
         session: "showcase.console.session",
         panel: "showcase.console.panel",
+        runtime: "showcase.console.runtime",
       };
       const bridge = window.pluginBridge;
       const logEl = document.querySelector("[data-pi-console-log]");
@@ -523,12 +524,19 @@
         {
           id: "runtime",
           title: "运行时槽位（agent 侧，11 个独立授权）",
-          hint: "每个槽位单独授予权限；本 manifest 声明了其中 5 个。",
+          hint: "每个槽位单独授予权限；本 manifest 声明了其中 5 个。回执来源为「运行时」的行是插件进程真实见过的 agent 侧事实，可点 runtime.tool.gate 的「看运行时回执」读回。",
           gapKey: "runtime",
           gap:
-            "由扩展侧上报，本版本未接：agent/extension.js 跑在 agent sidecar 里，它只有宿主中介的 UI 通道（ctx.ui.notify / setStatus），没有到插件进程或面板页的通道，所以侧边栏读不到它的命中次数。真实可得的只有宿主自己推给本页的事件（session:turnEnded，回执来源显示「宿主」）。",
+            "回执不是计数：下面每一条「运行时」回执都是插件进程真的收到/真的执行过的事实——宿主推来的 session:turnEnded，以及本插件自己 agent 工具的执行（context 里的 session/turn）。扩展侧自己的判定（tool gate 的 block/allow、turn facts 汇总）由 agent sidecar 写出，只走宿主中介的窗口通道：用户看到的是扩展写的 warning toast，模型看到的是被 gate 改写的结果行，插件行诊断也记着它；sidecar 没有到插件进程或本页的通道，所以这里列出真实回执，并明确说 gate 命中数读不到，而不是编一个数。",
           items: [
-            { name: "runtime.tool.gate", note: "拦截工具调用 / 替换工具结果", badge: "已授予", kind: "additive" },
+            {
+              name: "runtime.tool.gate",
+              note: "拦截工具调用 / 替换工具结果（判定写在窗口里：warning toast + 被改写的结果行 + 插件行诊断）",
+              badge: "已授予",
+              kind: "additive",
+              drive: "runtime.receipts",
+              label: "看运行时回执",
+            },
             { name: "runtime.turn.watch", note: "轮次开始/结束/工具调用/供应商响应（best-effort）", badge: "已授予", kind: "additive" },
             { name: "runtime.turn.facts", note: "本轮结构化事实（工具、token、耗时、文件）", badge: "已授予", kind: "additive" },
             { name: "runtime.session.lifecycle", note: "创建/切换/删除/fork + 压缩前（informed-only）", badge: "已授予", kind: "additive" },
@@ -847,7 +855,10 @@
           tile("当前槽位", slots.length ? slots.join(", ") : "还没有上报"),
           tile("函数调用（槽位侧计数）", `served ${served} · 自测超 16ms ${overBudget}`),
           tile("宿主推送 turn ended", String(status.turnEnded ?? 0)),
-          tile("扩展侧", "未接（无通道）"),
+          tile(
+            "运行时回执（插件进程实测 · 宿主推送 / 代理工具）",
+            `${status.runtime?.receipts ?? 0} 条 · ${status.runtime?.turnEnded ?? 0} / ${status.runtime?.toolCalls ?? 0}`,
+          ),
         );
         const note = document.querySelector('[data-pi-console-live="note"]');
         note.textContent =
@@ -892,8 +903,33 @@
       /* ── the buttons this page can really drive ─────────────────────── */
       const ACTIONS = {
         "status.refresh": () => refreshStatus("status.refresh"),
+        // The runtime group's one drive button: read back the receipts the
+        // plugin process really holds about the agent half, and print each one
+        // as its own log line (surface 「运行时」) instead of showing a count
+        // this page never saw.
+        "runtime.receipts": async () => {
+          const answer = await callPanel(CHANNEL.runtime, {});
+          addReceipt({
+            action: "runtime.receipts",
+            code: answer.code,
+            detail: answer.detail,
+            surface: "侧边栏",
+          });
+          const receipts = Array.isArray(answer.data?.receipts) ? answer.data.receipts : [];
+          if (answer.ok) mergeReportedReceipts(receipts);
+          setStatusNode(
+            "runtime.tool.gate",
+            receipts.length ? `回执 ${receipts.length} 条` : "还没有回执",
+            receipts.length ? "ok" : "warn",
+          );
+          return answer;
+        },
         "log.clear": async () => {
           logEl.replaceChildren();
+          // The list is forgotten, not just hidden: the merge below is
+          // idempotent by id, so a receipt the plugin process still holds comes
+          // back on the next refresh instead of being silently dropped.
+          receipts.length = 0;
           const empty = document.createElement("div");
           empty.className = "log-empty";
           empty.textContent = "回执日志已清空（清空的是这张列表，宿主侧的审计行不受影响）。";

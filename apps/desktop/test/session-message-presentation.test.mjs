@@ -53,6 +53,41 @@ function loadLib(name) {
   return module.exports;
 }
 
+/**
+ * `MessageRow` hands the `entry` replace position the message the host's own
+ * row would have drawn, built by the real `transcriptEntryMessage` /
+ * `entrySlotProps` helpers (ADR 0291). They are pure, so the real module loads
+ * unchanged; the three value imports it reaches for are stubbed at that
+ * boundary, and none of them is exercised by this file.
+ */
+function loadModel() {
+  const file = new URL("../src/features/chat/transcript/model.ts", import.meta.url);
+  const source = readFileSync(file, "utf8");
+  const { outputText } = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS },
+    fileName: file.pathname,
+  });
+  const dependencies = {
+    "@pi-desktop/shared": { THINKING_LEVELS: [] },
+    "../../../lib/tool-presentation": { toolResultPayload: () => undefined },
+    "@pi-desktop/plugin-sdk": {
+      pluginToolName: (pluginId, tool) => `plugin_${pluginId}_${tool}`,
+    },
+  };
+  const module = { exports: {} };
+  new Function("require", "exports", "module", outputText)(
+    (id) => {
+      assert.ok(Object.hasOwn(dependencies, id), `unmocked model dependency: ${id}`);
+      return dependencies[id];
+    },
+    module.exports,
+    module,
+  );
+  return module.exports;
+}
+
+const model = loadModel();
+
 const pluginRewrites = loadLib("plugin-rewrites");
 function loadComponent(name, extras = {}) {
   const file = new URL(`../src/features/chat/transcript/${name}.tsx`, import.meta.url);
@@ -80,10 +115,7 @@ function loadComponent(name, extras = {}) {
       PluginSlot: ({ children }) => children ?? null,
     },
     "../../../plugins/renderer-slots/candidates": { rendererCandidates: () => [] },
-    "./model": {
-      transcriptEntryIdentity: (message) => ({ id: message.id, role: message.role }),
-      entryExtraSlotProps: (entry, sessionId) => ({ entry, sessionId }),
-    },
+    "./model": model,
     "../../../lib/plugin-rewrites": pluginRewrites,
     ...extras,
   };
