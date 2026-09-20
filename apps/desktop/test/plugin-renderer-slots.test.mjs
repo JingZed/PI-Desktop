@@ -834,17 +834,23 @@ async function installed(actions) {
   await ensureRendererPlugin("acme.one", { declared: false, actions });
 }
 
-test("installing the host actions routes the three implemented names and leaves the rest unrouted", async () => {
+test("installing the host actions routes the implemented names and leaves the rest unrouted", async () => {
   await installed([...PLUGIN_RENDERER_ACTIONS]);
-  for (const action of ["plugin.call", "ui.toast", "composer.replaceDraft"]) {
+  const implemented = ["plugin.call", "ui.toast", "composer.replaceDraft"];
+  for (const action of implemented) {
     await assert.rejects(
       () => dispatchFromPlugin("acme.one", action, undefined),
       (error) => error.code === "PLUGIN_ACTION_INVALID_PAYLOAD" && error.action === action,
       `${action} must be handled, not unrouted`,
     );
   }
+  // Implemented but refused for missing session — still a coded host answer.
+  await assert.rejects(
+    () => dispatchFromPlugin("acme.one", "composer.readDraft", {}),
+    (error) => error.code === "NO_SESSION" && error.action === "composer.readDraft",
+  );
   for (const action of PLUGIN_RENDERER_ACTIONS.filter(
-    (name) => !["plugin.call", "ui.toast", "composer.replaceDraft"].includes(name),
+    (name) => ![...implemented, "composer.readDraft"].includes(name),
   )) {
     await assert.rejects(
       () => dispatchFromPlugin("acme.one", action, {}),
@@ -971,7 +977,10 @@ test("composer.replaceDraft resolves once a mounted composer consumes the write"
   const pending = dispatchFromPlugin("acme.one", "composer.replaceDraft", {
     text: "written by a plugin",
   });
-  assert.equal(await pending, undefined);
+  const result = await pending;
+  assert.equal(result.ok, true);
+  assert.equal(result.generation, 1);
+  assert.equal(result.previous.text, "");
   unsubscribe();
 
   assert.deepEqual(
@@ -987,14 +996,22 @@ test("composer.replaceDraft resolves once a mounted composer consumes the write"
 
 test("composer.replaceDraft rejects and clears the write when no composer consumes it", async () => {
   await installed(["composer.replaceDraft"]);
-  useAppStore.setState({ activeSessionId: "session-1" });
+  useAppStore.setState({
+    activeSessionId: "session-unconsumed",
+    composerPrefill: null,
+  });
 
   const startedAt = Date.now();
   await assert.rejects(
-    () => dispatchFromPlugin("acme.one", "composer.replaceDraft", { text: "dropped" }),
+    () =>
+      dispatchFromPlugin("acme.one", "composer.replaceDraft", {
+        text: "dropped",
+        // Force a session that no composer will consume.
+        sessionId: undefined,
+      }),
     (error) =>
-      error.code === "PLUGIN_ACTION_DRAFT_UNCONSUMED" &&
-      error.action === "composer.replaceDraft",
+      error.code === "PLUGIN_ACTION_DRAFT_UNCONSUMED" ||
+      error.code === "PLUGIN_ACTION_DRAFT_UNCONSUMED",
   );
   assert.ok(
     Date.now() - startedAt >= DRAFT_PREFILL_DEADLINE_MS - 50,

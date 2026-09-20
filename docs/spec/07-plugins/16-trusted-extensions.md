@@ -238,6 +238,9 @@ nine names are implemented; a call to one of the other six rejects with a coded
   session and resolves only once a mounted composer consumed the write; if
   nothing consumes it within 500 ms the write is cleared and the call refuses
   with `PLUGIN_ACTION_DRAFT_UNCONSUMED`.
+- `composer.readDraft {}` returns a snapshot of the active session's composer
+  draft `{ sessionId, generation, text, fileReferences }` for the calling
+  plugin; with no active session it refuses with a coded error.
 
 `rendererData` — host data the module declares it reads. Roles are split:
 
@@ -266,6 +269,7 @@ nine names are implemented; a call to one of the other six rejects with a coded
 
 - `plugin.call`
 - `composer.replaceDraft`
+- `composer.readDraft`
 - `composer.insertText`
 - `composer.attachPath`
 - `ui.openOverlay`

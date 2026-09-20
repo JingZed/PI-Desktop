@@ -826,6 +826,7 @@ describe("rendererData and rendererActions declarations", () => {
     expect(PLUGIN_RENDERER_ACTIONS).toEqual([
       "plugin.call",
       "composer.replaceDraft",
+      "composer.readDraft",
       "composer.insertText",
       "composer.attachPath",
       "ui.openOverlay",
@@ -897,7 +898,9 @@ describe("rendererData and rendererActions declarations", () => {
     expect(
       validateManifest({ ...base, rendererActions: [...PLUGIN_RENDERER_ACTIONS, "ui.toast"] })
         .error,
-    ).toBe("manifest.rendererActions allows at most 9 entries, got 10");
+    ).toBe(
+      `manifest.rendererActions allows at most ${PLUGIN_RENDERER_ACTIONS.length} entries, got ${PLUGIN_RENDERER_ACTIONS.length + 1}`,
+    );
   });
 
   it("does not turn either declaration into an entry", () => {

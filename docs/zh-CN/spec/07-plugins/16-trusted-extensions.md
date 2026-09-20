@@ -217,6 +217,7 @@ props 拿到它的宿主数据和一个方法 `dispatch(action, payload)`；没�
 
 - `plugin.call`
 - `composer.replaceDraft`
+- `composer.readDraft`
 - `composer.insertText`
 - `composer.attachPath`
 - `ui.openOverlay`

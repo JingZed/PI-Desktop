@@ -194,11 +194,18 @@ export const PLUGIN_RENDERER_ACTIONS = [
   "plugin.call",
   /**
    * Replaces the active session's whole composer draft. Payload
-   * `{ text: string }`; the resulting draft text is exactly that string and its
-   * attachment chips are cleared. Resolves once a mounted composer consumed the
-   * write, and refuses with `PLUGIN_ACTION_DRAFT_UNCONSUMED` when none did.
+   * `{ text: string, expectedGeneration?: number, fileReferences?: [] | "preserve" }`.
+   * Resolves with `{ ok: true, generation, previous }` once a mounted composer
+   * consumed the write; refuses with `PLUGIN_ACTION_DRAFT_UNCONSUMED` when none
+   * did, or `DRAFT_CONFLICT` on generation mismatch.
    */
   "composer.replaceDraft",
+  /**
+   * Reads a snapshot of the active session composer draft for the calling
+   * plugin. Payload `{}`. Resolves with `{ sessionId, generation, text,
+   * fileReferences }`. Refused with a coded error when no session is active.
+   */
+  "composer.readDraft",
   /**
    * Inserts text at the composer's current selection. Not implemented yet:
    * calling it rejects with a coded `PLUGIN_ACTION_UNROUTED` refusal.
