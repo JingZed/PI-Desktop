@@ -9616,3 +9616,100 @@ describe("DesktopAgentRuntime before-request slot (#561 item 6)", () => {
     await runtime.dispose();
   });
 });
+
+/**
+ * `pi.ai.complete` crosses the desktop bridge (`runtime.ts` createExtensionBridge)
+ * to `host.call("ai.complete")`. The runner half lives in
+ * `extensions/ai-complete.test.ts`; here the host call and the failure mapping
+ * are what is under test.
+ */
+describe("DesktopAgentRuntime plugin ai.complete bridge", () => {
+  let extensionRoot: string;
+
+  beforeEach(() => {
+    extensionRoot = mkdtempSync(join(tmpdir(), "pi-ai-bridge-"));
+    clearTrustedExtensionCache();
+  });
+
+  afterEach(() => {
+    rmSync(extensionRoot, { recursive: true, force: true });
+  });
+
+  function spec(name: string, source: string): TrustedExtensionSpec {
+    const entry = join(extensionRoot, `${name}.ts`);
+    writeFileSync(entry, source);
+    return {
+      id: entry,
+      entry,
+      label: name,
+      source: "user",
+      root: extensionRoot,
+      permissions: ["agent.extension", "agent.model.complete"],
+    };
+  }
+
+  /** One plugin calling `pi.ai.complete` while the session starts. */
+  const source = `export default function (pi: any) {
+  pi.on("session_start", async () => {
+    (globalThis as any).__aiHost = await pi.ai.complete({
+      messages: [{ role: "user", content: "hello" }],
+      purpose: "prompt-enhance",
+    });
+  });
+}`;
+
+  it("forwards the plugin's request to host.call(\"ai.complete\") and answers it", async () => {
+    const ext = spec("ai-complete", source);
+    const host = {
+      call: vi.fn(async (method: string) =>
+        method === "ai.complete" ? { ok: true, text: "host answer", modelKey: "p/m" } : undefined,
+      ),
+      onNotification: vi.fn(() => () => {}),
+    };
+    const runtime = createRuntime({ host, trustedExtensions: [ext] });
+
+    await runtime.loadTrustedExtensions();
+
+    // The plugin's own fields travel with the call and the runner's identity
+    // fields are added; the host learns which plugin asked and what it holds.
+    expect(host.call).toHaveBeenCalledWith("ai.complete", {
+      sessionId: "session-1",
+      messages: [{ role: "user", content: "hello" }],
+      purpose: "prompt-enhance",
+      pluginId: ext.id,
+      permissions: ["agent.extension", "agent.model.complete"],
+    });
+    expect((globalThis as Record<string, unknown>).__aiHost).toEqual({
+      ok: true,
+      text: "host answer",
+      modelKey: "p/m",
+    });
+    delete (globalThis as Record<string, unknown>).__aiHost;
+    await runtime.dispose();
+  });
+
+  it("maps a failing host completion to PROVIDER_ERROR with the host's message", async () => {
+    const ext = spec("ai-complete-fails", source);
+    const host = {
+      call: vi.fn(async (method: string) => {
+        if (method === "ai.complete") throw new Error("host is down");
+        return undefined;
+      }),
+      onNotification: vi.fn(() => () => {}),
+    };
+    const runtime = createRuntime({ host, trustedExtensions: [ext] });
+
+    await runtime.loadTrustedExtensions();
+
+    // A host failure is an answer rather than a rejection, and the bridge's own
+    // mapping is the report: the runner adds no second diagnostic for it.
+    expect((globalThis as Record<string, unknown>).__aiHost).toEqual({
+      ok: false,
+      code: "PROVIDER_ERROR",
+      detail: "host is down",
+    });
+    expect((runtime as any).extensionRunner.getDiagnostics()).toEqual([]);
+    delete (globalThis as Record<string, unknown>).__aiHost;
+    await runtime.dispose();
+  });
+});

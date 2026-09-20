@@ -38,6 +38,18 @@ class FakeElement {
 }
 
 const document = {
+  /**
+   * `<html>` as the outlet's ambient reads see it. `readHostTheme` /
+   * `readHostLocale` read these attributes, so ambient props are only
+   * observable when this fake carries them.
+   */
+  documentElementAttributes: new Map(),
+  documentElement: {
+    getAttribute(name) {
+      return document.documentElementAttributes.get(name) ?? null;
+    },
+    dataset: {},
+  },
   head: {
     children: [],
     appendChild(element) {
@@ -120,8 +132,12 @@ const {
  * way the presentation tests load their components: the outlet's dependencies
  * are handed over explicitly, which also proves the props contract at the
  * component boundary instead of only inside the relay.
+ *
+ * `hookHost` is what the outlet imports as `react`. It defaults to React
+ * itself; a test that needs the outlet's commit-time work passes a recording
+ * stand-in instead (see `loadSlotOutletWithCommit`).
  */
-function loadSlotOutlet() {
+function loadSlotOutlet(hookHost = React) {
   const file = new URL("../src/plugins/renderer-slots/SlotOutlet.tsx", import.meta.url);
   const source = readFileSync(file, "utf8");
   const { outputText } = ts.transpileModule(source, {
@@ -129,7 +145,7 @@ function loadSlotOutlet() {
     fileName: file.pathname,
   });
   const imports = {
-    react: React,
+    react: hookHost,
     "react/jsx-runtime": jsxRuntime,
     "@pi-desktop/plugin-sdk": pluginSdk,
     "../renderer-host/loader": loader,
@@ -146,6 +162,39 @@ function loadSlotOutlet() {
     module,
   );
   return module.exports;
+}
+
+/**
+ * React's server renderer never runs `useEffect`, and the outlet's
+ * unserved-data report is exactly that: it cannot be observed through
+ * `renderToStaticMarkup` alone. This loader keeps the real React for everything
+ * React renders itself and records the outlet's effects instead, so the test
+ * can run them, in order, the way one commit would.
+ */
+function loadSlotOutletWithCommit() {
+  const pending = [];
+  const exports = loadSlotOutlet({
+    Component: React.Component,
+    useEffect(effect) {
+      pending.push(effect);
+    },
+    useMemo(factory) {
+      return factory();
+    },
+    useRef(initial) {
+      return { current: initial };
+    },
+    useSyncExternalStore(_subscribe, getSnapshot, getServerSnapshot) {
+      return (getServerSnapshot ?? getSnapshot)();
+    },
+  });
+  return {
+    ...exports,
+    /** Run whatever the renders so far queued, once, like a commit. */
+    commit() {
+      for (const effect of pending.splice(0)) effect();
+    },
+  };
 }
 
 /** Action refusals, in order; other diagnostics from the setup are ignored. */
@@ -995,7 +1044,9 @@ test("composer.replaceDraft resolves once a mounted composer consumes the write"
 });
 
 test("composer.replaceDraft rejects and clears the write when no composer consumes it", async () => {
-  await installed(["composer.replaceDraft"]);
+  await installed(["composer.replaceDraft", "composer.readDraft"]);
+  // The session the write goes to is the store's active session: the payload
+  // has no session field, so nothing here can name one the host would honour.
   useAppStore.setState({
     activeSessionId: "session-unconsumed",
     composerPrefill: null,
@@ -1003,15 +1054,13 @@ test("composer.replaceDraft rejects and clears the write when no composer consum
 
   const startedAt = Date.now();
   await assert.rejects(
-    () =>
-      dispatchFromPlugin("acme.one", "composer.replaceDraft", {
-        text: "dropped",
-        // Force a session that no composer will consume.
-        sessionId: undefined,
-      }),
+    () => dispatchFromPlugin("acme.one", "composer.replaceDraft", { text: "dropped" }),
     (error) =>
-      error.code === "PLUGIN_ACTION_DRAFT_UNCONSUMED" ||
-      error.code === "PLUGIN_ACTION_DRAFT_UNCONSUMED",
+      error.code === "PLUGIN_ACTION_DRAFT_UNCONSUMED" &&
+      error.action === "composer.replaceDraft" &&
+      error.pluginId === "acme.one" &&
+      /was not consumed within/.test(error.detail),
+    "an unconsumed write must refuse with the host's own coded error",
   );
   assert.ok(
     Date.now() - startedAt >= DRAFT_PREFILL_DEADLINE_MS - 50,
@@ -1027,6 +1076,16 @@ test("composer.replaceDraft rejects and clears the write when no composer consum
     .filter((entry) => entry.code === "PLUGIN_ACTION_DRAFT_UNCONSUMED");
   assert.equal(refusal.pluginId, "acme.one");
   assert.match(refusal.detail, new RegExp(`${DRAFT_PREFILL_DEADLINE_MS} ms`));
+
+  // The refusal is not a rollback: the generation moved and the text was stored
+  // before the write was offered to a composer, so what was refused is what a
+  // later read reports.
+  assert.deepEqual(await dispatchFromPlugin("acme.one", "composer.readDraft", {}), {
+    sessionId: "session-unconsumed",
+    generation: 1,
+    text: "dropped",
+    fileReferences: [],
+  });
 });
 
 test("composer.replaceDraft with no active session refuses immediately", async () => {
@@ -1039,4 +1098,460 @@ test("composer.replaceDraft with no active session refuses immediately", async (
   );
   assert.ok(Date.now() - startedAt < DRAFT_PREFILL_DEADLINE_MS);
   assert.equal(useAppStore.getState().composerPrefill, null);
+});
+
+/* ---------- style diagnostics: the soft signals next to the refusal ---------- */
+
+test("a sheet that reaches for host-internal --ds-* tokens is reported, and still injected", () => {
+  resetPluginSlots();
+  document.head.children.length = 0;
+
+  const handle = injectPluginStyle("acme.tokens", ".acme { color: var(--ds-text) }");
+  assert.equal(document.head.children.length, 1, "a soft diagnostic must not block the sheet");
+  const [element] = document.head.children;
+  assert.match(element.textContent, /var\(--ds-text\)/);
+  assert.deepEqual(
+    pluginSlots.listDiagnostics().map((entry) => [entry.code, entry.pluginId]),
+    [
+      ["PLUGIN_STYLE_PRIVATE_TOKEN", "acme.tokens"],
+      ["PLUGIN_STYLE_SCOPED", "acme.tokens"],
+    ],
+    "the token report comes first, and the rewrite it was served with is reported too",
+  );
+  assert.match(pluginSlots.listDiagnostics()[0].detail, /--pi-slot-\*/);
+  handle.remove();
+
+  // The scan is textual and runs on the source, so a sheet that only mentions
+  // the token in a comment is reported as well — this one needs no rewrite, so
+  // it carries no PLUGIN_STYLE_SCOPED.
+  resetPluginSlots();
+  document.head.children.length = 0;
+  injectPluginStyle("acme.tokens", "/* migrate off --ds-text */");
+  assert.deepEqual(
+    pluginSlots.listDiagnostics().map((entry) => entry.code),
+    ["PLUGIN_STYLE_PRIVATE_TOKEN"],
+  );
+  assert.equal(document.head.children[0].textContent, "");
+});
+
+test("a sheet the host had to rewrite is reported as scoped, and the element says so", () => {
+  resetPluginSlots();
+  document.head.children.length = 0;
+
+  injectPluginStyle("acme.sheet", ".acme { color: red }");
+  const [element] = document.head.children;
+  assert.equal(element.getAttribute("data-pi-plugin-style"), "acme.sheet");
+  assert.equal(element.getAttribute("data-pi-plugin-style-mode"), "scoped");
+  // The rewrite re-emits `selector{`, so the served text is not the source even
+  // when only whitespace moved.
+  assert.equal(element.textContent, '[data-pi-plugin="acme.sheet"] .acme{ color: red }');
+  assert.deepEqual(
+    pluginSlots.listDiagnostics().map((entry) => [entry.code, entry.detail]),
+    [
+      [
+        "PLUGIN_STYLE_SCOPED",
+        "selectors were rewritten under the plugin's data-pi-plugin container",
+      ],
+    ],
+  );
+});
+
+test("a sheet the host did not need to rewrite reports no scoping, but is still marked scoped", () => {
+  resetPluginSlots();
+  document.head.children.length = 0;
+
+  // Already under the plugin's own container and written the way the rewriter
+  // emits it: `scopeSelector` leaves it alone and the served text is the source,
+  // so PLUGIN_STYLE_SCOPED — which is about the text having changed, not about a
+  // static claim — is not reported.
+  const alreadyScoped = '[data-pi-plugin="acme.flat"] .card{ color: red }';
+  injectPluginStyle("acme.flat", alreadyScoped);
+  const [element] = document.head.children;
+  assert.equal(element.textContent, alreadyScoped, "the source is served unchanged");
+  assert.deepEqual(pluginSlots.listDiagnostics(), []);
+  // The mode attribute, on the other hand, is written unconditionally: it is
+  // not a signal that anything was rewritten, whatever the module header says.
+  assert.equal(element.getAttribute("data-pi-plugin-style-mode"), "scoped");
+
+  // The same sheet with a space before the brace is reported as scoped and
+  // served with that space removed: a whitespace-only difference is enough.
+  resetPluginSlots();
+  document.head.children.length = 0;
+  injectPluginStyle("acme.flat", '[data-pi-plugin="acme.flat"] .card { color: red }');
+  assert.equal(document.head.children[0].textContent, alreadyScoped);
+  assert.deepEqual(
+    pluginSlots.listDiagnostics().map((entry) => entry.code),
+    ["PLUGIN_STYLE_SCOPED"],
+  );
+
+  // Same for a sheet that carries no selector at all.
+  resetPluginSlots();
+  document.head.children.length = 0;
+  injectPluginStyle("acme.flat", "/* nothing but a comment */");
+  assert.deepEqual(pluginSlots.listDiagnostics(), []);
+  assert.equal(document.head.children[0].textContent, "", "comments are not served");
+});
+
+/* ---------- PLUGIN_DATA_UNSERVED, through a mount ---------- */
+
+test("a declared but unserved rendererData key is reported once, through the mount", async () => {
+  resetPluginSlots();
+  resetRendererPlugins();
+  resetRendererRelay();
+  const { PluginSlot, commit, resetUnservedDataReports } = loadSlotOutletWithCommit();
+  // Answer the loader's own entry lookup deterministically: what this test reads
+  // is the report, not the load.
+  bridgeReply = (channel) =>
+    channel === IPC.invoke.pluginRendererEntry
+      ? { ok: true, data: { entry: null } }
+      : { ok: true, data: null };
+  pluginSlots.register("acme.unserved", "entry", component);
+
+  const candidates = [
+    {
+      id: "acme.unserved",
+      version: "1.0.0",
+      declared: true,
+      rendererData: ["selection"],
+      rendererActions: [],
+    },
+    {
+      id: "acme.served",
+      version: "1.0.0",
+      declared: true,
+      rendererData: ["theme", "locale"],
+      rendererActions: [],
+    },
+    { id: "acme.quiet", version: "1.0.0", declared: true, rendererData: [], rendererActions: [] },
+    {
+      id: "acme.undeclared",
+      version: "1.0.0",
+      declared: false,
+      rendererData: ["selection"],
+      rendererActions: [],
+    },
+  ];
+  const unserved = () =>
+    pluginSlots.listDiagnostics().filter((entry) => entry.code === "PLUGIN_DATA_UNSERVED");
+  const mount = () => {
+    renderToStaticMarkup(
+      React.createElement(PluginSlot, { slot: "entry", slotProps: {}, candidates }),
+    );
+    commit();
+  };
+
+  resetUnservedDataReports();
+  mount();
+  // The report happens in the commit, and the load it starts with is async.
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(
+    unserved().map((entry) => [entry.pluginId, entry.detail]),
+    [["acme.unserved", 'rendererData "selection" is declarable but not served this cycle']],
+    "only the declared key the host does not serve is reported",
+  );
+
+  // Mounts and re-renders of the same plugin report nothing new.
+  mount();
+  mount();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(unserved().length, 1, "one report per plugin per process, not per mount");
+
+  // The seam is the only thing that clears that memory, and nothing in the app
+  // calls it: a plugin that unloads and comes back is never reported again.
+  resetUnservedDataReports();
+  mount();
+  assert.equal(unserved().length, 2);
+});
+
+/* ---------- ambient props at the mount ---------- */
+
+test("a declared ambient prop reaches the component and beats a same-named slot prop", () => {
+  resetPluginSlots();
+  resetRendererPlugins();
+  resetRendererRelay();
+  const { PluginSlot } = loadSlotOutlet();
+  const seen = [];
+  pluginSlots.register("acme.ambient", "entry", (props) => {
+    seen.push(props);
+    return null;
+  });
+  const candidate = {
+    id: "acme.ambient",
+    version: "1.0.0",
+    declared: true,
+    rendererData: ["theme", "locale"],
+    rendererActions: [],
+  };
+  const mount = (candidates, slotProps) =>
+    renderToStaticMarkup(
+      React.createElement(PluginSlot, { slot: "entry", slotProps, candidates }),
+    );
+
+  document.documentElementAttributes.set("data-theme", "light");
+  document.documentElementAttributes.set("lang", "zh-CN");
+  try {
+    const markup = mount([candidate], {
+      entry: { id: "entry-1", role: "user" },
+      theme: "dark",
+      locale: "fr",
+    });
+    assert.equal(seen.length, 1);
+    // The declared keys come from the host's own document …
+    assert.equal(seen[0].theme, "light");
+    assert.equal(seen[0].locale, "zh-CN");
+    // … and the ambient object is spread after the slot props, so it wins over
+    // a mount that passed the same name: a plugin declaring `theme` cannot be
+    // handed a theme the mount chose.
+    assert.notEqual(seen[0].theme, "dark");
+    assert.notEqual(seen[0].locale, "fr");
+    assert.equal(seen[0].entry.id, "entry-1");
+    assert.equal(typeof seen[0].dispatch, "function");
+    assert.match(markup, /data-pi-theme="light"/);
+
+    // A plugin that declared neither keeps whatever the mount passed, because
+    // its ambient object is empty — the same prop name means two different
+    // things depending on one plugin's declaration.
+    seen.length = 0;
+    const quiet = mount(
+      [{ ...candidate, rendererData: [] }],
+      { entry: { id: "entry-1", role: "user" }, theme: "dark", locale: "fr" },
+    );
+    assert.equal(seen[0].theme, "dark");
+    assert.equal(seen[0].locale, "fr");
+    // The container reports the host's theme either way, declared or not.
+    assert.match(quiet, /data-pi-theme="light"/);
+  } finally {
+    document.documentElementAttributes.clear();
+  }
+});
+
+/* ---------- composer.readDraft / composer.replaceDraft ---------- */
+
+/**
+ * Stands in for a mounted composer: it takes the prefill written for one
+ * session on its next commit and clears it, which is what `useComposerDraft`
+ * does with it. Every write it took is recorded, so the payload the host
+ * published can be inspected. The draft memory behind these actions is
+ * module-local and has no reset seam, so every test uses its own session id.
+ */
+function mountQuietComposer(sessionId) {
+  const consumed = [];
+  const unsubscribe = useAppStore.subscribe(() => {
+    const prefill = useAppStore.getState().composerPrefill;
+    if (prefill && prefill.sessionId === sessionId) {
+      consumed.push(prefill);
+      useAppStore.getState().clearComposerPrefill();
+    }
+  });
+  return { consumed, stop: unsubscribe };
+}
+
+test("composer.readDraft answers the documented snapshot and the generation a write builds on", async () => {
+  await installed(["composer.readDraft", "composer.replaceDraft"]);
+  useAppStore.setState({ activeSessionId: "session-read", composerPrefill: null });
+
+  const empty = await dispatchFromPlugin("acme.one", "composer.readDraft", {});
+  assert.deepEqual(Object.keys(empty).sort(), [
+    "fileReferences",
+    "generation",
+    "sessionId",
+    "text",
+  ]);
+  assert.deepEqual(empty, {
+    sessionId: "session-read",
+    generation: 0,
+    text: "",
+    fileReferences: [],
+  });
+
+  // A write a mounted composer consumes moves the generation by exactly one,
+  // and the snapshot it reports names the generation the read just answered.
+  const composer = mountQuietComposer("session-read");
+  const written = await dispatchFromPlugin("acme.one", "composer.replaceDraft", {
+    text: "hello from a plugin",
+  });
+  composer.stop();
+  assert.equal(written.generation, empty.generation + 1);
+  assert.equal(written.previous.generation, empty.generation);
+  assert.equal(written.previous.sessionId, empty.sessionId);
+  assert.deepEqual(await dispatchFromPlugin("acme.one", "composer.readDraft", {}), {
+    sessionId: "session-read",
+    generation: written.generation,
+    text: "hello from a plugin",
+    fileReferences: [],
+  });
+});
+
+test("readDraft falls back to an unconsumed prefill, which replaceDraft's own snapshot ignores", async () => {
+  await installed(["composer.readDraft", "composer.replaceDraft"]);
+  // A prefill the composer has not consumed yet: the draft memory is empty, so
+  // the read answers from the store's pending write.
+  useAppStore.setState({
+    activeSessionId: "session-pending",
+    composerPrefill: {
+      sessionId: "session-pending",
+      text: "typed by the user",
+      fileReferences: [{ path: "src/a.ts", name: "a.ts" }],
+    },
+  });
+
+  assert.deepEqual(await dispatchFromPlugin("acme.one", "composer.readDraft", {}), {
+    sessionId: "session-pending",
+    generation: 0,
+    text: "typed by the user",
+    fileReferences: [{ path: "src/a.ts", name: "a.ts" }],
+  });
+
+  // `previous` is built from the draft memory only, so a plugin that reads and
+  // then writes gets "" and [] back for the very draft it just read.
+  const composer = mountQuietComposer("session-pending");
+  const written = await dispatchFromPlugin("acme.one", "composer.replaceDraft", {
+    text: "replaced",
+  });
+  composer.stop();
+  assert.deepEqual(written.previous, {
+    sessionId: "session-pending",
+    generation: 0,
+    text: "",
+    fileReferences: [],
+  });
+});
+
+test("composer.replaceDraft is an optimistic lock over the per-session generation", async () => {
+  await installed(["composer.readDraft", "composer.replaceDraft"]);
+  useAppStore.setState({ activeSessionId: "session-generation", composerPrefill: null });
+  const composer = mountQuietComposer("session-generation");
+
+  const first = await dispatchFromPlugin("acme.one", "composer.replaceDraft", { text: "one" });
+  assert.deepEqual(first, {
+    ok: true,
+    generation: 1,
+    previous: { sessionId: "session-generation", generation: 0, text: "", fileReferences: [] },
+  });
+
+  await assert.rejects(
+    () =>
+      dispatchFromPlugin("acme.one", "composer.replaceDraft", {
+        text: "stale",
+        expectedGeneration: 0,
+      }),
+    (error) =>
+      error.code === "DRAFT_CONFLICT" &&
+      error.action === "composer.replaceDraft" &&
+      error.pluginId === "acme.one" &&
+      /expectedGeneration does not match/.test(error.detail),
+    "a stale generation must not be written",
+  );
+  // The lock is checked before anything is written, so the refusal moves
+  // neither the generation nor the text, and leaves nothing to consume.
+  assert.deepEqual(
+    pluginSlots
+      .listDiagnostics()
+      .filter((entry) => entry.code === "DRAFT_CONFLICT")
+      .map((entry) => entry.pluginId),
+    ["acme.one"],
+  );
+  assert.deepEqual(await dispatchFromPlugin("acme.one", "composer.readDraft", {}), {
+    sessionId: "session-generation",
+    generation: 1,
+    text: "one",
+    fileReferences: [],
+  });
+  assert.equal(useAppStore.getState().composerPrefill, null);
+  assert.equal(composer.consumed.length, 1);
+
+  const second = await dispatchFromPlugin("acme.one", "composer.replaceDraft", {
+    text: "two",
+    expectedGeneration: 1,
+  });
+  assert.deepEqual(second, {
+    ok: true,
+    generation: 2,
+    previous: { sessionId: "session-generation", generation: 1, text: "one", fileReferences: [] },
+  });
+  const third = await dispatchFromPlugin("acme.one", "composer.replaceDraft", {
+    text: "three",
+    expectedGeneration: second.generation,
+  });
+  assert.equal(third.generation, 3);
+  composer.stop();
+  assert.deepEqual(
+    composer.consumed.map((prefill) => [prefill.sessionId, prefill.text]),
+    [
+      ["session-generation", "one"],
+      ["session-generation", "two"],
+      ["session-generation", "three"],
+    ],
+  );
+});
+
+test('composer.replaceDraft\'s fileReferences: "preserve" keeps them, "[]" and an omitted field clear them', async () => {
+  await installed(["composer.readDraft", "composer.replaceDraft"]);
+  useAppStore.setState({ activeSessionId: "session-refs", composerPrefill: null });
+  const composer = mountQuietComposer("session-refs");
+  const lastWritten = () => composer.consumed.at(-1).fileReferences;
+
+  const seeded = await dispatchFromPlugin("acme.one", "composer.replaceDraft", {
+    text: "with chips",
+    fileReferences: [
+      { path: "src/a.ts", name: "a.ts" },
+      { path: "src/photo.png", name: "photo.png", kind: "image", mimeType: "image/png" },
+    ],
+  });
+  assert.deepEqual(seeded.previous.fileReferences, [], "a fresh session has no refs to report");
+  assert.deepEqual(
+    lastWritten(),
+    [
+      { path: "src/a.ts", name: "a.ts" },
+      { path: "src/photo.png", name: "photo.png", kind: "image", mimeType: "image/png" },
+    ],
+    "the composer's own chip shape passes through untouched",
+  );
+
+  const preserved = await dispatchFromPlugin("acme.one", "composer.replaceDraft", {
+    text: "keep the chips",
+    fileReferences: "preserve",
+  });
+  const chips = [
+    { path: "src/a.ts", name: "a.ts" },
+    { path: "src/photo.png", name: "photo.png", kind: "image", mimeType: "image/png" },
+  ];
+  assert.deepEqual(preserved.previous.fileReferences, chips);
+  assert.deepEqual(lastWritten(), preserved.previous.fileReferences);
+  assert.notEqual(lastWritten(), preserved.previous.fileReferences, "the write copies, not aliases");
+
+  const cleared = await dispatchFromPlugin("acme.one", "composer.replaceDraft", {
+    text: "no chips",
+    fileReferences: [],
+  });
+  assert.deepEqual(cleared.previous.fileReferences, chips);
+  assert.deepEqual(lastWritten(), []);
+
+  // An omitted field is not "preserve": the host clears the refs, exactly like
+  // an explicit empty list.
+  await dispatchFromPlugin("acme.one", "composer.replaceDraft", { text: "omitted" });
+  assert.deepEqual(lastWritten(), []);
+  assert.deepEqual((await dispatchFromPlugin("acme.one", "composer.readDraft", {})).fileReferences, []);
+
+  // Anything that is neither "preserve" nor a list clears them as well, and a
+  // list is reduced to the entries carrying both fields the composer's own chips
+  // have (`path` is the identity, `name` is what a chip paints). None of that is
+  // a payload refusal.
+  await dispatchFromPlugin("acme.one", "composer.replaceDraft", {
+    text: "not a list",
+    fileReferences: "keep them",
+  });
+  assert.deepEqual(lastWritten(), []);
+  await dispatchFromPlugin("acme.one", "composer.replaceDraft", {
+    text: "half a list",
+    fileReferences: [{ path: "src/a.ts", name: "a.ts" }, { path: "src/b.ts" }, "chip", null],
+  });
+  assert.deepEqual(lastWritten(), [{ path: "src/a.ts", name: "a.ts" }]);
+
+  composer.stop();
+  assert.deepEqual(
+    pluginSlots.listDiagnostics().filter((entry) => entry.code.startsWith("PLUGIN_ACTION_")),
+    [],
+    "an unusable fileReferences is reduced silently, never refused",
+  );
 });

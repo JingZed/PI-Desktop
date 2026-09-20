@@ -86,7 +86,10 @@ test("the plugin author reads each call's permission and what it returns", () =>
   }
   // The honest gaps are stated where an author reads them, not only in code.
   assert.equal(sdkSource.includes("no-host-turn-read"), true);
-  assert.equal(sdkSource.includes("does not yet **name** the plugin"), true);
+  // The continuation's provenance gap is closed: the doc says the queued row
+  // names the plugin (ADR 0293, schema v22), not that the host cannot name it.
+  assert.equal(sdkSource.includes("does not yet **name** the plugin"), false);
+  assert.equal(sdkSource.includes("it always carries the plugin id and display label"), true);
 });
 
 test("the SDK's facts shape and the wire shape do not drift apart", () => {

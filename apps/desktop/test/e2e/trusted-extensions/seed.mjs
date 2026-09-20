@@ -139,11 +139,13 @@ export default function (pi: any) {
  * Slot grants each fixture's hooks need (ADR 0295 rule 2). `agent.extension`
  * says where the code runs; a wired event is skipped with a `permission_denied`
  * diagnostic unless the plugin also holds the slot its event maps to. `fx`
- * exercises every gated event the driver asserts on:
- *   runtime.request.before — before_agent_start, context, before_provider_*
+ * exercises the gated events the driver asserts on:
  *   runtime.tool.gate      — tool_call, tool_result
  *   runtime.turn.watch     — turn_start, turn_end, agent_end,
  *                            after_provider_response
+ * It also registers slot-6 handlers (`before_agent_start`, `context`,
+ * `before_provider_*`) that slot 6's withdrawal makes inert, so the driver can
+ * prove the host never consults them. `runtime.request.before` is not offered.
  */
 const SLOT_PERMISSIONS = {
   // Slot 6 (runtime.request.before) is withdrawn; fx no longer gets it.

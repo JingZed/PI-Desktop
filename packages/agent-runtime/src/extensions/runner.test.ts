@@ -1248,7 +1248,9 @@ export default function (pi: any) {
       "send-removed",
       `export default function (pi: any) {
   pi.on("session_start", async () => {
-    (globalThis as any).__sent = typeof pi.sendUserMessage;
+    const g = globalThis as any;
+    g.__sent = typeof pi.sendUserMessage;
+    g.__api = pi;
   });
 }`,
       ["agent.extension", "runtime.turn.continue"],
@@ -1258,6 +1260,12 @@ export default function (pi: any) {
     await runner.load();
 
     expect((globalThis as { __sent?: unknown }).__sent).toBe("undefined");
+    // Not an inert member either: the removed name is not on the object at all,
+    // while the call that replaced it is a real function on the same object.
+    const api = (globalThis as { __api?: Record<string, unknown> }).__api!;
+    delete (globalThis as { __api?: unknown }).__api;
+    expect(Object.hasOwn(api, "sendUserMessage")).toBe(false);
+    expect(typeof api.continueTurn).toBe("function");
     expect(log.continuations).toEqual([]);
   });
 });
