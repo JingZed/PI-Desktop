@@ -3,12 +3,33 @@
   "id": "acme.plugin-showcase",
   "name": "Plugin Showcase",
   "version": "0.1.0",
-  "description": "PI-Desktop example plugin: both plugin interfaces in one package — renderer components in all ten declared UI slots (plus host-callable functions and one plugin tool whose own card is drawn by the toolCard slot) and agent runtime slots (tool gate, turn watch, turn facts, session lifecycle, turn abort)",
+  "description": "PI-Desktop example plugin: both plugin interfaces in one package — renderer components in all ten declared UI slots (plus host-callable functions and one plugin tool whose own card is drawn by the toolCard slot), agent runtime slots (tool gate, turn watch, turn facts, session lifecycle, turn abort), and a self-check console docked as a work-panel view that drives this plugin's own process",
   "author": "PI-Desktop",
   "main": "main.js",
   "renderer": "renderer/index.mjs",
   "rendererData": ["entry", "session", "code", "draft"],
-  "rendererActions": ["ui.toast"],
+  "rendererActions": ["ui.toast", "plugin.call"],
+  "ui": {
+    "panel": "views/console.html",
+    "width": 560,
+    "height": 640,
+    "title": {
+      "en": "Showcase Console",
+      "zh-CN": "插件自检控制台"
+    }
+  },
+    "views": [
+      {
+        "id": "console",
+        "title": {
+          "en": "Showcase Console",
+          "zh-CN": "插件自检控制台"
+        },
+        "icon": "sparkles",
+        "entry": "views/console.html",
+        "order": 10
+      }
+    ],
   "contributes": {
     "commands": [
       {
@@ -38,6 +59,8 @@
     "renderer.extension",
     "agent.extension",
     "agent.tool.register",
+    "ui.view",
+    "ui.panel",
     "runtime.tool.gate",
     "runtime.turn.watch",
     "runtime.turn.facts",

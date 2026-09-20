@@ -42,6 +42,14 @@
  * and `dispatch` is the whole output (ADR 0294 decision 1). The module shares
  * the host's realm, so that is a contract, not a wall.
  *
+ * The module also *reports* what it holds to the plugin's own process. Its only
+ * channel is the same `dispatch` a component is handed, so the reports travel as
+ * the forwarded action `plugin.call { method: "renderer.report" | "renderer.slot" }`
+ * — a call this manifest declares in `rendererActions`. That is what makes the
+ * plugin's sidebar console (`views/console.html`) show live slot state instead of
+ * a copy of the manifest, and it never runs outside a mounted component: the
+ * dispatcher only exists there.
+ *
  * `react` is a bare specifier on purpose. The host installs an import map that
  * points `react`, `react-dom`, and `react-dom/client` at its own copies, and
  * every plugin shares that one instance. A plugin that ships its own React is
@@ -59,6 +67,94 @@ const PLUGIN_ID = "acme.plugin-showcase";
  */
 const CODE_LANGUAGE = `${PLUGIN_ID}:kv`;
 
+
+/* -------------------------------------------------------------------------
+ * Live state this module keeps about itself
+ *
+ * A plugin component cannot read the host's registry, and the console page in
+ * the work panel cannot read this realm at all. So the two facts a self-check
+ * console needs — which slots are held right now, and how many times the
+ * registered functions were really called — are counted here, where both are
+ * observable, and reported to the plugin process through `dispatch`.
+ * ---------------------------------------------------------------------- */
+
+/** Slots this module currently holds; registration is the whole lifecycle. */
+const heldSlots = new Set();
+
+/**
+ * Calls this module made to its own registered functions, per function name.
+ *
+ * `served` is what this module counted. `overBudget` is a *self-measured*
+ * count of calls that took longer than the host's one-frame budget — the host's
+ * own discard and breaker counters live in the app window
+ * (`renderer-host/host-functions.ts`) and are not readable from any plugin
+ * realm, which is why the console labels that number as the plugin's own.
+ */
+const functionCalls = {
+  "entry-facts": { served: 0, overBudget: 0 },
+  "kv-rows": { served: 0, overBudget: 0 },
+};
+
+/** The host's published budget for one host-callable function. */
+const FRAME_BUDGET_MS = 16;
+
+function nowMs() {
+  return typeof performance?.now === "function" ? performance.now() : Date.now();
+}
+
+/** Registers one slot and remembers that this module holds it. */
+function registerSlot(slot, component, options) {
+  const handle = hostApi.slots.register(slot, component, options);
+  heldSlots.add(slot);
+  return {
+    remove: () => {
+      heldSlots.delete(slot);
+      handle.remove();
+    },
+  };
+}
+
+/** Every function count, plus their totals. */
+function functionTotals() {
+  const totals = { served: 0, overBudget: 0, by: {} };
+  for (const [name, counts] of Object.entries(functionCalls)) {
+    totals.served += counts.served;
+    totals.overBudget += counts.overBudget;
+    totals.by[name] = { ...counts };
+  }
+  return totals;
+}
+
+/** What this module holds right now, in the shape the plugin process stores. */
+function selfReport() {
+  return { slots: [...heldSlots], functions: functionTotals() };
+}
+
+/**
+ * One report to the plugin's own process, through the only channel a component
+ * has: `dispatch`. An answer is a structured receipt; a refusal is returned
+ * rather than thrown so a caller can print its code.
+ */
+function reportToProcess(dispatch, method, args) {
+  if (typeof dispatch !== "function") {
+    return Promise.resolve({
+      ok: false,
+      code: "NO_DISPATCH",
+      detail: "this mount was handed no dispatch",
+    });
+  }
+  return dispatch("plugin.call", { method, args })
+    .then((answer) =>
+      answer && typeof answer === "object"
+        ? answer
+        : { ok: true, code: "ok", detail: "reported" },
+    )
+    .catch((error) => ({
+      ok: false,
+      code: error?.code ?? "PLUGIN_CALL_FAILED",
+      detail: error?.message ?? String(error),
+    }));
+}
 /**
  * The layer positions this plugin opens on demand instead of at load. The two
  * app-level layers and the inline-confirm card are the only positions where a
@@ -262,6 +358,26 @@ function kvRows(input) {
   return rows;
 }
 
+/**
+ * One measured call, so this module can report what its own registered
+ * functions really did. `entry-facts` and `kv-rows` are registered through
+ * these wrappers, which is why every call a component makes is counted — and
+ * why the number is the plugin's own count, not the host's.
+ */
+function measured(name, compute) {
+  return (input) => {
+    const startedAt = nowMs();
+    const value = compute(input);
+    const elapsedMs = nowMs() - startedAt;
+    const counts = functionCalls[name];
+    if (counts) {
+      counts.served += 1;
+      if (elapsedMs > FRAME_BUDGET_MS) counts.overBudget += 1;
+    }
+    return value;
+  };
+}
+
 /* -------------------------------------------------------------------------
  * The on-demand layer positions
  *
@@ -294,17 +410,34 @@ function layerComponent(slot) {
  * is its removal, so nothing else has to be tracked: if this plugin is unloaded
  * while a layer is up, the host reclaims the registration and the layer with it
  * (D10).
+ *
+ * `dispatch` is the mounted control's own prop. The change is reported to the
+ * plugin process through it, so the sidebar console shows the state this module
+ * really holds after the user pressed the button — a report, never a claim made
+ * on the console's behalf.
  */
-function setLayerOpen(slot, open) {
+function setLayerOpen(slot, open, dispatch) {
   if (open === openLayers.has(slot)) return open;
   if (open) {
     if (!hostApi) return false;
-    openLayers.set(slot, hostApi.slots.register(slot, layerComponent(slot)));
+    openLayers.set(slot, registerSlot(slot, layerComponent(slot)));
   } else {
     openLayers.get(slot).remove();
     openLayers.delete(slot);
   }
   for (const listener of [...layerListeners]) listener();
+  // The three layer positions are handed a session id and nothing else, so a
+  // close from a layer card's own button has no dispatcher and cannot report
+  // its own change; the console then keeps the previous state until the next
+  // control-driven toggle. That is stated on the console page rather than
+  // papered over with a report this realm cannot send.
+  if (typeof dispatch === "function") {
+    void reportToProcess(dispatch, "renderer.slot", {
+      slot,
+      registered: open,
+      slots: [...heldSlots],
+    });
+  }
   return open;
 }
 
@@ -351,6 +484,51 @@ function HostToastButton({ dispatch, message, label = "Notify the host" }) {
       label,
     ),
     status
+      ? createElement(
+          "span",
+          { key: "status", className: "acme-plugin-showcase__muted" },
+          status,
+        )
+      : null,
+  ]);
+}
+
+/**
+ * The in-slot control bar's report button: this plugin's own half of the
+ * self-check console.
+ *
+ * The console page in the work panel cannot see this realm, and this module
+ * cannot see the console, so the state travels one way only — through the
+ * forwarded `plugin.call` action, which means it runs inside a mounted slot
+ * component and nowhere else. The button prints the answer it got: `ok`, or the
+ * code the relay refused the report with (a manifest that forgot to declare
+ * `plugin.call` answers `PLUGIN_CALL_UNDECLARED`, which is exactly the kind of
+ * fact this example exists to show).
+ */
+function ProcessReportButton({ dispatch, label = "Report to the plugin process" }) {
+  const [status, setStatus] = useState("idle");
+  const report = () => {
+    setStatus("asking");
+    void reportToProcess(dispatch, "renderer.report", selfReport()).then((answer) =>
+      setStatus(String(answer?.code ?? "unknown")),
+    );
+  };
+  return createElement("span", { className: "acme-plugin-showcase__action" }, [
+    createElement(
+      "button",
+      {
+        key: "button",
+        type: "button",
+        className: "acme-plugin-showcase__button pi-slot-btn",
+        "data-pi-showcase-report": status,
+        title:
+          "Sends this module's live state (held slots, function call counts) to the " +
+          "plugin's own process, where the sidebar console reads it.",
+        onClick: report,
+      },
+      label,
+    ),
+    status !== "idle"
       ? createElement(
           "span",
           { key: "status", className: "acme-plugin-showcase__muted" },
@@ -630,7 +808,7 @@ function OverlayCard({ sessionId }) {
  * layer registrations, which is something a composer control can really do
  * today.
  */
-function ComposerControl({ position, draft, sessionId }) {
+function ComposerControl({ position, draft, sessionId, dispatch }) {
   useLayerState();
   const draftLength = typeof draft === "string" ? draft.length : 0;
   const sessionNote = sessionId ? `session ${sessionId}` : "no session yet";
@@ -645,7 +823,7 @@ function ComposerControl({ position, draft, sessionId }) {
         title:
           `Showcase demo · left composer position · draft ${draftLength} char(s) · ${sessionNote}. ` +
           "While this registration is up it takes the host's inline-confirmation position.",
-        onClick: () => setLayerOpen("inlineConfirm", !open),
+        onClick: () => setLayerOpen("inlineConfirm", !open, dispatch),
       },
       open ? "Showcase: close inline card" : "Showcase: inline card",
     );
@@ -664,7 +842,7 @@ function ComposerControl({ position, draft, sessionId }) {
           title:
             `Showcase demo · right composer position · draft ${draftLength} char(s) · ${sessionNote}. ` +
             "Registration is what puts the modal layer on screen.",
-          onClick: () => setLayerOpen("modal", !modalOpen),
+          onClick: () => setLayerOpen("modal", !modalOpen, dispatch),
         },
         modalOpen ? "Showcase: close modal" : "Showcase: modal",
       ),
@@ -678,10 +856,15 @@ function ComposerControl({ position, draft, sessionId }) {
           title:
             `Showcase demo · right composer position · draft ${draftLength} char(s) · ${sessionNote}. ` +
             "Registration is what puts the overlay layer on screen.",
-          onClick: () => setLayerOpen("overlay", !overlayOpen),
+          onClick: () => setLayerOpen("overlay", !overlayOpen, dispatch),
         },
         overlayOpen ? "Showcase: close overlay" : "Showcase: overlay",
       ),
+      // The report control: the smallest thing that can send this module's live
+      // state to the plugin process, which is where the sidebar console reads it
+      // from. It sits in the same control row as the layer toggles, so what the
+      // console shows and what the user just did are one action apart.
+      createElement(ProcessReportButton, { key: "report", dispatch }),
     ]);
   }
   return null;
@@ -832,23 +1015,26 @@ function KeyValueBlock({ language, code }) {
 export function onLoad(pi) {
   // A reload re-runs `onLoad` on the module instance the module cache kept, and
   // the host already reclaimed the previous load's registrations on unload, so
-  // any handle left in `openLayers` is stale.
+  // any handle left in `openLayers` is stale and the slot inventory starts from
+  // what this load really registers.
   openLayers.clear();
+  heldSlots.clear();
   hostApi = pi;
   pi.ui.injectStyle(STYLES);
   // The two host-callable functions. Names are unique inside this plugin and
-  // must match `^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$`.
-  pi.functions.register("entry-facts", entryFacts);
-  pi.functions.register("kv-rows", kvRows);
-  pi.slots.register("entry", EntryCard);
-  pi.slots.register("entryExtra", EntryExtraCard);
+  // must match `^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$`. They are wrapped so the
+  // module can report how many calls it really served.
+  pi.functions.register("entry-facts", measured("entry-facts", entryFacts));
+  pi.functions.register("kv-rows", measured("kv-rows", kvRows));
+  registerSlot("entry", EntryCard);
+  registerSlot("entryExtra", EntryExtraCard);
   // `codeBlock` carries the language it claims; every other slot takes no
   // options.
-  pi.slots.register("codeBlock", KeyValueBlock, { language: CODE_LANGUAGE });
-  pi.slots.register("toolCard", ToolCard);
-  pi.slots.register("composerControl", ComposerControl);
-  pi.slots.register("completionSource", CompletionSource);
-  pi.slots.register("composerReference", ComposerReference);
+  registerSlot("codeBlock", KeyValueBlock, { language: CODE_LANGUAGE });
+  registerSlot("toolCard", ToolCard);
+  registerSlot("composerControl", ComposerControl);
+  registerSlot("completionSource", CompletionSource);
+  registerSlot("composerReference", ComposerReference);
   // The three layer positions are registered on demand by the composer controls
   // above, never here: `LAYER_SLOTS` is the list a reader (and the smoke test)
   // can compare against what is actually open.
