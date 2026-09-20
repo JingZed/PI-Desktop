@@ -30,14 +30,15 @@ import { createElement, useState } from "react";
 const PLUGIN_ID = "acme.slots-demo";
 
 /**
- * Injected through `pi.ui.injectStyle`. Every selector is namespaced with the
- * plugin id and stays inside the host's `data-pi-plugin="acme.slots-demo"`
- * container: a sheet whose top-level selector is `html`, `body`, `:root`, or `*`
- * is refused whole rather than silently narrowed.
+ * Injected through `pi.ui.injectStyle`. The host auto-scopes every selector
+ * under `data-pi-plugin="acme.slots-demo"` before the sheet is served, so
+ * these class names stay inside this plugin's containers.
  *
- * No host design token is referenced here. An injected sheet is the plugin's own
- * CSS; the host does not promise its token names to plugins, so this uses
- * `currentColor` and nothing theme-specific.
+ * Public design tokens are the host-owned `--pi-slot-*` aliases on
+ * `.pi-plugin-slot`. Host-internal `--ds-*` names are not part of the plugin
+ * contract. `currentColor` / inherit remain valid fallbacks when a token is
+ * unavailable. Buttons and chips reuse the host's slot primitives
+ * (`.pi-slot-btn`, `.pi-slot-chip`) where they fit.
  */
 const STYLES = `
 .acme-slots-demo__badge {
@@ -45,12 +46,9 @@ const STYLES = `
   align-items: center;
   gap: 0.375rem;
   margin-top: 0.25rem;
-  padding: 0.125rem 0.5rem;
-  border: 1px solid currentColor;
-  border-radius: 999px;
-  font-size: 0.75rem;
+  color: var(--pi-slot-text-muted, inherit);
+  font-size: var(--pi-slot-text-xs, 0.75rem);
   line-height: 1.6;
-  opacity: 0.75;
 }
 
 .acme-slots-demo__card {
@@ -59,19 +57,23 @@ const STYLES = `
   gap: 0.5rem;
   max-width: 24rem;
   padding: 1rem;
-  border: 1px solid currentColor;
-  border-radius: 0.75rem;
-  font-size: 0.875rem;
+  border: 1px solid var(--pi-slot-border, currentColor);
+  border-radius: var(--pi-slot-radius-md, 0.75rem);
+  background: var(--pi-slot-bg-elevated, transparent);
+  color: var(--pi-slot-text, inherit);
+  font-family: var(--pi-slot-font, inherit);
+  font-size: var(--pi-slot-text-sm, 0.875rem);
   line-height: 1.5;
 }
 
 .acme-slots-demo__button {
+  /* Prefer the host primitive; the custom rules keep a fallback if tokens are missing. */
   align-self: flex-start;
   padding: 0.25rem 0.75rem;
-  border: 1px solid currentColor;
-  border-radius: 0.5rem;
-  background: none;
-  color: inherit;
+  border: 1px solid var(--pi-slot-border, currentColor);
+  border-radius: var(--pi-slot-radius-sm, 0.5rem);
+  background: var(--pi-slot-bg-elevated, none);
+  color: var(--pi-slot-text, inherit);
   font: inherit;
   cursor: pointer;
 }
@@ -83,6 +85,7 @@ const STYLES = `
 .acme-slots-demo__call-result {
   max-width: 24rem;
   overflow-wrap: anywhere;
+  color: var(--pi-slot-text-muted, inherit);
   opacity: 0.9;
 }
 `;
@@ -144,14 +147,14 @@ function EntryExtraBadge({ entry, dispatch }) {
       .catch((error) => setForwarded(error?.code ?? String(error)));
   };
 
-  return createElement("span", { className: "acme-slots-demo__badge" }, [
+  return createElement("span", { className: "acme-slots-demo__badge pi-slot-chip" }, [
     `${PLUGIN_ID} · renderer slot`,
     createElement(
       "button",
       {
         key: "notify",
         type: "button",
-        className: "acme-slots-demo__button",
+        className: "acme-slots-demo__button pi-slot-btn",
         onClick: notifyHost,
       },
       "Notify the host",
@@ -161,7 +164,7 @@ function EntryExtraBadge({ entry, dispatch }) {
       {
         key: "headless",
         type: "button",
-        className: "acme-slots-demo__button acme-slots-demo__call",
+        className: "acme-slots-demo__button pi-slot-btn acme-slots-demo__call",
         onClick: askHeadless,
       },
       "Ask the entry",
@@ -207,7 +210,7 @@ function SlotsDemoModal({ onClose }) {
       {
         key: "button",
         type: "button",
-        className: "acme-slots-demo__button",
+        className: "acme-slots-demo__button pi-slot-btn",
         onClick: () => setRenders((value) => value + 1),
       },
       "Re-render",
@@ -217,7 +220,7 @@ function SlotsDemoModal({ onClose }) {
       {
         key: "close",
         type: "button",
-        className: "acme-slots-demo__button acme-slots-demo__close",
+        className: "acme-slots-demo__button pi-slot-btn acme-slots-demo__close",
         "data-slots-demo-close": "modal",
         onClick: onClose,
       },

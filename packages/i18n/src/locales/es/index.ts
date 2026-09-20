@@ -1565,6 +1565,8 @@ sklm: {
     "rowActions": "Acciones para {{name}}",
     "details": "Detalles",
     "capabilitiesTitle": "Capacidades",
+    "rendererDiagnosticsTitle": "Diagnósticos del renderizador",
+    "rendererDiagnosticsEmpty": "Sin diagnósticos de ranuras del renderizador.",
     "servicesTitle": "Servicios",
     "searchInstalled": "Buscar complementos instalados",
     "clearSearch": "Borrar búsqueda",

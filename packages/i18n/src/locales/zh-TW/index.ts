@@ -1566,6 +1566,8 @@ sklm: {
     rowActions: "{{name}} 的操作",
     details: "詳情",
     capabilitiesTitle: "能力",
+    rendererDiagnosticsTitle: "渲染診斷",
+    rendererDiagnosticsEmpty: "暫無渲染槽位診斷。",
     servicesTitle: "服務",
     searchInstalled: "搜尋已安裝外掛",
     clearSearch: "清除搜尋",

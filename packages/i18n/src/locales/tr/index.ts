@@ -1583,6 +1583,8 @@ importConfirm: "İçe aktarılan uzantılar ajan sürecinde, ajanın kendi araç
     rowActions: "{{name}} eylemleri",
     details: "Ayrıntılar",
     capabilitiesTitle: "Yetenekler",
+    rendererDiagnosticsTitle: "Renderer tanıları",
+    rendererDiagnosticsEmpty: "Renderer yuvası tanısı yok.",
     servicesTitle: "Servisler",
     searchInstalled: "Kurulu eklentilerde ara",
     clearSearch: "Aramayı temizle",

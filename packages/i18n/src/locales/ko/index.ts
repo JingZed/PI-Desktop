@@ -1583,6 +1583,8 @@ importConfirm: "가져온 확장은 에이전트 프로세스 안에서 에이�
     rowActions: "{{name}} 작업",
     details: "세부 정보",
     capabilitiesTitle: "기능",
+    rendererDiagnosticsTitle: "렌더러 진단",
+    rendererDiagnosticsEmpty: "렌더러 슬롯 진단이 없습니다.",
     servicesTitle: "서비스",
     searchInstalled: "설치된 플러그인 검색",
     clearSearch: "검색 지우기",

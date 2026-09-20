@@ -1565,6 +1565,8 @@ sklm: {
     "rowActions": "Aktionen für {{name}}",
     "details": "Details",
     "capabilitiesTitle": "Funktionen",
+    "rendererDiagnosticsTitle": "Renderer-Diagnosen",
+    "rendererDiagnosticsEmpty": "Keine Renderer-Slot-Diagnosen.",
     "servicesTitle": "Dienste",
     "searchInstalled": "Installierte Plugins durchsuchen",
     "clearSearch": "Suche löschen",

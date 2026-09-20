@@ -113,10 +113,16 @@ do not.
    These functions are renderer-local: they are not an IPC channel and must not
    perform I/O.
 
-7. **Data is pushed; plugins do not poll.** Slots that display live state
-   (`draft`, `attachments`, `selection`, `session`, `theme`, `locale`) receive
-   current values on each render, and a plugin is re-rendered when the data it
-   declared changes. Data it did not declare is never passed to it.
+7. **Data is pushed; plugins do not poll — within a narrow ambient set.**
+   Slot-contract props (draft, entry, references, mode, query, position, code,
+   …) always arrive from the mount that owns that slot and are not gated by
+   `rendererData`. Ambient keys the host injects at `SlotOutlet` when the
+   plugin declared them are only `theme` and `locale`
+   (`PLUGIN_RENDERER_AMBIENT_DATA`), and only when the host already holds the
+   value. `selection` remains declarable for install review but is not served
+   this cycle; the host reports `PLUGIN_DATA_UNSERVED` rather than silently
+   ignoring the declaration. Data a plugin did not declare is never
+   ambient-injected. This is a merge, not a live subscription engine.
 
 8. **Within one slot, plugins render in registration order.** A later plugin
    cannot take a position away from an earlier one, matching the ordering rule

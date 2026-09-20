@@ -101,9 +101,11 @@ JavaScript realm、DOM、模块图和 React 树。没有进程隔离，没有 `i
 
 - **React 单例。** 宿主通过模块的 import map 注入自己的 React；自带 React 的插件
   在加载时被拒绝并记录诊断，因为两份 React 会破坏 hooks 与 context。
-- **命名空间样式。** 每个槽位都包在 `data-pi-plugin="<plugin-id>"` 容器里，插件
-  样式必须走 `pi.ui.injectStyle(css)`，宿主在卸载时移除它们；含顶层 `html`、
-  `body`、`:root` 或 `*` 选择器的样式表会被整个拒绝，而不是被收窄。
+- **auto-scope 样式。** 每个槽位都包在 `data-pi-plugin="<plugin-id>"` 容器里，插件
+  样式必须走 `pi.ui.injectStyle(css)`，宿主在卸载时移除它们；宿主会把选择器
+  auto-scope 到插件自己的 `data-pi-plugin` 容器；含顶层 `html`、`body` 或 `*`
+  选择器的样式表会被整个拒绝，而不是被收窄。公开设计令牌为 `.pi-plugin-slot`
+  上的 `--pi-slot-*` 别名。
 - **逐槽位错误边界。** 抛错的槽位塌缩为空白，邻居不受影响，宿主会上报这次崩溃。
 - **分发不做门控。** 声明 `renderer` 的插件走普通的本地、开发与市场路径安装；
   `renderer.extension` 授权就是用户看到风险的地方。

@@ -104,11 +104,25 @@ realm 本身不是边界，全局桥句柄始终可达：`contextBridge` 把 `wi
 面——243 个白名单通道（220 个 invoke 与 23 个 event），且没有任何按调用方的检查。
 插件是有意被信任并授予宽泛权限的：边界是市场审核加安装时同意，而不是隔离。
 
-样式隔离是命名空间方案，不是 Shadow DOM：
+样式隔离是宿主 auto-scope 方案，不是 Shadow DOM：
 
-- 每个槽位都包在 `data-pi-plugin="<plugin-id>"` 容器里；
+- 每个槽位都包在 `data-pi-plugin="<plugin-id>"` 容器里，并携带
+  `data-pi-theme="light|dark"`；
 - 插件样式必须走 `pi.ui.injectStyle(css)`，宿主在卸载时移除这些样式表；
-- 含顶层 `html`、`body`、`:root` 或 `*` 选择器的样式表会被整个拒绝，而不是被收窄。
+- 宿主在下发前会把**选择器改写**到插件自己的容器下（改写时记
+  `PLUGIN_STYLE_SCOPED`）。`:root` 会被改写为插件容器，主题分支仍可书写；
+- 含顶层 `html`、`body`、`*` 选择器，或含 `@import` 的样式表会被整个拒绝
+  （`PLUGIN_STYLE_REFUSED`）；
+- `@keyframes` / `@font-face` 名会被改写为 `pi-<pluginId>-<name>`；
+- 公开设计令牌是挂在 `.pi-plugin-slot` 上的 `--pi-slot-*` 别名（SDK 中的
+  `PLUGIN_SLOT_DESIGN_TOKENS`）。宿主内部 `--ds-*` 名**不是**插件契约；引用
+  它们会记 `PLUGIN_STYLE_PRIVATE_TOKEN`（软诊断，不拒载）。仅槽内容器内可用
+  的原语是 `.pi-slot-btn` / `.pi-slot-chip` / `.pi-slot-field`，它们不是宿主
+  chrome 的 class 名。
+
+替换型槽位（`entry`、`toolCard`、`inlineConfirm`、`modal`）至多一个注册
+（先 claim 者占用）。后来的注册以 `PLUGIN_SLOT_DUPLICATE` 拒绝。叠加型槽位
+按注册顺序堆叠（D8）。`codeBlock` 仍按语言 claim。
 
 选择拒绝 Shadow DOM 的原因：被 portal 的插件 UI 会逃出 shadow root
 （渲染层 18 个文件、41 处 `createPortal` 调用）。
@@ -179,7 +193,16 @@ props 拿到它的宿主数据和一个方法 `dispatch(action, payload)`；没�
   挂载的 composer 消费了这次写入后才 resolve；如果 500 ms 内没有任何 composer
   消费，写入会被清除，调用以 `PLUGIN_ACTION_DRAFT_UNCONSUMED` 拒绝。
 
-`rendererData` —— 模块声明读取的宿主数据：
+`rendererData` —— 模块声明读取的宿主数据。角色拆分如下：
+
+- **声明 / 安装审查**：下列名字均为合法的清单元数据。
+- **槽契约 props**（`draft`、`entry`、`references`、`mode`、`query`、
+  `position`、`code` 等）始终来自该槽自己的挂载，不受本列表门控。
+- **ambient props**：仅当插件已声明**且**宿主已持有该值时，`SlotOutlet` 会
+  注入 `theme` 与 `locale`（`PLUGIN_RENDERER_AMBIENT_DATA`）。这是窄合并，
+  不是实时订阅引擎。
+- `selection` 本周期可声明但不服务；宿主会记 `PLUGIN_DATA_UNSERVED`，而不是
+  静默忽略声明（`PLUGIN_RENDERER_UNSERVED_DATA`）。
 
 - `entry`
 - `session`

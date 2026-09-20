@@ -1589,6 +1589,8 @@ importConfirm: "Imported extensions run inside the agent process with the same a
     rowActions: "Actions for {{name}}",
     details: "Details",
     capabilitiesTitle: "Capabilities",
+    rendererDiagnosticsTitle: "Renderer diagnostics",
+    rendererDiagnosticsEmpty: "No renderer slot diagnostics.",
     servicesTitle: "Services",
     searchInstalled: "Search installed plugins",
     clearSearch: "Clear search",

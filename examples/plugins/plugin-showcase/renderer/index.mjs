@@ -68,17 +68,11 @@ const CODE_LANGUAGE = `${PLUGIN_ID}:kv`;
 const LAYER_SLOTS = ["inlineConfirm", "modal", "overlay"];
 
 /**
- * Injected through `pi.ui.injectStyle`. Every selector is namespaced with the
- * plugin id and stays inside the host's `data-pi-plugin="acme.plugin-showcase"`
- * container: a sheet whose top-level selector is `html`, `body`, `:root`, or
- * `*` is refused whole rather than silently narrowed.
- *
- * No host design token is referenced here. An injected sheet is the plugin's
- * own CSS; the host does not promise its token names to plugins, so this uses
- * `currentColor` and nothing theme-specific. The one exception is the layer
- * surface, which has to be opaque because it floats over the window: it uses
- * the CSS system colors `Canvas`/`CanvasText`, which follow the host's
- * `color-scheme` rather than assuming a palette.
+ * Injected through `pi.ui.injectStyle`. The host auto-scopes every selector
+ * under this plugin's `data-pi-plugin` container. Public design tokens are the
+ * host-owned `--pi-slot-*` aliases; host-internal `--ds-*` names are not a
+ * plugin contract. Layer surfaces use `--pi-slot-bg-elevated` /
+ * `--pi-slot-text` (Canvas fallbacks) so they stay opaque over the window.
  */
 const STYLES = `
 .acme-plugin-showcase__badge {
@@ -87,24 +81,23 @@ const STYLES = `
   align-items: center;
   gap: 0.375rem;
   margin-top: 0.25rem;
-  padding: 0.125rem 0.5rem;
-  border: 1px solid currentColor;
-  border-radius: 999px;
-  font-size: 0.75rem;
+  color: var(--pi-slot-text-muted, inherit);
+  font-size: var(--pi-slot-text-xs, 0.75rem);
   line-height: 1.6;
-  opacity: 0.8;
+  opacity: 0.85;
 }
 
 .acme-plugin-showcase__muted {
+  color: var(--pi-slot-text-muted, inherit);
   opacity: 0.75;
 }
 
 .acme-plugin-showcase__button {
   padding: 0.125rem 0.625rem;
-  border: 1px solid currentColor;
-  border-radius: 0.5rem;
-  background: none;
-  color: inherit;
+  border: 1px solid var(--pi-slot-border, currentColor);
+  border-radius: var(--pi-slot-radius-sm, 0.5rem);
+  background: var(--pi-slot-bg-elevated, none);
+  color: var(--pi-slot-text, inherit);
   font: inherit;
   cursor: pointer;
 }
@@ -113,21 +106,24 @@ const STYLES = `
   display: inline-flex;
   align-items: center;
   gap: 0.375rem;
-  font-size: 0.75rem;
+  font-size: var(--pi-slot-text-xs, 0.75rem);
 }
 
 .acme-plugin-showcase__card {
   display: block;
   margin: 0.25rem 0;
   padding: 0.5rem 0.625rem;
-  border: 1px dashed currentColor;
-  border-radius: 0.5rem;
-  font-size: 0.8125rem;
+  border: 1px dashed var(--pi-slot-border, currentColor);
+  border-radius: var(--pi-slot-radius-sm, 0.5rem);
+  color: var(--pi-slot-text, inherit);
+  font-family: var(--pi-slot-font, inherit);
+  font-size: var(--pi-slot-text-sm, 0.8125rem);
   line-height: 1.6;
 }
 
 .acme-plugin-showcase__card-title {
   display: block;
+  color: var(--pi-slot-text, inherit);
   font-weight: 600;
 }
 
@@ -139,12 +135,13 @@ const STYLES = `
   display: block;
   max-width: min(24rem, 90vw);
   padding: 0.75rem 0.875rem;
-  border: 1px solid currentColor;
-  border-radius: 0.75rem;
-  background: Canvas;
-  color: CanvasText;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
-  font-size: 0.8125rem;
+  border: 1px solid var(--pi-slot-border, currentColor);
+  border-radius: var(--pi-slot-radius-md, 0.75rem);
+  background: var(--pi-slot-bg-elevated, Canvas);
+  color: var(--pi-slot-text, CanvasText);
+  box-shadow: var(--pi-slot-shadow, 0 12px 32px rgba(0, 0, 0, 0.35));
+  font-family: var(--pi-slot-font, inherit);
+  font-size: var(--pi-slot-text-sm, 0.8125rem);
   line-height: 1.6;
 }
 
@@ -158,7 +155,7 @@ const STYLES = `
   flex-wrap: wrap;
   align-items: center;
   gap: 0.375rem;
-  font-size: 0.75rem;
+  font-size: var(--pi-slot-text-xs, 0.75rem);
 }
 
 .acme-plugin-showcase__chip {
@@ -166,21 +163,16 @@ const STYLES = `
   align-items: center;
   gap: 0.375rem;
   max-width: 100%;
-  padding: 0.0625rem 0.5rem;
-  border: 1px solid currentColor;
-  border-radius: 0.5rem;
-  font-size: 0.75rem;
+  color: var(--pi-slot-text-muted, inherit);
+  font-size: var(--pi-slot-text-xs, 0.75rem);
   line-height: 1.6;
-  opacity: 0.85;
 }
 
 .acme-plugin-showcase__completion {
   display: block;
-  padding: 0.25rem 0.5rem;
-  font-size: 0.75rem;
+  color: var(--pi-slot-text-muted, inherit);
+  font-size: var(--pi-slot-text-xs, 0.75rem);
   line-height: 1.7;
-  opacity: 0.85;
-}
 
 .acme-plugin-showcase__kv {
   display: block;
@@ -351,7 +343,7 @@ function HostToastButton({ dispatch, message, label = "Notify the host" }) {
       {
         key: "button",
         type: "button",
-        className: "acme-plugin-showcase__button",
+        className: "acme-plugin-showcase__button pi-slot-btn",
         "data-pi-showcase-action": "ui.toast",
         onClick: notify,
       },
@@ -424,7 +416,7 @@ function EntryCard({ entry, sessionId, dispatch }) {
  */
 function EntryExtraCard({ entry, dispatch }) {
   const facts = entryFacts(entry);
-  return createElement("span", { className: "acme-plugin-showcase__badge" }, [
+  return createElement("span", { className: "acme-plugin-showcase__badge pi-slot-chip" }, [
     `${PLUGIN_ID} · entryExtra`,
     createElement(
       "span",
@@ -526,7 +518,7 @@ function InlineConfirmCard({ sessionId }) {
       {
         key: "close",
         type: "button",
-        className: "acme-plugin-showcase__button",
+        className: "acme-plugin-showcase__button pi-slot-btn",
         "data-pi-showcase-close": "inlineConfirm",
         onClick: () => setLayerOpen("inlineConfirm", false),
       },
@@ -572,7 +564,7 @@ function ModalCard({ sessionId }) {
         {
           key: "close",
           type: "button",
-          className: "acme-plugin-showcase__button",
+          className: "acme-plugin-showcase__button pi-slot-btn",
           "data-pi-showcase-close": "modal",
           onClick: () => setLayerOpen("modal", false),
         },
@@ -616,7 +608,7 @@ function OverlayCard({ sessionId }) {
         {
           key: "close",
           type: "button",
-          className: "acme-plugin-showcase__button",
+          className: "acme-plugin-showcase__button pi-slot-btn",
           "data-pi-showcase-close": "overlay",
           onClick: () => setLayerOpen("overlay", false),
         },
@@ -647,7 +639,7 @@ function ComposerControl({ position, draft, sessionId }) {
       "button",
       {
         type: "button",
-        className: "acme-plugin-showcase__button",
+        className: "acme-plugin-showcase__button pi-slot-btn",
         "data-pi-showcase-trigger": "inlineConfirm",
         title:
           `Showcase demo · left composer position · draft ${draftLength} char(s) · ${sessionNote}. ` +
@@ -666,7 +658,7 @@ function ComposerControl({ position, draft, sessionId }) {
         {
           key: "modal",
           type: "button",
-          className: "acme-plugin-showcase__button",
+          className: "acme-plugin-showcase__button pi-slot-btn",
           "data-pi-showcase-trigger": "modal",
           title:
             `Showcase demo · right composer position · draft ${draftLength} char(s) · ${sessionNote}. ` +
@@ -680,7 +672,7 @@ function ComposerControl({ position, draft, sessionId }) {
         {
           key: "overlay",
           type: "button",
-          className: "acme-plugin-showcase__button",
+          className: "acme-plugin-showcase__button pi-slot-btn",
           "data-pi-showcase-trigger": "overlay",
           title:
             `Showcase demo · right composer position · draft ${draftLength} char(s) · ${sessionNote}. ` +
@@ -762,7 +754,7 @@ function ComposerReference({ references, draft, sessionId }) {
   return createElement(
     "span",
     {
-      className: "acme-plugin-showcase__chip",
+      className: "acme-plugin-showcase__chip pi-slot-chip",
       "data-pi-showcase-slot": "composerReference",
       "data-pi-showcase-reference-count": chips.length,
       title:

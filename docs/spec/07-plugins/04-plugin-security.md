@@ -154,8 +154,9 @@ sandbox (ADR 0291). The mitigations that do ship with it:
   diagnostic, because two React copies break hooks and context.
 - **Namespaced styling.** Every slot is wrapped in a
   `data-pi-plugin="<plugin-id>"` container, plugin styles must go through
-  `pi.ui.injectStyle(css)`, the host removes them on unload, and a stylesheet
-  with a top-level `html`, `body`, `:root`, or `*` selector is refused rather
+  `pi.ui.injectStyle(css)`, the host removes them on unload, and the host
+  auto-scopes selectors under the plugin's `data-pi-plugin` container.
+  A stylesheet with a top-level `html`, `body`, or `*` selector is refused rather
   than narrowed.
 - **Per-slot error boundary.** A slot that throws collapses to nothing, its
   neighbours are unaffected, and the host reports the crash.

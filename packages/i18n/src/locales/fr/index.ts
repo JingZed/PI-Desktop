@@ -1565,6 +1565,8 @@ sklm: {
     "rowActions": "Actions pour {{name}}",
     "details": "Détails",
     "capabilitiesTitle": "Capacités",
+    "rendererDiagnosticsTitle": "Diagnostics du moteur de rendu",
+    "rendererDiagnosticsEmpty": "Aucun diagnostic d'emplacement du moteur.",
     "servicesTitle": "Services",
     "searchInstalled": "Rechercher les plugins installés",
     "clearSearch": "Effacer la recherche",
