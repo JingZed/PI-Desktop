@@ -614,9 +614,10 @@ pub(crate) const PLUGIN_RENDERER_DATA: [&str; 8] = [
 /// rest are performed by the host renderer. Declaring one grants nothing.
 ///
 /// Mirrors `PLUGIN_RENDERER_ACTIONS` in `packages/plugin-sdk/src/renderer.ts`.
-pub(crate) const PLUGIN_RENDERER_ACTIONS: [&str; 9] = [
+pub(crate) const PLUGIN_RENDERER_ACTIONS: [&str; 10] = [
     "plugin.call",
     "composer.replaceDraft",
+    "composer.readDraft",
     "composer.insertText",
     "composer.attachPath",
     "ui.openOverlay",

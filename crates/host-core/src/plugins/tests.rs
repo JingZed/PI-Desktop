@@ -2457,9 +2457,9 @@ fn renderer_declarations_are_validated_against_the_host_vocabulary() {
                 "selection", "draft", "attachments", "locale"
             ],
             "rendererActions": [
-                "plugin.call", "composer.replaceDraft", "composer.insertText",
-                "composer.attachPath", "ui.openOverlay", "ui.closeOverlay",
-                "ui.openModal", "ui.closeModal", "ui.toast"
+                "plugin.call", "composer.replaceDraft", "composer.readDraft",
+                "composer.insertText", "composer.attachPath", "ui.openOverlay",
+                "ui.closeOverlay", "ui.openModal", "ui.closeModal", "ui.toast"
             ],
         })),
         &[],
@@ -2483,6 +2483,7 @@ fn renderer_declarations_are_validated_against_the_host_vocabulary() {
         vec![
             "plugin.call",
             "composer.replaceDraft",
+            "composer.readDraft",
             "composer.insertText",
             "composer.attachPath",
             "ui.openOverlay",
@@ -2514,6 +2515,7 @@ fn renderer_declarations_are_validated_against_the_host_vocabulary() {
         &json!([
             "plugin.call",
             "composer.replaceDraft",
+            "composer.readDraft",
             "composer.insertText",
             "composer.attachPath",
             "ui.openOverlay",
@@ -2580,15 +2582,16 @@ fn renderer_declarations_are_validated_against_the_host_vocabulary() {
         &too_many_actions,
         manifest_with(json!({
             "rendererActions": [
-                "plugin.call", "composer.replaceDraft", "composer.insertText",
-                "composer.attachPath", "ui.openOverlay", "ui.closeOverlay",
-                "ui.openModal", "ui.closeModal", "ui.toast", "ui.toast"
+                "plugin.call", "composer.replaceDraft", "composer.readDraft",
+                "composer.insertText", "composer.attachPath", "ui.openOverlay",
+                "ui.closeOverlay", "ui.openModal", "ui.closeModal", "ui.toast",
+                "ui.toast"
             ]
         })),
         &[],
     );
     assert!(
-        read_manifest_err(&too_many_actions).contains("rendererActions allows at most 9 entries")
+        read_manifest_err(&too_many_actions).contains("rendererActions allows at most 10 entries")
     );
 
     // A non-array value or a non-string member is refused while the manifest is
