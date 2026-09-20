@@ -102,11 +102,13 @@ const AnchoredMenu = ({ trigger, open, children }) =>
     open ? children : null,
   );
 
+const pluginSdk = await import("@pi-desktop/plugin-sdk");
 const { PluginSlot, PluginSlotBoundary } = loadTsx(
   "../src/plugins/renderer-slots/SlotOutlet.tsx",
   {
     react: React,
     "react/jsx-runtime": jsxRuntime,
+    "@pi-desktop/plugin-sdk": pluginSdk,
     "../renderer-host/loader": loader,
     "../renderer-host/relay": relay,
     "./registry": registryModule,

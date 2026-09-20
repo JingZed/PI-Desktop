@@ -1,21 +1,25 @@
 /**
- * The host-side mounting point for component slots (ADR 0291).
+ * The host-side mounting point for component slots (ADR 0291, contract v4).
  *
- * A plugin registers a component; this is where the host puts it. Four rules
- * are enforced here rather than trusted to plugin authors:
+ * A plugin registers a component; this is where the host puts it.
  *
- * - `data-pi-plugin="<id>"` wraps every plugin surface, which is what plugin CSS
- *   is expected to scope itself with and what the diagnostics surface counts.
- * - Each registration gets its own error boundary, so one broken component
- *   collapses to the host's own rendering instead of taking the surrounding
- *   list with it (D10: a crashed plugin does not hold a position).
- * - Loading is triggered by the first real render of the slot, never at startup.
- * - Every plugin component is handed `dispatch`, bound to the plugin whose
- *   registration it is, so a slot never has to know which plugin is drawing
- *   (ADR 0294). The function is stable per plugin, not rebuilt per render.
+ * - `data-pi-plugin="<id>"` wraps every plugin surface; the host auto-scopes
+ *   plugin CSS under that container and stamps `data-pi-theme` when known.
+ * - Each registration gets its own error boundary (D10).
+ * - Loading is lazy: the first real render of a slot.
+ * - Every component is handed `dispatch` bound to its plugin (ADR 0294).
+ * - Ambient props (`theme` / `locale`) are merged only when the plugin
+ *   declared them in `rendererData` (ADR 0294 D7, narrowed — not a push
+ *   engine). Replace slots render at most the claim owner; an empty claim
+ *   falls back to host `children`.
  */
 import { Component, useEffect, useMemo, useRef, useSyncExternalStore, type ReactNode } from "react";
-import type { PluginRendererSlot } from "@pi-desktop/plugin-sdk";
+import {
+  PLUGIN_RENDERER_UNSERVED_DATA,
+  isPluginRendererReplaceSlot,
+  type PiRendererAmbientProps,
+  type PluginRendererSlot,
+} from "@pi-desktop/plugin-sdk";
 import {
   disposeRendererPlugin,
   ensureRendererPlugin,
@@ -30,20 +34,10 @@ export type RendererCandidate = {
   id: string;
   version?: string;
   declared: boolean;
-  /**
-   * What the manifest says this plugin reads and calls. Carried unchanged so a
-   * mount point never has to read a manifest; empty means it declared neither.
-   */
   rendererData: string[];
   rendererActions: string[];
 };
 
-/**
- * Props of one slot's containment, with the boundary below. Exported together
- * so its contract — report, then take the position back to the host's own
- * rendering — can be checked without a DOM renderer, which is the only way to
- * exercise an error boundary from a test process that has no document.
- */
 export type PluginSlotBoundaryProps = {
   registration: PluginSlotRegistration;
   fallback: ReactNode;
@@ -51,11 +45,6 @@ export type PluginSlotBoundaryProps = {
 };
 type BoundaryState = { failed: boolean };
 
-/**
- * Per-slot containment. React has no error boundary hook, so this stays a class
- * component; what it renders on failure is the host's own default for the slot,
- * which is why a failed plugin loses its position instead of leaving a hole.
- */
 export class PluginSlotBoundary extends Component<PluginSlotBoundaryProps, BoundaryState> {
   state: BoundaryState = { failed: false };
 
@@ -77,7 +66,6 @@ export class PluginSlotBoundary extends Component<PluginSlotBoundaryProps, Bound
   }
 }
 
-/** Live view of one slot's registrations. Re-reads when the registry changes. */
 export function useSlotRegistrations(slot: PluginRendererSlot): PluginSlotRegistration[] {
   const version = useSyncExternalStore(
     pluginSlots.subscribe,
@@ -86,37 +74,110 @@ export function useSlotRegistrations(slot: PluginRendererSlot): PluginSlotRegist
   );
   return useMemo(
     () => pluginSlots.list(slot),
-    // `version` is the registry's own change counter; the list rebuilds on it.
     [slot, version],
   );
 }
 
+/** Host theme as the document reports it. Defaults to dark. */
+export function readHostTheme(): "light" | "dark" {
+  if (typeof document === "undefined") return "dark";
+  const el = document.documentElement as
+    | (HTMLElement & { dataset?: DOMStringMap })
+    | null
+    | undefined;
+  if (!el) return "dark";
+  const raw =
+    typeof el.getAttribute === "function"
+      ? el.getAttribute("data-theme")
+      : el.dataset?.theme;
+  return raw === "light" ? "light" : "dark";
+}
+
+/** Host UI locale as the document reports it. */
+export function readHostLocale(): string {
+  if (typeof document === "undefined") return "en";
+  const el = document.documentElement as HTMLElement | null | undefined;
+  if (!el) return "en";
+  const lang =
+    (typeof el.getAttribute === "function" ? el.getAttribute("lang") : null) ||
+    el.lang ||
+    (el as { dataset?: DOMStringMap }).dataset?.lang;
+  return lang || "en";
+}
+
+function subscribeTheme(listener: () => void): () => void {
+  if (
+    typeof document === "undefined" ||
+    typeof MutationObserver === "undefined" ||
+    !document.documentElement ||
+    typeof document.documentElement.getAttribute !== "function"
+  ) {
+    return () => {};
+  }
+  const observer = new MutationObserver(listener);
+  observer.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["data-theme", "lang"],
+  });
+  return () => observer.disconnect();
+}
+
+function themeSnapshot(): string {
+  return `${readHostTheme()}|${readHostLocale()}`;
+}
+
+/**
+ * Ambient props for one plugin, gated by its declared `rendererData`.
+ * Slot-contract props are never produced here.
+ */
+export function ambientPropsFor(
+  candidate: RendererCandidate | undefined,
+  sources?: { theme?: "light" | "dark"; locale?: string },
+): PiRendererAmbientProps {
+  if (!candidate) return {};
+  const declared = new Set(candidate.rendererData);
+  const out: PiRendererAmbientProps = {};
+  if (declared.has("theme")) out.theme = sources?.theme ?? readHostTheme();
+  if (declared.has("locale")) out.locale = sources?.locale ?? readHostLocale();
+  return out;
+}
+
+const unservedReported = new Set<string>();
+
+/** Report declarable-but-unserved data keys once per plugin per session. */
+export function reportUnservedData(candidate: RendererCandidate | undefined): void {
+  if (!candidate) return;
+  for (const key of candidate.rendererData) {
+    if (!(PLUGIN_RENDERER_UNSERVED_DATA as readonly string[]).includes(key)) continue;
+    const token = `${candidate.id}:${key}`;
+    if (unservedReported.has(token)) continue;
+    unservedReported.add(token);
+    pluginSlots.report({
+      pluginId: candidate.id,
+      code: "PLUGIN_DATA_UNSERVED",
+      detail: `rendererData "${key}" is declarable but not served this cycle`,
+    });
+  }
+}
+
+/** Test seam. */
+export function resetUnservedDataReports(): void {
+  unservedReported.clear();
+}
+
 export type PluginSlotProps = {
   slot: PluginRendererSlot;
-  /** Data and callbacks this slot's contract promises (spec 07-plugins/16). */
+  /** Slot-contract props from the mount (spec 07-plugins/16). */
   slotProps?: Record<string, unknown>;
-  /** Candidates whose renderer entry may fill this slot. */
   candidates?: readonly RendererCandidate[];
-  /**
-   * The registrations this mount owns. Omitted renders every registration the
-   * registry holds for `slot`, which is what a list position wants. A position
-   * that belongs to one plugin — the `codeBlock` language owner — passes
-   * exactly that registration, or an empty list when nothing owns it.
-   */
   registrations?: readonly PluginSlotRegistration[];
-  /**
-   * Extra attributes for the plugin container, such as a code block's source
-   * anchors. The container's own identity attributes stay host-owned.
-   */
   containerProps?: Record<string, unknown>;
-  /** The host's own rendering, used when no plugin fills the slot or one fails. */
   children?: ReactNode;
 };
 
 /**
- * Render the registrations this mount owns, in registration order. Without
- * `registrations` that is every plugin that owns `slot`, after the host's own
- * content (D8: plugin items never jump ahead of host items).
+ * Render the registrations this mount owns. Replace slots show at most one
+ * claim owner; an empty list falls back to host `children`.
  */
 export function PluginSlot({
   slot,
@@ -127,30 +188,22 @@ export function PluginSlot({
   children,
 }: PluginSlotProps) {
   const registered = useSlotRegistrations(slot);
+  const themeLocaleKey = useSyncExternalStore(subscribeTheme, themeSnapshot, themeSnapshot);
   const candidateKey = candidates.map((candidate) => candidate.id).join(",");
-  // The array identity changes every render; the ref keeps the effect keyed on
-  // the set of plugins that matter instead of on a fresh array each time.
   const latest = useRef(candidates);
   latest.current = candidates;
-  // The row's declaration is known before the module it names exists, so it is
-  // recorded as the mount renders, not only when the effect below runs: a
-  // component that dispatches during its first commit is answered from what
-  // its plugin declared.
   for (const candidate of candidates) {
     rememberRendererActions(candidate.id, candidate.rendererActions);
   }
 
   useEffect(() => {
-    // One place pulls a plugin module and one place releases it: a slot that
-    // really renders. A plugin whose entry never appears on screen is never
-    // evaluated, and one that has disappeared from the plugin list loses its
-    // registrations and its stylesheet here rather than staying on screen.
     const present = new Set(latest.current.map((candidate) => candidate.id));
     for (const pluginId of loadedRendererPlugins()) {
       if (!present.has(pluginId)) void disposeRendererPlugin(pluginId);
     }
     for (const candidate of latest.current) {
       if (!candidate.declared) continue;
+      reportUnservedData(candidate);
       void ensureRendererPlugin(candidate.id, {
         declared: candidate.declared,
         version: candidate.version,
@@ -159,13 +212,22 @@ export function PluginSlot({
     }
   }, [candidateKey]);
 
-  const shown = registrations ?? registered;
+  const owned = registrations ?? registered;
+  const shown =
+    registrations !== undefined
+      ? owned
+      : isPluginRendererReplaceSlot(slot)
+        ? owned.slice(0, 1)
+        : owned;
+
   if (!shown.length) return <>{children ?? null}</>;
 
   return (
     <>
       {shown.map((registration, index) => {
         const PluginComponent = registration.component;
+        const candidate = candidates.find((item) => item.id === registration.pluginId);
+        const ambient = ambientPropsFor(candidate);
         return (
           <PluginSlotBoundary
             key={`${registration.pluginId}:${slot}:${index}`}
@@ -177,12 +239,11 @@ export function PluginSlot({
               className="pi-plugin-slot"
               data-pi-plugin={registration.pluginId}
               data-pi-plugin-slot={slot}
+              data-pi-theme={ambient.theme ?? readHostTheme()}
             >
-              {/* `dispatch` is spread last, so the host wins if a slot prop is
-                * ever called `dispatch`: an action must not silently lose its
-                * function to a data key. */}
               <PluginComponent
                 {...(slotProps ?? {})}
+                {...ambient}
                 dispatch={slotDispatchFor(registration.pluginId)}
               />
             </div>

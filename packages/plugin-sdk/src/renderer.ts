@@ -61,6 +61,15 @@ export type PluginRendererSlot = (typeof PLUGIN_RENDERER_SLOTS)[number];
  * `manifest.rendererData`. A name is a whole slice whose shape the host owns,
  * not a free-form string. Omitted means the plugin declares no data at all,
  * which is what every manifest written before this field means.
+ *
+ * Two roles (ADR 0294 D7, narrowed):
+ * - Install-review / declaration metadata for every name in this list.
+ * - Ambient props the host actually injects when the value already exists:
+ *   only `theme` and `locale` (PLUGIN_RENDERER_AMBIENT_DATA). Slot-contract
+ *   props (draft, entry, references, …) always arrive from the slot's own
+ *   mount and are not gated by this list. `selection` is declarable but not
+ *   served this cycle — the host reports `PLUGIN_DATA_UNSERVED` rather than
+ *   silently ignoring the declaration.
  */
 export const PLUGIN_RENDERER_DATA = [
   /** The transcript entry the component is mounted for. */
@@ -82,6 +91,88 @@ export const PLUGIN_RENDERER_DATA = [
 ] as const;
 
 export type PluginRendererDataKey = (typeof PLUGIN_RENDERER_DATA)[number];
+
+/**
+ * Ambient keys the host injects at `SlotOutlet` when the plugin declared them
+ * and the host already holds the value. Narrow on purpose: this is not a
+ * live subscription engine.
+ */
+export const PLUGIN_RENDERER_AMBIENT_DATA = ["theme", "locale"] as const;
+
+export type PluginRendererAmbientDataKey = (typeof PLUGIN_RENDERER_AMBIENT_DATA)[number];
+
+/**
+ * Declarable data keys the host does not serve yet. Declaration stays valid
+ * for install review; the runtime answers with `PLUGIN_DATA_UNSERVED`.
+ */
+export const PLUGIN_RENDERER_UNSERVED_DATA = ["selection"] as const;
+
+/**
+ * Component slots that *replace* a host surface: at most one registration
+ * holds the position (first claim wins). Additive slots may stack in
+ * registration order (D8). `codeBlock` uses language claims instead of a
+ * whole-slot claim.
+ */
+export const PLUGIN_RENDERER_REPLACE_SLOTS = [
+  "entry",
+  "toolCard",
+  "inlineConfirm",
+  "modal",
+] as const;
+
+export function isPluginRendererReplaceSlot(
+  slot: PluginRendererSlot,
+): slot is (typeof PLUGIN_RENDERER_REPLACE_SLOTS)[number] {
+  return (PLUGIN_RENDERER_REPLACE_SLOTS as readonly string[]).includes(slot);
+}
+
+/**
+ * Public design tokens a renderer slot may use. Host-maintained aliases of
+ * internal `--ds-*` values, defined on `.pi-plugin-slot` only. The stability
+ * contract is this prefix + this list: additions only; renames or removals
+ * require a spec + ADR change. Internal host tokens and host class names are
+ * not part of the plugin contract.
+ */
+export const PLUGIN_SLOT_DESIGN_TOKENS = [
+  "--pi-slot-bg",
+  "--pi-slot-bg-elevated",
+  "--pi-slot-text",
+  "--pi-slot-text-muted",
+  "--pi-slot-text-faint",
+  "--pi-slot-border",
+  "--pi-slot-accent",
+  "--pi-slot-success",
+  "--pi-slot-warning",
+  "--pi-slot-error",
+  "--pi-slot-radius-sm",
+  "--pi-slot-radius-md",
+  "--pi-slot-text-xs",
+  "--pi-slot-text-sm",
+  "--pi-slot-text-base",
+  "--pi-slot-shadow",
+  "--pi-slot-font",
+] as const;
+
+export type PluginSlotDesignToken = (typeof PLUGIN_SLOT_DESIGN_TOKENS)[number];
+
+/** Ambient props the host may merge into a slot component. All optional. */
+export type PiRendererAmbientProps = {
+  /** Host light/dark theme, when the plugin declared `theme`. */
+  theme?: "light" | "dark";
+  /** Host UI locale (e.g. `zh-CN`), when the plugin declared `locale`. */
+  locale?: string;
+};
+
+/**
+ * Diagnostic codes owned by the slot/style contract (registry + style injection).
+ * Kept here so the SDK is the single place plugin authors and host code look.
+ */
+export type PluginRendererSlotDiagnosticCode =
+  | "PLUGIN_SLOT_DUPLICATE"
+  | "PLUGIN_DATA_UNSERVED"
+  | "PLUGIN_STYLE_REFUSED"
+  | "PLUGIN_STYLE_SCOPED"
+  | "PLUGIN_STYLE_PRIVATE_TOKEN";
 
 /**
  * Actions a renderer component may ask the host to run. The vocabulary is
@@ -264,8 +355,15 @@ export type PiRendererApi = {
   };
   readonly ui: {
     /**
-     * Injects a stylesheet owned by the host, which removes it on unload. A
-     * sheet that targets the host's own roots is refused at call time.
+     * Injects a stylesheet owned by the host, which removes it on unload.
+     *
+     * The host auto-scopes every selector under this plugin's
+     * `data-pi-plugin` container before the sheet is served. Top-level `html`,
+     * `body`, or `*` (including nested in `@media`) are refused with
+     * `PLUGIN_STYLE_REFUSED`. `:root` is rewritten to the plugin container so
+     * theme branches stay writable. Public design tokens are the
+     * `--pi-slot-*` names in `PLUGIN_SLOT_DESIGN_TOKENS`; host-internal
+     * `--ds-*` names are not part of the contract.
      */
     injectStyle(css: string): PiRendererStyleHandle;
   };
@@ -282,11 +380,161 @@ export type PiRendererModule = {
 };
 
 /**
- * Selectors that make an injected stylesheet reach past the plugin's own
- * `data-pi-plugin` container. The host refuses the whole sheet when one of
- * these appears as a top-level selector instead of silently narrowing it.
+ * Selectors the host refuses entirely when they appear as a top-level selector
+ * in an injected sheet. `:root` is not listed: the host rewrites it to the
+ * plugin's own `[data-pi-plugin="<id>"]` container so theme branches stay
+ * writable without reaching the document root.
  */
-export const PLUGIN_STYLE_FORBIDDEN_ROOT_SELECTORS = ["html", "body", ":root", "*"] as const;
+export const PLUGIN_STYLE_FORBIDDEN_ROOT_SELECTORS = ["html", "body", "*"] as const;
+
+/**
+ * Scope every non-at-rule selector in `css` under the plugin's own container.
+ * `:root` becomes the container (and `:root[data-theme=…]` becomes the
+ * container carrying `data-pi-theme`). Selectors already prefixed with this
+ * plugin's container are left alone. `@keyframes` / `@font-face` names are
+ * rewritten to `pi-<pluginId>-<name>`.
+ *
+ * Throws `PLUGIN_STYLE_REFUSED` for forbidden root selectors or `@import`.
+ * This is the author-facing preview helper; the host runs the same rewrite at
+ * inject time, so the served CSS is always scoped.
+ */
+export function scopePluginStyle(pluginId: string, css: string): string {
+  return scopePluginStyleImpl(pluginId, css);
+}
+
+/**
+ * Implementation lives behind this indirection only so the pure rewrite can be
+ * unit-tested without pulling the desktop app. Host injectors import
+ * `scopePluginStyle` from the SDK or their local copy of the same algorithm.
+ */
+function scopePluginStyleImpl(pluginId: string, css: string): string {
+  const withoutComments = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  if (/@import\b/i.test(withoutComments)) {
+    throw styleRefused("@import is not allowed in an injected plugin sheet");
+  }
+  const container = containerSelector(pluginId);
+  const keyframePrefix = `pi-${pluginId.replace(/[^a-zA-Z0-9_-]/g, "_")}-`;
+
+  // Rename keyframes / font-faces first so later selector work cannot touch them.
+  let working = withoutComments.replace(
+    /@(?:-webkit-)?keyframes\s+([A-Za-z_][\w-]*)/gi,
+    (_match, name: string) => `@keyframes ${keyframePrefix}${name}`,
+  );
+  working = working.replace(
+    /@(?:-webkit-)?font-face\s*\{[\s\S]*?font-family\s*:\s*(['"]?)([^'";]+)\1/gi,
+    (match, quote: string, family: string) =>
+      match.replace(new RegExp(`font-family\\s*:\\s*(['"]?)${escapeRegExp(family)}\\1`, "i"), `font-family: ${quote || '"'}${keyframePrefix}${family}${quote || '"'}`),
+  );
+  // Rewrite animation-name / animation shorthands that referenced the old names.
+  working = working.replace(
+    /(animation(?:-name)?\s*:\s*)([^;}]+)/gi,
+    (match, prop: string, value: string) => {
+      const rewritten = value.replace(
+        /(^|[\s,])([A-Za-z_][\w-]*)/g,
+        (part: string, lead: string, name: string) => {
+          if (/^(infinite|linear|ease|ease-in|ease-out|ease-in-out|step-start|step-end|forwards|backwards|both|none|normal|reverse|alternate|alternate-reverse|paused|running|\d|\.)/i.test(name)) {
+            return part;
+          }
+          if (name.startsWith(keyframePrefix)) return part;
+          return `${lead}${keyframePrefix}${name}`;
+        },
+      );
+      return `${prop}${rewritten}`;
+    },
+  );
+
+  const out: string[] = [];
+  let index = 0;
+  while (index < working.length) {
+    const brace = working.indexOf("{", index);
+    if (brace < 0) {
+      out.push(working.slice(index));
+      break;
+    }
+    const start = Math.max(
+      working.lastIndexOf("}", brace - 1),
+      working.lastIndexOf("{", brace - 1),
+      working.lastIndexOf(";", brace),
+    );
+    const selectorText = working.slice(start + 1, brace);
+    const blockStart = brace;
+    const blockEnd = findBlockEnd(working, brace);
+    const body = working.slice(blockStart, blockEnd + 1);
+
+    if (!selectorText.trim() || selectorText.trimStart().startsWith("@")) {
+      // At-rule: recurse into its body when it is a conditional group.
+      const at = selectorText.trimStart();
+      if (/^@(?:media|supports|container|layer|scope)\b/i.test(at) && blockEnd > blockStart) {
+        const inner = working.slice(blockStart + 1, blockEnd);
+        const scopedInner = scopePluginStyleImpl(pluginId, inner);
+        out.push(working.slice(index, start + 1), selectorText, "{", scopedInner, "}");
+      } else {
+        out.push(working.slice(index, blockEnd + 1));
+      }
+      index = blockEnd + 1;
+      continue;
+    }
+
+    const scopedSelector = selectorText
+      .split(",")
+      .map((part) => scopeSelector(part.trim(), pluginId, container))
+      .filter((part) => part.length > 0)
+      .join(", ");
+    out.push(working.slice(index, start + 1), scopedSelector, body);
+    index = blockEnd + 1;
+  }
+  return out.join("").trim();
+}
+
+function scopeSelector(selector: string, pluginId: string, container: string): string {
+  if (!selector) return "";
+  const forbidden = forbiddenRootSelector(selector);
+  if (forbidden) {
+    throw styleRefused(`${JSON.stringify(forbidden)} targets a host root`);
+  }
+  if (selector === container || selector.startsWith(`${container} `) || selector.startsWith(`${container}:`) || selector.startsWith(`${container}.`) || selector.startsWith(`${container}[`) || selector.startsWith(`${container}>`) || selector.startsWith(`${container}+`) || selector.startsWith(`${container}~`)) {
+    return selector;
+  }
+  // `:root` / `:root[data-theme=light]` → container (+ theme attribute).
+  if (selector === ":root" || selector.startsWith(":root[") || selector.startsWith(":root:") || selector.startsWith(":root ") || selector.startsWith(":root>") || selector.startsWith(":root.") || selector.startsWith(":root#")) {
+    return container + selector.slice(":root".length);
+  }
+  return `${container} ${selector}`;
+}
+
+function forbiddenRootSelector(selector: string): string | null {
+  for (const root of PLUGIN_STYLE_FORBIDDEN_ROOT_SELECTORS) {
+    const pattern = new RegExp(`^${root.replace(/[*:]/g, "\\$&")}(?![\\w-])`, "i");
+    if (pattern.test(selector)) return selector;
+  }
+  return null;
+}
+
+function containerSelector(pluginId: string): string {
+  return `[data-pi-plugin="${pluginId.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"]`;
+}
+
+function styleRefused(detail: string): Error & { code?: string } {
+  const error = new Error(`PLUGIN_STYLE_REFUSED: ${detail}`) as Error & { code?: string };
+  error.code = "PLUGIN_STYLE_REFUSED";
+  return error;
+}
+
+function findBlockEnd(css: string, openBrace: number): number {
+  let depth = 0;
+  for (let i = openBrace; i < css.length; i += 1) {
+    if (css[i] === "{") depth += 1;
+    else if (css[i] === "}") {
+      depth -= 1;
+      if (depth === 0) return i;
+    }
+  }
+  return css.length - 1;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 /**
  * Extra registration data a slot needs. Only `codeBlock` uses it today: the

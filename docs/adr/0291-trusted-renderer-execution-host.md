@@ -113,18 +113,19 @@ governs the host that loads slot implementations and the rules they are held to.
    load with a diagnostic; two React copies break hooks and context, and a
    silent second copy would fail in ways users cannot explain.
 
-9. **Style isolation is a namespace scheme, not Shadow DOM.** Every slot is
-   wrapped in a `data-pi-plugin="<plugin-id>"` container; plugin styles must go
-   through the host API `pi.ui.injectStyle(css)`, and the host removes them on
-   unload; a registration-time check rejects stylesheets containing top-level
-   `html`, `body`, `:root`, or `*` selectors. Shadow DOM was rejected because
-   the renderer portals 41 `createPortal` call sites across 18 files
-   (`apps/desktop/src`, counted at `0726e0ff`): portaled plugin UI would escape
-   a shadow root, so the isolation would be partial by construction and would
-   hide the fact that it is. The only shadow roots in the repo are the
-   plugin-panel preload's closed chrome roots, which isolate host chrome from a
-   plugin page — the opposite direction, and not reusable for a slot inside the
-   host tree.
+9. **Style isolation is host auto-scope plus a public token surface, not Shadow
+   DOM.** Every slot is wrapped in a `data-pi-plugin="<plugin-id>"` container;
+   plugin styles must go through the host API `pi.ui.injectStyle(css)`, and the
+   host removes them on unload. The host **rewrites** selectors under that
+   container before serving (observable as `PLUGIN_STYLE_SCOPED`); `:root` is
+   rewritten to the container; top-level `html`, `body`, `*`, and `@import` are
+   refused (`PLUGIN_STYLE_REFUSED`). Public design tokens are the `--pi-slot-*`
+   aliases on `.pi-plugin-slot` (`PLUGIN_SLOT_DESIGN_TOKENS`); host-internal
+   `--ds-*` names are not a plugin contract. Replace-type slots take one claim
+   (`PLUGIN_SLOT_DUPLICATE` for a later registration). Shadow DOM was rejected
+   because the renderer's `createPortal` call sites would escape a shadow root.
+   Rewrite is intentional contract, not silent mutation: authors preview with
+   SDK `scopePluginStyle`.
 
 10. **Crash containment is per-slot React error boundaries plus crash reporting
     — nothing more.** A slot that throws collapses to nothing and does not

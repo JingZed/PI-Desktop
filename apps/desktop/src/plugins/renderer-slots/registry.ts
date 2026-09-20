@@ -5,9 +5,14 @@
  * is the single place the host learns that a plugin wants to draw somewhere. It
  * is deliberately a plain observable store rather than part of `app-store`: a
  * plugin registering a slot must not re-render the shell.
+ *
+ * Replace slots (`PLUGIN_RENDERER_REPLACE_SLOTS`) hold one host surface: the
+ * first claim wins, and a later registration is refused with
+ * `PLUGIN_SLOT_DUPLICATE` so mounts never stack full replacements.
  */
 import type { ReactNode } from "react";
 import type { PiRendererSlotOptions, PluginRendererSlot } from "@pi-desktop/plugin-sdk";
+import { isPluginRendererReplaceSlot } from "@pi-desktop/plugin-sdk";
 import {
   codeBlockLanguageProblem,
   normalizeCodeBlockLanguage,
@@ -41,21 +46,18 @@ export type PluginSlotDiagnostic = {
   code:
     | "PLUGIN_SLOT_NOT_DECLARED"
     | "PLUGIN_SLOT_INVALID_COMPONENT"
-    // Language admission for `codeBlock`; the rule itself lives in code-blocks.ts.
+    | "PLUGIN_SLOT_DUPLICATE"
+    | "PLUGIN_DATA_UNSERVED"
+    | "PLUGIN_STYLE_REFUSED"
+    | "PLUGIN_STYLE_SCOPED"
+    | "PLUGIN_STYLE_PRIVATE_TOKEN"
     | CodeBlockLanguageDiagnostic
     | "PLUGIN_SLOT_RENDER_FAILED"
     | "PLUGIN_SLOT_LOAD_FAILED"
-    // Dispatch refusals from the action relay (ADR 0294): an action the plugin
-    // did not declare, or a declared one the host has no handler for yet.
     | "PLUGIN_ACTION_UNDECLARED"
     | "PLUGIN_ACTION_UNROUTED"
-    // Payloads the relay's handler wiring could not honour, and a draft write
-    // no mounted composer consumed (renderer-host/host-actions.ts).
     | "PLUGIN_ACTION_INVALID_PAYLOAD"
     | "PLUGIN_ACTION_DRAFT_UNCONSUMED"
-    // Refusals of a forwarded renderer call (ADR 0294 decision 4), reported by
-    // the `plugin.call` handler in renderer-host/host-actions.ts: anything the
-    // main process or the plugin's own headless entry refused the call with.
     | "PLUGIN_CALL_INVALID"
     | "PLUGIN_CALL_UNKNOWN_PLUGIN"
     | "PLUGIN_CALL_UNDECLARED"
@@ -65,10 +67,6 @@ export type PluginSlotDiagnostic = {
     | "PLUGIN_CALL_NO_HANDLER"
     | "PLUGIN_CALL_UNSERIALIZABLE"
     | "PLUGIN_CALL_FAILED"
-    // Host-callable functions a plugin registered (ADR 0294 decision 6,
-    // renderer-host/host-functions.ts): a registration refused by the name
-    // grammar or by a duplicate name, and every way a host call can fail —
-    // missing, threw, past the one-frame budget, or disabled by the breaker.
     | "PLUGIN_FUNCTION_INVALID_NAME"
     | "PLUGIN_FUNCTION_DUPLICATE_NAME"
     | "PLUGIN_FUNCTION_MISSING"
@@ -80,8 +78,10 @@ export type PluginSlotDiagnostic = {
   ts: number;
 };
 
+const KEY_SEP = String.fromCharCode(0);
+
 function keyFor(pluginId: string, slot: PluginRendererSlot): string {
-  return `${pluginId}\u0000${slot}`;
+  return pluginId + KEY_SEP + slot;
 }
 
 class PluginSlotRegistry {
@@ -119,10 +119,21 @@ class PluginSlotRegistry {
       language = normalizeCodeBlockLanguage(options?.language);
       const problem = codeBlockLanguageProblem(pluginId, language);
       if (problem) {
-        // A plugin that cannot claim the language must not keep a position it
-        // will never be asked to draw (D13).
         this.report({ pluginId, slot, code: problem.code, detail: problem.detail });
         return null;
+      }
+    } else if (isPluginRendererReplaceSlot(slot)) {
+      const suffix = KEY_SEP + slot;
+      for (const [entryKey, list] of this.registrations) {
+        if (entryKey.endsWith(suffix) && list.length > 0) {
+          this.report({
+            pluginId,
+            slot,
+            code: "PLUGIN_SLOT_DUPLICATE",
+            detail: `slot is already claimed by ${list[0].pluginId}`,
+          });
+          return null;
+        }
       }
     }
     const key = keyFor(pluginId, slot);
@@ -151,8 +162,9 @@ class PluginSlotRegistry {
   /** Every registration for one slot, across plugins, in registration order. */
   list(slot: PluginRendererSlot): PluginSlotRegistration[] {
     const out: PluginSlotRegistration[] = [];
+    const suffix = KEY_SEP + slot;
     for (const [key, list] of this.registrations) {
-      if (key.endsWith(`\u0000${slot}`)) out.push(...list);
+      if (key.endsWith(suffix)) out.push(...list);
     }
     return out;
   }
@@ -160,8 +172,9 @@ class PluginSlotRegistry {
   /** Everything a plugin owns, dropped on unload / disable / uninstall (D10). */
   unregisterPlugin(pluginId: string): void {
     let touched = false;
+    const prefix = pluginId + KEY_SEP;
     for (const [key, list] of [...this.registrations]) {
-      if (!key.startsWith(`${pluginId}\u0000`)) continue;
+      if (!key.startsWith(prefix)) continue;
       this.registrations.delete(key);
       touched = touched || list.length > 0;
     }
@@ -171,15 +184,15 @@ class PluginSlotRegistry {
   /** How many slots a plugin currently occupies, for the diagnostics surface. */
   countFor(pluginId: string): number {
     let total = 0;
+    const prefix = pluginId + KEY_SEP;
     for (const [key, list] of this.registrations) {
-      if (key.startsWith(`${pluginId}\u0000`)) total += list.length;
+      if (key.startsWith(prefix)) total += list.length;
     }
     return total;
   }
 
   report(diagnostic: Omit<PluginSlotDiagnostic, "ts"> & { ts?: number }): void {
     this.diagnostics.push({ ts: Date.now(), ...diagnostic });
-    // A plugin that misbehaves in a loop must not grow this without bound.
     if (this.diagnostics.length > 200) this.diagnostics.splice(0, this.diagnostics.length - 200);
     this.changed();
   }

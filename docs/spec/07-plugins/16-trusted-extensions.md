@@ -131,13 +131,29 @@ the app cannot delete it, and the module reaches the host's whole preload surfac
 Plugins are trusted and broadly permissioned on purpose: the boundary is
 marketplace review plus install-time consent, not isolation.
 
-Style isolation is a namespace scheme, not Shadow DOM:
+Style isolation is a host auto-scope scheme, not Shadow DOM:
 
-- every slot is wrapped in a `data-pi-plugin="<plugin-id>"` container;
+- every slot is wrapped in a `data-pi-plugin="<plugin-id>"` container and
+  carries `data-pi-theme="light|dark"`;
 - plugin styles must go through `pi.ui.injectStyle(css)`, and the host removes
   the sheets on unload;
-- a stylesheet containing a top-level `html`, `body`, `:root`, or `*` selector
-  is refused rather than narrowed.
+- the host **rewrites** every selector under the plugin's own container before
+  the sheet is served (`PLUGIN_STYLE_SCOPED` when rewritten). `:root` becomes
+  the plugin container so theme branches stay writable;
+- a stylesheet containing a top-level `html`, `body`, or `*` selector, or
+  `@import`, is refused rather than narrowed (`PLUGIN_STYLE_REFUSED`);
+- `@keyframes` / `@font-face` names are rewritten to `pi-<pluginId>-<name>`;
+- public design tokens are the `--pi-slot-*` aliases defined on
+  `.pi-plugin-slot` (`PLUGIN_SLOT_DESIGN_TOKENS` in the SDK). Host-internal
+  `--ds-*` names are not a plugin contract; referencing them raises
+  `PLUGIN_STYLE_PRIVATE_TOKEN` (soft diagnostic, not a refusal). Slot-local
+  primitives `.pi-slot-btn` / `.pi-slot-chip` / `.pi-slot-field` exist only
+  inside a slot container and are not host chrome class names.
+
+Replace-type slots (`entry`, `toolCard`, `inlineConfirm`, `modal`) take at most
+one registration (first claim wins). A later registration is refused with
+`PLUGIN_SLOT_DUPLICATE`. Additive slots stack in registration order (D8).
+`codeBlock` keeps language claims.
 
 Shadow DOM was rejected because portaled plugin UI would escape a shadow root
 (41 `createPortal` call sites across 18 renderer files).
@@ -223,7 +239,19 @@ nine names are implemented; a call to one of the other six rejects with a coded
   nothing consumes it within 500 ms the write is cleared and the call refuses
   with `PLUGIN_ACTION_DRAFT_UNCONSUMED`.
 
-`rendererData` — host data the module declares it reads:
+`rendererData` — host data the module declares it reads. Roles are split:
+
+- **Declaration / install review**: every name below is valid manifest metadata.
+- **Slot-contract props** (`draft`, `entry`, `references`, `mode`, `query`,
+  `position`, `code`, …) always arrive from the slot's own mount and are not
+  gated by this list.
+- **Ambient props** the host injects at `SlotOutlet` when declared *and* the
+  host already holds the value: only `theme` and `locale`
+  (`PLUGIN_RENDERER_AMBIENT_DATA`). This is a narrow merge, not a live
+  subscription engine.
+- `selection` is declarable but not served this cycle; the host reports
+  `PLUGIN_DATA_UNSERVED` rather than silently ignoring the declaration
+  (`PLUGIN_RENDERER_UNSERVED_DATA`).
 
 - `entry`
 - `session`

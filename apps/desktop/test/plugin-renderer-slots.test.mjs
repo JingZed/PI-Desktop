@@ -102,7 +102,8 @@ const relay = await import("../src/plugins/renderer-host/relay.ts");
 const registryModule = await import("../src/plugins/renderer-slots/registry.ts");
 const { ensureRendererPlugin, resetRendererPlugins } = loader;
 const { IPC } = await import("@pi-desktop/shared");
-const { PLUGIN_RENDERER_ACTIONS } = await import("@pi-desktop/plugin-sdk");
+const pluginSdk = await import("@pi-desktop/plugin-sdk");
+const { PLUGIN_RENDERER_ACTIONS } = pluginSdk;
 const { installRendererHostActions, DRAFT_PREFILL_DEADLINE_MS } = await import(
   "../src/plugins/renderer-host/host-actions.ts"
 );
@@ -130,6 +131,7 @@ function loadSlotOutlet() {
   const imports = {
     react: React,
     "react/jsx-runtime": jsxRuntime,
+    "@pi-desktop/plugin-sdk": pluginSdk,
     "../renderer-host/loader": loader,
     "../renderer-host/relay": relay,
     "./registry": registryModule,
@@ -159,24 +161,38 @@ function component() {
 
 test("the slot registry keeps one list per (plugin, slot) in registration order", () => {
   resetPluginSlots();
-  pluginSlots.register("acme.one", "entry", component);
-  pluginSlots.register("acme.two", "entry", component);
-  pluginSlots.register("acme.one", "toolCard", component);
+  pluginSlots.register("acme.one", "entryExtra", component);
+  pluginSlots.register("acme.two", "entryExtra", component);
+  pluginSlots.register("acme.one", "composerControl", component);
 
-  const entries = pluginSlots.list("entry");
+  const entries = pluginSlots.list("entryExtra");
   assert.deepEqual(
     entries.map((registration) => registration.pluginId),
     ["acme.one", "acme.two"],
   );
-  assert.equal(pluginSlots.list("toolCard").length, 1);
+  assert.equal(pluginSlots.list("composerControl").length, 1);
   assert.equal(pluginSlots.list("modal").length, 0);
 });
 
-test("two registrations from one plugin both survive, and none is a conflict", () => {
+test("replace slots take one claim; a second registration is refused", () => {
   resetPluginSlots();
-  pluginSlots.register("acme.one", "entry", component);
-  pluginSlots.register("acme.one", "entry", component);
-  assert.equal(pluginSlots.list("entry").length, 2);
+  const first = pluginSlots.register("acme.one", "entry", component);
+  assert.ok(first);
+  const second = pluginSlots.register("acme.two", "entry", component);
+  assert.equal(second, null);
+  assert.equal(pluginSlots.list("entry").length, 1);
+  const [diagnostic] = pluginSlots.listDiagnostics("acme.two");
+  assert.equal(diagnostic.code, "PLUGIN_SLOT_DUPLICATE");
+  first.remove();
+  const third = pluginSlots.register("acme.two", "entry", component);
+  assert.ok(third, "claim is released on remove");
+});
+
+test("two registrations from one plugin both survive on an additive slot", () => {
+  resetPluginSlots();
+  pluginSlots.register("acme.one", "entryExtra", component);
+  pluginSlots.register("acme.one", "entryExtra", component);
+  assert.equal(pluginSlots.list("entryExtra").length, 2);
   assert.equal(pluginSlots.countFor("acme.one"), 2);
   assert.deepEqual(pluginSlots.listDiagnostics(), []);
 });
@@ -193,20 +209,21 @@ test("a component that is not a function is refused with a diagnostic, never sil
 
 test("withdrawing one registration leaves the plugin's others alone", () => {
   resetPluginSlots();
-  const first = pluginSlots.register("acme.one", "entry", component);
-  pluginSlots.register("acme.one", "entry", component);
+  const first = pluginSlots.register("acme.one", "entryExtra", component);
+  pluginSlots.register("acme.one", "entryExtra", component);
   first.remove();
-  assert.equal(pluginSlots.list("entry").length, 1);
+  assert.equal(pluginSlots.list("entryExtra").length, 1);
 });
 
 test("unloading a plugin releases every position it held (D10)", () => {
   resetPluginSlots();
   pluginSlots.register("acme.one", "entry", component);
   pluginSlots.register("acme.one", "overlay", component);
-  pluginSlots.register("acme.two", "entry", component);
+  pluginSlots.register("acme.two", "entryExtra", component);
   pluginSlots.unregisterPlugin("acme.one");
-  assert.equal(pluginSlots.list("entry").length, 1);
-  assert.equal(pluginSlots.list("entry")[0].pluginId, "acme.two");
+  assert.equal(pluginSlots.list("entry").length, 0);
+  assert.equal(pluginSlots.list("entryExtra").length, 1);
+  assert.equal(pluginSlots.list("entryExtra")[0].pluginId, "acme.two");
   assert.equal(pluginSlots.list("overlay").length, 0);
   assert.equal(pluginSlots.countFor("acme.one"), 0);
 });
@@ -230,7 +247,6 @@ test("the style guard refuses a sheet that reaches a host root", () => {
   for (const css of [
     "html { color: red }",
     "body, .acme { margin: 0 }",
-    ":root { --acme: 1px }",
     "* { box-sizing: border-box }",
     "@media (min-width: 600px) { html { font-size: 20px } }",
     ".acme { color: #fff }\nbody { background: #000 }",
@@ -239,26 +255,30 @@ test("the style guard refuses a sheet that reaches a host root", () => {
   }
 });
 
-test("the style guard leaves a plugin's own selectors alone", () => {
+test("the style guard leaves :root alone so the host can rewrite it", () => {
   for (const css of [
     ".acme-card { color: #fff }",
     ".html-widget { display: block }",
     "/* html { color: red } */ .acme { color: blue }",
     "[data-pi-plugin] .acme { gap: 4px }",
     ".acme-body { padding: 4px }",
+    ":root { --acme: 1px }",
+    ":root[data-theme='light'] .acme-card { color: #000 }",
   ]) {
     assert.equal(forbiddenSelector(css), null, `expected to pass: ${css}`);
   }
 });
 
-test("an injected sheet is namespaced, and removal is the host's job", () => {
+test("an injected sheet is scoped under the plugin container", () => {
   resetPluginSlots();
   document.head.children.length = 0;
   const handle = injectPluginStyle("acme.one", ".acme { color: red }");
   assert.equal(document.head.children.length, 1);
   const [element] = document.head.children;
   assert.equal(element.getAttribute("data-pi-plugin-style"), "acme.one");
-  assert.equal(element.textContent, ".acme { color: red }");
+  assert.equal(element.getAttribute("data-pi-plugin-style-mode"), "scoped");
+  assert.match(element.textContent, /\[data-pi-plugin="acme\.one"\]\s*\.acme/);
+  assert.match(element.textContent, /color:\s*red/);
 
   injectPluginStyle("acme.one", ".acme-b { color: blue }");
   injectPluginStyle("acme.two", ".other { color: green }");
@@ -270,6 +290,17 @@ test("an injected sheet is namespaced, and removal is the host's job", () => {
   assert.equal(handle.remove instanceof Function, true);
 });
 
+test(":root is rewritten to the plugin container for theme branches", () => {
+  resetPluginSlots();
+  document.head.children.length = 0;
+  injectPluginStyle("acme.one", ":root[data-theme='light'] .card { color: #111 }");
+  const [element] = document.head.children;
+  assert.match(
+    element.textContent,
+    /\[data-pi-plugin="acme\.one"\]\[data-theme='light'\]\s*\.card/,
+  );
+});
+
 test("a refused sheet throws a coded error instead of injecting part of it", () => {
   document.head.children.length = 0;
   assert.throws(
@@ -277,6 +308,27 @@ test("a refused sheet throws a coded error instead of injecting part of it", () 
     (error) => error.code === "PLUGIN_STYLE_REFUSED",
   );
   assert.equal(document.head.children.length, 0);
+});
+
+test("ambient props follow declared rendererData, not every candidate", async () => {
+  const { ambientPropsFor } = loadSlotOutlet();
+  const declared = {
+    id: "acme.trusted",
+    declared: true,
+    rendererData: ["theme", "locale"],
+    rendererActions: [],
+  };
+  assert.deepEqual(ambientPropsFor(declared, { theme: "light", locale: "zh-CN" }), {
+    theme: "light",
+    locale: "zh-CN",
+  });
+  assert.deepEqual(
+    ambientPropsFor(
+      { id: "acme.quiet", declared: true, rendererData: [], rendererActions: [] },
+      { theme: "light", locale: "zh-CN" },
+    ),
+    {},
+  );
 });
 
 test("only plugins the host marked with the renderer capability are candidates", () => {

@@ -2744,10 +2744,17 @@ export {
 
 export {
   PLUGIN_RENDERER_ACTIONS,
+  PLUGIN_RENDERER_AMBIENT_DATA,
   PLUGIN_RENDERER_DATA,
+  PLUGIN_RENDERER_REPLACE_SLOTS,
   PLUGIN_RENDERER_SCHEME,
   PLUGIN_RENDERER_SLOTS,
+  PLUGIN_RENDERER_UNSERVED_DATA,
+  PLUGIN_SLOT_DESIGN_TOKENS,
   PLUGIN_STYLE_FORBIDDEN_ROOT_SELECTORS,
+  isPluginRendererReplaceSlot,
+  scopePluginStyle,
+  type PiRendererAmbientProps,
   type PiRendererApi,
   type PiRendererCodeBlockProps,
   type PiRendererCompletionSourceProps,
@@ -2766,6 +2773,9 @@ export {
   type PiRendererSlotOptions,
   type PiRendererStyleHandle,
   type PluginRendererActionName,
+  type PluginRendererAmbientDataKey,
   type PluginRendererDataKey,
   type PluginRendererSlot,
+  type PluginRendererSlotDiagnosticCode,
+  type PluginSlotDesignToken,
 } from "./renderer.js";
