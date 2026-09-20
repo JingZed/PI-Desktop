@@ -331,3 +331,96 @@ export type PiRendererEntryExtraProps = {
   };
   sessionId: string;
 };
+
+/**
+ * What the host hands a `composerControl` renderer: which of the composer's two
+ * control rows this mount is, and the draft those controls act on.
+ *
+ * The slot is mounted twice — once at the end of the composer's left control
+ * row and once at the end of its right one — so one registration is asked for
+ * both positions and decides for itself which one it draws in; returning `null`
+ * for the other leaves no hole. The host's own controls are already in the row
+ * when a component is mounted, so plugin controls follow them and can never
+ * push the host's mode, permission, model, enhancement, or send controls out of
+ * place (D8). A component renders one control, and may dispatch the actions its
+ * manifest declares; it cannot remove, wrap, or reorder the host's controls.
+ */
+export type PiRendererComposerControlProps = {
+  /** Which control row this mount fills. */
+  position: "left" | "right";
+  /**
+   * The session the composer is drafting for. Absent for a draft that has no
+   * session yet (a new-task composer), rather than an empty id.
+   */
+  sessionId?: string;
+  /**
+   * The draft as the host currently holds it, exactly as typed and including
+   * the sentinel characters that stand for attachment chips. Read-only: a
+   * component that wants to change the draft dispatches an action.
+   */
+  draft: string;
+};
+
+/**
+ * What the host hands a `completionSource` renderer: the query the completion
+ * popover is open for.
+ *
+ * The slot is mounted inside the popover, below the host's own candidate rows,
+ * and only while the popover is open — a closed popover asks a plugin for
+ * nothing. It is a candidate source, not a filter: the host's own command and
+ * file rows keep their own order and are never hidden or reordered by a plugin,
+ * and a plugin contributes its rows after them (D8). The keyboard highlight,
+ * `Enter`/`Tab` acceptance, and the accept mapping stay host-owned and cover
+ * the host's rows; a plugin's own row carries its own activation.
+ */
+export type PiRendererCompletionSourceProps = {
+  /** Which trigger opened the popover: `/` commands, or `@` file paths. */
+  mode: "slash" | "file";
+  /**
+   * The text typed after the trigger, as the host tokenizes it; empty when the
+   * user has typed the trigger alone. A component should answer with candidates
+   * for this query and render nothing when it has none.
+   */
+  query: string;
+};
+
+/**
+ * One reference chip the composer already holds, as a `composerReference`
+ * component reads it. Deliberately not the host's own reference record: the
+ * sentinel token and MIME details a chip is painted from stay host-owned.
+ */
+export type PiRendererComposerReference = {
+  /** Workspace-relative path, as the chip's own title uses it. */
+  path: string;
+  /** Display name shown on the host's chip. */
+  name: string;
+  /** `file` for a text/document chip, `image` for an image attachment chip. */
+  kind: "file" | "image";
+};
+
+/**
+ * What the host hands a `composerReference` renderer: the chips the composer
+ * holds for the current draft, plus the draft itself.
+ *
+ * The host's reference chips are painted inside the editor, so the slot is
+ * mounted in the composer's input surface directly after the editor: a plugin
+ * chip follows every host chip, and no host chip is moved or rewritten (D8).
+ * The list is read-only — a component may draw its own chip for the draft and
+ * dispatch the actions its manifest declares, but it cannot add a reference to
+ * the draft from here, remove a host chip, or change what the draft sends.
+ * A component that has no chip for the current draft renders nothing.
+ */
+export type PiRendererComposerReferenceProps = {
+  /** The host's own chips, in the order the draft shows them. Read-only. */
+  references: PiRendererComposerReference[];
+  /**
+   * The draft as the host currently holds it, including the editor's sentinel
+   * characters. Read-only; a component derives what it needs from it.
+   */
+  draft: string;
+  /**
+   * The session the composer is drafting for. Absent for a draft that has no
+   * session yet (a new-task composer), rather than an empty id.
+   */
+  sessionId?: string;
+};

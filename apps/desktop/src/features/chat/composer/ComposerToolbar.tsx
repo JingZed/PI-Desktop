@@ -29,6 +29,7 @@ import {
   nextMode,
 } from "./model";
 import type { useComposerModelMenu } from "./hooks/useComposerModelMenu";
+import { ComposerControlSlot } from "./ComposerControlSlot";
 
 type ModelMenuController = ReturnType<typeof useComposerModelMenu>;
 type ContextUsage = Parameters<typeof ContextUsageInspector>[0];
@@ -229,6 +230,9 @@ export function ComposerToolbar({
             </button>
           ))}
         </AnchoredMenu>
+        {/* The `composerControl` left position: the host's own controls above
+          * are already drawn, so a plugin control can only follow them. */}
+        <ComposerControlSlot position="left" draft={value} />
       </div>
 
       <div className="composer-right">
@@ -312,6 +316,9 @@ export function ComposerToolbar({
             <IconArrowUp size={15} />
           </TooltipButton>
         )}
+        {/* The `composerControl` right position: after the host's send/stop
+          * slot, so the primary action never moves. */}
+        <ComposerControlSlot position="right" draft={value} />
       </div>
     </div>
   );

@@ -102,7 +102,10 @@ test("expanded live tool output stays local to the changed row", () => {
   assert.match(transcript, /if \(previous\.variant !== "topology"\) return true;/);
   // Tool rows remain collapsed during a live burst; only their action/status
   // header updates. The latest thinking row owns the automatic detail view.
-  assert.match(transcript, /const disclosure = useAutomaticDisclosure\(false\)/);
+  // A row's own body is still never auto-opened; the only thing that opens a
+  // tool row by itself is a plugin owning its card body (`pluginBody`), which is
+  // false for every host tool.
+  assert.match(transcript, /const disclosure = useAutomaticDisclosure\(pluginBody\)/);
   assert.match(
     transcript,
     /const blocks =\s*variant !== "topology" && open && hasDetails\s*\?\s*buildToolPresentation\(/,
@@ -123,7 +126,7 @@ test("tool errors stay local to their rows instead of failing the activity group
   assert.doesNotMatch(toolRow, /tool-activity-group[\s\S]*?failed/);
   // Failures remain visible in the row header, but their payload stays
   // collapsed until the user opens it.
-  assert.match(toolRow, /const disclosure = useAutomaticDisclosure\(false\)/);
+  assert.match(toolRow, /const disclosure = useAutomaticDisclosure\(pluginBody\)/);
   assert.match(`${toolRow}\n${transcriptShared}`, /if \(userInteractedRef\.current\) return/);
   assert.match(toolRow, /status === "error"\s*\? t\("chat\.toolFailed"\)/);
 });

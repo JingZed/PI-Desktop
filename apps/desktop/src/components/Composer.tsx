@@ -553,6 +553,7 @@ export function Composer({
           <ComposerInput
             inputRef={ref}
             value={value}
+            fileReferences={activeFileReferences}
             placeholderText={placeholderText}
             placeholderKey={`${variant}-${placeholderIndex}-${placeholderText}`}
             inputBlocked={inputBlocked}

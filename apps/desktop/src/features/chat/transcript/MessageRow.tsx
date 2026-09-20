@@ -33,6 +33,12 @@ import {
   rewrittenMessageText,
 } from "../../../lib/plugin-rewrites";
 
+/**
+ * The registrations a position renders while the host's own rendering must win:
+ * an empty owned list means "draw the host's own content", never "look one up".
+ */
+const NO_REGISTRATIONS = [] as const;
+
 export const MessageRow = memo(function MessageRow({
   message,
   isRunning,
@@ -50,19 +56,20 @@ export const MessageRow = memo(function MessageRow({
   const workspaceRoot = useAppStore((s) => s.workspace?.path);
   const openFileRef = useOpenChatFileRef();
 
-  // Slot 13 (`entryExtra`): the plugin area under this entry. It reads what the
+  // Slots 1 (`entry`) and 13 (`entryExtra`): this row is the whole message a
+  // plugin may draw, and the area below it one may add to. Both read what the
   // row and the store already hold — no new state, and nothing rendered unless
   // a plugin registered for the slot.
   const sessionId = useAppStore((s) => s.activeSessionId);
   const plugins = useAppStore((s) => s.plugins);
-  const entryExtraCandidates = useMemo(
+  const entryCandidates = useMemo(
     () => (sessionId ? rendererCandidates(plugins) : []),
     [plugins, sessionId],
   );
   // D14: `pluginId` stays unset because no producer reports one yet (model.ts).
   // Without a session the slot has no `sessionId` to report, so it is not
   // mounted at all rather than handed a made-up one.
-  const entryExtraProps = useMemo(
+  const entrySlotProps = useMemo(
     () =>
       sessionId
         ? entryExtraSlotProps(transcriptEntryIdentity(message), sessionId)
@@ -134,6 +141,17 @@ export const MessageRow = memo(function MessageRow({
     >
       <div className="message-col">
         {message.sessionMessage ? <SessionMessageOrigin origin={message.sessionMessage} /> : null}
+        {/* Slot 1 (`entry`): a whole transcript message. A registration replaces
+          * the message the host draws — bubble and actions alike — and without
+          * one this is the host's own rendering unchanged (ADR 0291). While the
+          * user is editing the row the form is host-owned, so the position
+          * renders the host's own message instead of a plugin's card. */}
+        <PluginSlot
+          slot="entry"
+          slotProps={entrySlotProps}
+          candidates={entryCandidates}
+          registrations={editing ? NO_REGISTRATIONS : undefined}
+        >
         {isUser || displayed ? (
           <div className="message-bubble">
             {editing && editableUserMessage ? (
@@ -347,14 +365,15 @@ export const MessageRow = memo(function MessageRow({
             ) : null}
           </div>
         ) : null}
+        </PluginSlot>
         {/* Slot 13: appended below everything the host itself renders. This
           * area only adds to the entry — slot 1 owns replacing it — so the
           * boundary's fallback is nothing (ADR 0291). */}
         {sessionId ? (
           <PluginSlot
             slot="entryExtra"
-            slotProps={entryExtraProps}
-            candidates={entryExtraCandidates}
+            slotProps={entrySlotProps}
+            candidates={entryCandidates}
           />
         ) : null}
       </div>

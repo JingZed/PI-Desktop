@@ -3,6 +3,7 @@ import { THINKING_LEVELS } from "@pi-desktop/shared";
 import type { SubagentRun } from "../../../lib/assistant-turns";
 import { toolResultPayload } from "../../../lib/tool-presentation";
 import type { PiRendererEntryExtraProps } from "@pi-desktop/plugin-sdk";
+import { pluginToolName } from "@pi-desktop/plugin-sdk";
 
 export function delegateAgentName(
   message: UiMessage,
@@ -115,4 +116,48 @@ export function entryExtraSlotProps(
     },
     sessionId,
   };
+}
+
+/**
+ * The plugin a tool row belongs to, or `undefined` when the host cannot say.
+ *
+ * Plugin tools are exposed under a forced prefix — `plugin_<pluginIdSafe>_<tool>`
+ * (D015) — so that prefix *is* the attribution: the host never guesses an owner
+ * from a tool name's shape, it asks which candidate plugin's own prefix the row
+ * starts with. A host tool and another plugin's tool therefore never match, and
+ * two ids that sanitize to the same prefix cancel out rather than one of them
+ * silently taking the other's card.
+ */
+export function toolOwnerPluginId(
+  toolName: string | undefined,
+  candidates: readonly { id: string }[],
+): string | undefined {
+  if (!toolName) return undefined;
+  let owner: string | undefined;
+  for (const candidate of candidates) {
+    if (!toolName.startsWith(pluginToolName(candidate.id, ""))) continue;
+    if (owner !== undefined) return undefined;
+    owner = candidate.id;
+  }
+  return owner;
+}
+
+/**
+ * Props for one `toolCard` registration: the tool row whose card body the
+ * component draws, plus the session it belongs to.
+ *
+ * This is the one position where the host really knows the producing plugin, so
+ * `entry.pluginId` is set from the tool's own namespace (D14): the mount offers
+ * a plugin only its own rows, and the component can confirm that with
+ * `props.entry.pluginId === pi.plugin.id` before drawing anything.
+ */
+export function toolCardSlotProps(
+  message: Pick<UiMessage, "id" | "role">,
+  sessionId: string,
+  ownerPluginId: string,
+): PiRendererEntryExtraProps {
+  return entryExtraSlotProps(
+    { ...transcriptEntryIdentity(message), pluginId: ownerPluginId },
+    sessionId,
+  );
 }

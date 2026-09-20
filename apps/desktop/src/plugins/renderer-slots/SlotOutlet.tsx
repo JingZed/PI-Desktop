@@ -38,12 +38,17 @@ export type RendererCandidate = {
   rendererActions: string[];
 };
 
-type BoundaryProps = {
+/**
+ * Props of one slot's containment, with the boundary below. Exported together
+ * so its contract — report, then take the position back to the host's own
+ * rendering — can be checked without a DOM renderer, which is the only way to
+ * exercise an error boundary from a test process that has no document.
+ */
+export type PluginSlotBoundaryProps = {
   registration: PluginSlotRegistration;
   fallback: ReactNode;
   children: ReactNode;
 };
-
 type BoundaryState = { failed: boolean };
 
 /**
@@ -51,7 +56,7 @@ type BoundaryState = { failed: boolean };
  * component; what it renders on failure is the host's own default for the slot,
  * which is why a failed plugin loses its position instead of leaving a hole.
  */
-class PluginSlotBoundary extends Component<BoundaryProps, BoundaryState> {
+export class PluginSlotBoundary extends Component<PluginSlotBoundaryProps, BoundaryState> {
   state: BoundaryState = { failed: false };
 
   static getDerivedStateFromError(): BoundaryState {

@@ -9,6 +9,7 @@ import {
 } from "../../components/icons";
 import { ProjectCreateDialog } from "../../components/ProjectCreateDialog";
 import { SearchDialog } from "../../components/SearchDialog";
+import { PluginLayerHost } from "../../plugins/renderer-slots/PluginLayerHost";
 import { Sidebar } from "../../components/Sidebar";
 import { ToastHost } from "../../components/Toast";
 import { UpdateBanner } from "../../components/UpdateBanner";
@@ -95,6 +96,7 @@ export function AppShell() {
           <SearchDialog open={searchOpen} onClose={() => setSearchOpen(false)} />
           <ToastHost />
           <ExtensionPromptHost />
+          <PluginLayerHost />
           <UpdateBanner />
         </>
       );
@@ -291,6 +293,7 @@ export function AppShell() {
           <SearchDialog open={searchOpen} onClose={() => setSearchOpen(false)} />
           <ToastHost />
           <ExtensionPromptHost />
+          <PluginLayerHost />
         </>
       );
     }

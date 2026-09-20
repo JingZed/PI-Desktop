@@ -72,9 +72,13 @@ function loadComponent(name, extras = {}) {
     "../../../components/icons": new Proxy({}, { get: () => Icon }),
     "../../../components/ui": { TooltipButton },
     "./shared": shared,
-    // `MessageRow` mounts the `entryExtra` slot; that test renders with no
-    // session, so the slot is never entered.
-    "../../../plugins/renderer-slots/SlotOutlet": { PluginSlot: () => null },
+    // `MessageRow` mounts the `entry` and `entryExtra` positions. The real
+    // outlet renders its children when nothing is registered — that is the
+    // host's own row — so the stand-in does the same; this test renders with no
+    // plugin, and the row must still be the host's own.
+    "../../../plugins/renderer-slots/SlotOutlet": {
+      PluginSlot: ({ children }) => children ?? null,
+    },
     "../../../plugins/renderer-slots/candidates": { rendererCandidates: () => [] },
     "./model": {
       transcriptEntryIdentity: (message) => ({ id: message.id, role: message.role }),

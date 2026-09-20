@@ -11,6 +11,7 @@ import {
   IconSparkles,
 } from "./icons";
 import { AnchoredMenu } from "./settings/AnchoredMenu";
+import { CompletionSourceSlot } from "../features/chat/composer/CompletionSourceSlot";
 
 /**
  * Composer autocomplete panel (D123–D125, spec 08 §11.8): full composer
@@ -179,6 +180,11 @@ export function ComposerAutocomplete({
         ) : (
           <div className="composer-model-empty">{t(emptyKey)}</div>
         )}
+        {/* The `completionSource` position: the host's own candidate rows above
+          * keep their order and their keyboard acceptance; a plugin adds
+          * candidates for the same query after them. `ac.mode` is null only
+          * while the popover is closed, which this render has already left. */}
+        <CompletionSourceSlot mode={ac.mode === "file" ? "file" : "slash"} query={ac.query} />
       </div>
       <div className="composer-ac-footer">
         <span>{t("chat.acHint")}</span>
