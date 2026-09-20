@@ -30,6 +30,25 @@
  * - `modal` / `overlay` — the plugin's own composer controls open each layer,
  *   the layer is on screen with its container attributes, Escape dismisses it
  *   (the host's dismissal) and the plugin's own button withdraws it.
+ * - the injected sheet and the token surface — the sheet the plugin injected is
+ *   read back out of the live document: it carries the scoped marker, every
+ *   selector in it is rewritten under the plugin's own container, and the
+ *   public `--pi-slot-*` aliases resolve on a mounted container rather than only
+ *   being declared in a file.
+ * - the replace-slot claim — a second dev plugin, written into this run's temp
+ *   root and installed through the same `plugins.loadDev` path, asks for
+ *   `modal` while the showcase holds it. The refusal is read off the fixture's
+ *   own button while the window still carries one layer with one claim owner.
+ * - the draft a plugin is handed — the fixture's own composer control publishes
+ *   the `{ draft, sessionId }` a mounted position is given, the suite types into
+ *   the composer, and the plugin's copy has to follow; then the fixture writes a
+ *   whole draft through `composer.replaceDraft`, which only resolves once the
+ *   mounted composer consumed it.
+ * - `composer.readDraft` is asked for by the same fixture and its answer is
+ *   reported, not asserted: host-core's `rendererActions` vocabulary has no
+ *   `composer.readDraft` member, so a manifest that declares that action — as
+ *   the SDK and spec 07-plugins/16 2A.7 say it may — is refused at load, and the
+ *   implemented host action cannot be reached from a plugin.
  * - the agent half — the tool gate refuses the dangerous shell call the model
  *   itself emitted: the call is in the transcript as a failed command row, and
  *   the plugin's reason reaches the model's next request and the user's own
@@ -67,6 +86,21 @@ const FENCE = ["```" + CODE_LANGUAGE, "covered = 42", "disk! = 91% used", "```"]
 const MOCK_MODEL = "showcase-e2e-model";
 /** The status line the plugin's own `tool_execution_end` handler writes. */
 const STATUS_TOOL_COUNT = /Plugin Showcase · turn \d+ · \d+ tool call\(s\) seen/;
+
+/**
+ * The second dev plugin this suite installs. `examples/plugins/plugin-showcase`
+ * deliberately keeps its layers behind its own controls, so no example plugin
+ * can be the second claim on a replace slot; the fixture is written into this
+ * run's temp root instead, which also keeps the repository free of a plugin
+ * that exists only for this suite.
+ */
+const RACE_PLUGIN_ID = "acme.slot-race-fixture";
+const SHOWCASE_CONTAINER = `[data-pi-plugin="${PLUGIN_ID}"]`;
+const RACE_CONTAINER = `[data-pi-plugin="${RACE_PLUGIN_ID}"]`;
+/** The draft text the fixture writes through `composer.replaceDraft`. */
+const RACE_DRAFT_TEXT = "draft written by the slot-race fixture";
+/** The draft the suite types into the composer itself, for the slot-prop read. */
+const TYPED_DRAFT_TEXT = "typed by the user: slot race";
 
 const results = [];
 function record(id, ok, detail = "") {
@@ -299,6 +333,193 @@ function createModelStub() {
   };
 }
 
+/**
+ * The headless half of the fixture. It contributes nothing: the fixture exists
+ * for its renderer half, and a `main` entry is only what makes the package an
+ * ordinary plugin the host's own manifest reader accepts.
+ */
+const RACE_MAIN = `/**
+ * Headless half of the slot-race fixture: it contributes nothing.
+ *
+ * The renderer half is the whole point of this fixture, and declaring an entry
+ * is what the host requires of a plugin package; this is the cheapest one. The
+ * plugin process it starts registers no command, tool, or provider.
+ */
+async function onLoad() {}
+
+module.exports = { onLoad };
+`;
+
+/**
+ * The renderer half of the fixture, written into this run's temp root and served
+ * over "plugin-renderer://" exactly like the showcase's entry. It is a plain ES
+ * module with no build step.
+ *
+ * It registers one slot, "composerControl", and does the two things the showcase
+ * cannot: it asks for the "modal" position while the showcase holds it, and it
+ * asks the host to read and write the composer draft. Every answer — the
+ * refusal, the draft snapshot, the write receipt — is written onto the button as
+ * an attribute, so what the suite asserts is what the plugin really observed.
+ *
+ * Deliberately no backticks and no template interpolation in this source: it
+ * lives inside a template literal.
+ */
+const RACE_RENDERER = `import { createElement, useState } from "react";
+
+const PLUGIN_ID = ${JSON.stringify(RACE_PLUGIN_ID)};
+const DRAFT_TEXT = ${JSON.stringify(RACE_DRAFT_TEXT)};
+
+/** The pi object onLoad was handed: only that object may register a slot. */
+let hostApi = null;
+
+/** What the fixture would draw if its claim on the modal position were granted. */
+function ModalProbe() {
+  return createElement(
+    "div",
+    { "data-pi-fixture-modal": "modal" },
+    PLUGIN_ID + " modal probe: this plugin holds the modal claim",
+  );
+}
+
+function RaceControl({ position, draft, sessionId, dispatch }) {
+  const [claim, setClaim] = useState("");
+  const [read, setRead] = useState("");
+  const [readOutcome, setReadOutcome] = useState("");
+  const [write, setWrite] = useState("");
+
+  const claimModal = () => {
+    setClaim("asking");
+    const handle = hostApi ? hostApi.slots.register("modal", ModalProbe) : null;
+    // A replace slot takes one claim, so this is the answer the suite reads.
+    setClaim(handle ? "granted" : "refused");
+  };
+
+  const readDraft = () => {
+    setReadOutcome("asking");
+    dispatch("composer.readDraft", {})
+      .then((answer) => {
+        setRead(JSON.stringify(answer));
+        setReadOutcome("ok");
+      })
+      .catch((error) => {
+        setRead("");
+        setReadOutcome("refused:" + ((error && error.code) || String(error)));
+      });
+  };
+
+  const writeDraft = () => {
+    dispatch("composer.replaceDraft", { text: DRAFT_TEXT })
+      .then((answer) => {
+        setWrite(
+          JSON.stringify({
+            ok: Boolean(answer && answer.ok),
+            generation: answer ? answer.generation : null,
+            previous: answer && answer.previous ? answer.previous : null,
+          }),
+        );
+      })
+      .catch((error) => {
+        setWrite(JSON.stringify({ ok: false, code: (error && error.code) || String(error) }));
+      });
+  };
+
+  if (position === "right") {
+    return createElement(
+      "button",
+      {
+        type: "button",
+        "data-pi-fixture-trigger": "claimModal",
+        "data-pi-fixture-claim": claim,
+        onClick: claimModal,
+      },
+      "Fixture: claim the modal position",
+    );
+  }
+  if (position !== "left") return null;
+  // The two slot-contract props are published on the wrapper, so the suite can
+  // read the live draft the composer handed this plugin without asking the host
+  // for anything: this is what a mounted position really receives.
+  const draftProp = typeof draft === "string" ? draft : "";
+  return createElement(
+    "span",
+    {
+      className: "pi-slot-chip",
+      "data-pi-fixture-draft-prop": draftProp,
+      "data-pi-fixture-session": typeof sessionId === "string" ? sessionId : "",
+    },
+    [
+      createElement(
+        "button",
+        {
+          key: "read",
+          type: "button",
+          "data-pi-fixture-trigger": "readDraft",
+          "data-pi-fixture-draft": read,
+          "data-pi-fixture-read-outcome": readOutcome,
+          onClick: readDraft,
+        },
+        "Fixture: read the draft",
+      ),
+      createElement(
+        "button",
+        {
+          key: "write",
+          type: "button",
+          "data-pi-fixture-trigger": "writeDraft",
+          "data-pi-fixture-write": write,
+          onClick: writeDraft,
+        },
+        "Fixture: write a draft",
+      ),
+    ],
+  );
+}
+
+export function onLoad(pi) {
+  hostApi = pi;
+  pi.slots.register("composerControl", RaceControl);
+}
+`;
+
+/**
+ * Write the fixture plugin into this run's temp root.
+ *
+ * It declares `renderer.extension` — the one permission the whole renderer tier
+ * needs — and nothing else, plus the two host actions it dispatches: the relay
+ * refuses an undeclared action before the host's own handler is reached, so a
+ * missing entry here would look like a broken action channel.
+ */
+function writeSlotRaceFixture(dir) {
+  mkdirSync(join(dir, "renderer"), { recursive: true });
+  writeFileSync(
+    join(dir, "manifest.json"),
+    `${JSON.stringify(
+      {
+        schemaVersion: 1,
+        id: RACE_PLUGIN_ID,
+        name: "Slot race fixture",
+        version: "0.0.1",
+        description:
+          "E2E fixture: claims the modal position against the showcase and reads and writes the composer draft through the host's own actions",
+        main: "main.js",
+        renderer: "renderer/index.mjs",
+        rendererData: ["draft"],
+    // The fixture declares both halves of the draft contract it exercises:
+    // `composer.replaceDraft` and `composer.readDraft` are both in host-core's
+    // `rendererActions` vocabulary and in the SDK's.
+    rendererActions: ["composer.replaceDraft", "composer.readDraft"],
+        permissions: ["renderer.extension"],
+        engines: { piDesktop: ">=0.1.0" },
+        activationEvents: ["onStartup"],
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  writeFileSync(join(dir, "main.js"), RACE_MAIN);
+  writeFileSync(join(dir, "renderer/index.mjs"), RACE_RENDERER);
+}
+
 const RUNTIME_PROBE_TIMEOUT = 30_000;
 
 /**
@@ -424,6 +645,12 @@ async function runJourney() {
   // One workspace file, so the composer's own `@` completion has something to
   // attach and the `composerReference` position has a host chip to follow.
   writeFileSync(join(projectDir, "README.md"), "# Showcase e2e project\n");
+  // The second dev plugin this suite installs, written here so the run owns
+  // every file it loads. It is a real plugin package: manifest, headless entry,
+  // renderer entry. Installed below through the same `plugins.loadDev` call the
+  // showcase uses.
+  const racePluginDir = join(runRoot, "fixtures", RACE_PLUGIN_ID);
+  writeSlotRaceFixture(racePluginDir);
 
   const stub = createModelStub();
   const modelPort = await stub.listen();
@@ -538,6 +765,10 @@ async function windowSnapshot(client) {
       // declares, which is what makes it a renderer candidate and an agent
       // extension at once.
       await host.call("plugins.loadDev", { path: SHOWCASE_PLUGIN });
+      // The fixture loads the same way. It is installed after the showcase so a
+      // reader can see the order; the replace-slot claim it races for is decided
+      // at request time, not here.
+      await host.call("plugins.loadDev", { path: racePluginDir });
     } finally {
       await host.stop();
     }
@@ -612,8 +843,108 @@ async function windowSnapshot(client) {
       "the showcase badge in a transcript row",
     );
 
+    // The fixture's own renderer entry is loaded lazily the same way. Its
+    // composer control is the observable proof that the module really ran, so
+    // every read below is about a second plugin that is in the window, not one
+    // that was merely installed.
+    await waitFor(
+      () =>
+        client.evaluate(
+          `!!document.querySelector('[data-pi-fixture-trigger="readDraft"]')`,
+        ),
+      "the slot-race fixture's composer control",
+    );
+
     const facts = { sessionId, pluginToolMessageId, hostToolMessageId, PLUGIN_TOOL };
     const run = async (body) => client.evaluate(`(async () => {${PROBE_HELPERS}${body}})()`);
+
+    // ── the injected sheet, read back out of the live document ─────────────
+    // `pi.ui.injectStyle` is the only way a plugin's CSS may reach the window,
+    // and the host promises to rewrite it before it serves it: the element is
+    // stamped as scoped, and every selector in it sits under the plugin's own
+    // container. A sheet served as written would show up here as an unscoped
+    // selector, which is exactly what this counts.
+    const styleFacts = await run(`
+      const container = ${JSON.stringify(SHOWCASE_CONTAINER)};
+      const sheet = $('style[data-pi-plugin-style="${PLUGIN_ID}"]');
+      const css = sheet ? (sheet.textContent ?? '') : '';
+      // Read the sheet the way the host's own refusal scanner reads one: the
+      // text between a block end and the next brace is a selector list.
+      const selectors = [];
+      for (let brace = css.indexOf('{'); brace >= 0; brace = css.indexOf('{', brace + 1)) {
+        const start = Math.max(
+          css.lastIndexOf('}', brace - 1),
+          css.lastIndexOf('{', brace - 1),
+          css.lastIndexOf(';', brace),
+        );
+        const text = css.slice(start + 1, brace).trim();
+        if (!text || text.startsWith('@')) continue;
+        for (const part of text.split(',')) {
+          const trimmed = part.trim();
+          if (trimmed) selectors.push(trimmed);
+        }
+      }
+      return {
+        sheetFound: Boolean(sheet),
+        inHead: Boolean(sheet && document.head.contains(sheet)),
+        mode: sheet?.getAttribute('data-pi-plugin-style-mode') ?? null,
+        selectorCount: selectors.length,
+        scoped: selectors.filter((selector) => selector.startsWith(container)).length,
+        unscoped: selectors.filter((selector) => !selector.startsWith(container)),
+        rootRefs: selectors.filter((selector) => /^(html|body|\\*)(?![\\w-])/i.test(selector)),
+        // One of the plugin's real class names, under its own container.
+        badgeScoped: selectors.some(
+          (selector) =>
+            selector.startsWith(container) &&
+            selector.includes('.acme-plugin-showcase__badge'),
+        ),
+        sheets: $$('style[data-pi-plugin-style]').length,
+        sample: selectors.slice(0, 3),
+      };
+    `);
+    record(
+      "E2E-PLUGIN-showcase-style-sheet-scoped-in-window",
+      styleFacts.sheetFound &&
+        styleFacts.inHead &&
+        styleFacts.mode === "scoped" &&
+        styleFacts.selectorCount > 0 &&
+        styleFacts.badgeScoped &&
+        styleFacts.unscoped.length === 0 &&
+        styleFacts.rootRefs.length === 0,
+      `the plugin's sheet is in the head, stamped ${styleFacts.mode}, and all ${styleFacts.selectorCount} of its selectors sit under ${SHOWCASE_CONTAINER}, e.g. ${JSON.stringify(styleFacts.sample)} (its own badge class included: ${styleFacts.badgeScoped}); unscoped: ${JSON.stringify(styleFacts.unscoped)}; top-level html/body/*: ${JSON.stringify(styleFacts.rootRefs)}; plugin sheets in the document: ${styleFacts.sheets}`,
+    );
+
+    // ── the public token surface resolves in the app ───────────────────────
+    // The `--pi-slot-*` aliases are declared on `.pi-plugin-slot` and map the
+    // host's internal `--ds-*` values. Reading them off a mounted container is
+    // the difference between a published token surface and a stylesheet nobody
+    // shipped: an unimported file, or an alias whose chain does not resolve,
+    // reads back empty here.
+    const tokenFacts = await run(`
+      const container = $('[data-pi-plugin="${PLUGIN_ID}"][data-pi-plugin-slot="entry"]');
+      const style = container ? getComputedStyle(container) : null;
+      const token = (name) => (style ? style.getPropertyValue(name).trim() : '');
+      return {
+        containerFound: Boolean(container),
+        slotClass: container ? container.classList.contains('pi-plugin-slot') : false,
+        theme: container?.getAttribute('data-pi-theme') ?? null,
+        bg: token('--pi-slot-bg'),
+        text: token('--pi-slot-text'),
+        border: token('--pi-slot-border'),
+        radius: token('--pi-slot-radius-sm'),
+      };
+    `);
+    record(
+      "E2E-PLUGIN-showcase-slot-tokens-resolve-in-window",
+      tokenFacts.containerFound &&
+        tokenFacts.slotClass &&
+        (tokenFacts.theme === "light" || tokenFacts.theme === "dark") &&
+        tokenFacts.bg !== "" &&
+        tokenFacts.text !== "" &&
+        tokenFacts.border !== "" &&
+        tokenFacts.radius !== "",
+      `on a mounted container (class pi-plugin-slot, data-pi-theme ${tokenFacts.theme}) the aliases resolve to live values: --pi-slot-bg ${JSON.stringify(tokenFacts.bg)}, --pi-slot-text ${JSON.stringify(tokenFacts.text)}, --pi-slot-border ${JSON.stringify(tokenFacts.border)}, --pi-slot-radius-sm ${JSON.stringify(tokenFacts.radius)}`,
+    );
 
     // ── entry / entryExtra ─────────────────────────────────────────────────
     const entryFacts = await run(`
@@ -728,6 +1059,131 @@ async function windowSnapshot(client) {
         controlFacts.overlayTrigger &&
         /draft \d+ char\(s\)/.test(controlFacts.leftTitle ?? ""),
       `left row: ${JSON.stringify(controlFacts.leftLabel)} (title ${JSON.stringify(controlFacts.leftTitle)}), right row: ${JSON.stringify(controlFacts.rightLabel)}`,
+    );
+
+    // ── the live draft reaches a mounted plugin through the slot contract ──
+    // The composer hands every `composerControl` registration `{ position,
+    // draft, sessionId? }`, and a plugin draws its control out of that. The
+    // fixture publishes the two values it was mounted with as attributes; the
+    // suite then types into the composer the way the rest of this file does and
+    // requires the plugin's own copy of the draft to follow. The value is read
+    // twice — an untouched composer, then the typed text — so a constant cannot
+    // satisfy it.
+    const draftPropFacts = await run(`
+      const control = () => $('[data-pi-fixture-draft-prop]');
+      const mounted = () => ({
+        draft: control()?.getAttribute('data-pi-fixture-draft-prop') ?? null,
+        session: control()?.getAttribute('data-pi-fixture-session') ?? null,
+      });
+      const before = mounted();
+      const typed = setDraft(${JSON.stringify(TYPED_DRAFT_TEXT)});
+      const after = await waitFor(
+        () =>
+          mounted().draft === ${JSON.stringify(TYPED_DRAFT_TEXT)} ? mounted() : null,
+        ${RUNTIME_PROBE_TIMEOUT},
+      );
+      return {
+        before,
+        after,
+        typed: Boolean(typed),
+        typedText: ${JSON.stringify(TYPED_DRAFT_TEXT)},
+        editorText: readDraft(),
+        container:
+          $('[data-pi-plugin="${RACE_PLUGIN_ID}"][data-pi-plugin-slot="composerControl"]')
+            ?.getAttribute('data-pi-plugin') ?? null,
+      };
+    `);
+    record(
+      "E2E-PLUGIN-showcase-composer-draft-prop-live",
+      draftPropFacts.container === RACE_PLUGIN_ID &&
+        draftPropFacts.typed &&
+        draftPropFacts.before.draft === "" &&
+        draftPropFacts.before.session === sessionId &&
+        draftPropFacts.after?.draft === draftPropFacts.typedText &&
+        draftPropFacts.after?.session === sessionId &&
+        draftPropFacts.editorText === draftPropFacts.typedText,
+      `a mounted composerControl registration was handed session ${JSON.stringify(draftPropFacts.before.session)} and the draft ${JSON.stringify(draftPropFacts.before.draft)}; typing ${JSON.stringify(draftPropFacts.typedText)} into the composer (editor now ${JSON.stringify(draftPropFacts.editorText)}) reached the plugin as ${JSON.stringify(draftPropFacts.after?.draft)} with session ${JSON.stringify(draftPropFacts.after?.session)} — container ${draftPropFacts.container}`,
+    );
+
+    // ── composer.replaceDraft writes into the mounted composer ─────────────
+    // The fixture writes a whole draft through the host's own action. The write
+    // resolves only once a mounted composer consumed it — the host clears the
+    // prefill and refuses with `PLUGIN_ACTION_DRAFT_UNCONSUMED` otherwise — the
+    // composer's own editor has to hold the text afterwards, and the receipt
+    // carries the previous snapshot in its documented shape.
+    //
+    // The fixture's second button asks for `composer.readDraft`, the read half
+    // of the same contract. It declares the action in its own manifest, so the
+    // host answers with the live draft and the snapshot is asserted below.
+    const draftFacts = await run(`
+      const button = (name) => $('[data-pi-fixture-trigger="' + name + '"]');
+      const click = (node) => node?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      const parse = (raw) => {
+        if (!raw) return null;
+        try {
+          return JSON.parse(raw);
+        } catch {
+          return null;
+        }
+      };
+      click(button('writeDraft'));
+      const write = await waitFor(
+        () => {
+          const receipt = parse(button('writeDraft')?.getAttribute('data-pi-fixture-write'));
+          const editor = composerInput();
+          const editorText = editor ? (editor.textContent ?? '') : null;
+          if (!receipt || editorText !== ${JSON.stringify(RACE_DRAFT_TEXT)}) return null;
+          return { receipt, editorText };
+        },
+        ${RUNTIME_PROBE_TIMEOUT},
+      );
+      click(button('readDraft'));
+      const read = await waitFor(
+        () => {
+          const outcome = button('readDraft')?.getAttribute('data-pi-fixture-read-outcome');
+          if (!outcome || outcome === 'asking') return null;
+          return {
+            outcome,
+            snapshot: parse(button('readDraft')?.getAttribute('data-pi-fixture-draft')),
+          };
+        },
+        ${RUNTIME_PROBE_TIMEOUT},
+      );
+      return {
+        write,
+        read,
+        written: ${JSON.stringify(RACE_DRAFT_TEXT)},
+        container:
+          $('[data-pi-plugin="${RACE_PLUGIN_ID}"][data-pi-plugin-slot="composerControl"]')
+            ?.getAttribute('data-pi-plugin') ?? null,
+        buttons: $$('[data-pi-fixture-trigger]').map((node) =>
+          node.getAttribute('data-pi-fixture-trigger'),
+        ),
+      };
+    `);
+    const writeReceipt = draftFacts.write?.receipt ?? null;
+    const previousDraft = writeReceipt?.previous ?? null;
+    record(
+      "E2E-PLUGIN-showcase-composer-replace-draft-live",
+      draftFacts.container === RACE_PLUGIN_ID &&
+        writeReceipt?.ok === true &&
+        typeof writeReceipt.generation === "number" &&
+        writeReceipt.generation >= 1 &&
+        previousDraft?.sessionId === sessionId &&
+        typeof previousDraft.generation === "number" &&
+        previousDraft.generation + 1 === writeReceipt.generation &&
+        previousDraft.text === "" &&
+        Array.isArray(previousDraft.fileReferences) &&
+        draftFacts.write?.editorText === RACE_DRAFT_TEXT &&
+        // The read half: the fixture declares `composer.readDraft`, so the host
+        // answers it with the live draft — the session, the generation the write
+        // left behind, the text that write put in the composer, no references.
+        draftFacts.read?.outcome === "ok" &&
+        draftFacts.read.snapshot?.sessionId === sessionId &&
+        draftFacts.read.snapshot?.generation === writeReceipt.generation &&
+        draftFacts.read.snapshot?.text === RACE_DRAFT_TEXT &&
+        Array.isArray(draftFacts.read.snapshot?.fileReferences) &&
+        draftFacts.read.snapshot.fileReferences.length === 0,
     );
 
     // ── completionSource ───────────────────────────────────────────────────
@@ -1005,6 +1461,87 @@ async function windowSnapshot(client) {
         (layerFacts.overlay.cardText ?? "").includes("· overlay") &&
         layerFacts.overlayDismissed,
       `the overlay layer is on screen without a scrim and Escape dismisses it: ${JSON.stringify(layerFacts.overlay.cardText)}`,
+    );
+
+    // ── a replace slot takes one claim ─────────────────────────────────────
+    // `modal` is a replace position: the first claim owns it and a later one is
+    // refused with `PLUGIN_SLOT_DUPLICATE` rather than stacked. The showcase
+    // holds the claim whenever its own modal registration is up; while it is up,
+    // the *second* plugin asks for the same position.
+    //
+    // Everything asserted below is a real observation: the answer `register`
+    // returned is on the fixture's own button, and the window is read for a
+    // second layer, a second claim owner, and the fixture's own modal marker.
+    // The layer host passes the registrations it renders explicitly, so a host
+    // that stopped refusing duplicates would draw both cards here.
+    const claimFacts = await run(`
+      const click = (node) => node?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      const layers = () => $$('[data-pi-plugin-layer="modal"]');
+      const claimOwners = () =>
+        $$('[data-pi-plugin-layer="modal"] [data-pi-plugin-slot="modal"]').map((node) =>
+          node.getAttribute('data-pi-plugin'),
+        );
+      click(showcaseTrigger('modal'));
+      const opened = await waitFor(
+        () => showcaseCard('modal') ?? null,
+        ${RUNTIME_PROBE_TIMEOUT},
+      );
+      const before = {
+        layers: layers().length,
+        blocking: $$('.pi-plugin-layer.is-modal').length,
+        claimOwners: claimOwners(),
+      };
+      click($('[data-pi-fixture-trigger="claimModal"]'));
+      const answer = await waitFor(
+        () => {
+          const value = $('[data-pi-fixture-trigger="claimModal"]')
+            ?.getAttribute('data-pi-fixture-claim');
+          return value && value !== 'asking' ? value : null;
+        },
+        ${RUNTIME_PROBE_TIMEOUT},
+      );
+      // Long enough for React to paint a second container if the host had taken
+      // the registration; a single read would race the commit.
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      const after = {
+        layers: layers().length,
+        blocking: $$('.pi-plugin-layer.is-modal').length,
+        claimOwners: claimOwners(),
+        fixtureModalMarkers: $$('[data-pi-fixture-modal]').length,
+        fixtureSlots: $$('[data-pi-plugin="${RACE_PLUGIN_ID}"]').map((node) =>
+          node.getAttribute('data-pi-plugin-slot'),
+        ),
+        showcaseCard: text(showcaseCard('modal')),
+        claimLabel: text($('[data-pi-fixture-trigger="claimModal"]')),
+      };
+      click($('[data-pi-showcase-close="modal"]'));
+      const closed = await waitFor(
+        () => !showcaseCard('modal'),
+        ${RUNTIME_PROBE_TIMEOUT},
+      );
+      return { opened: Boolean(opened), before, answer, after, closed: Boolean(closed) };
+    `);
+    record(
+      "E2E-PLUGIN-showcase-replace-slot-takes-one-claim",
+      claimFacts.opened &&
+        claimFacts.before.layers === 1 &&
+        claimFacts.before.blocking === 1 &&
+        claimFacts.before.claimOwners.length === 1 &&
+        claimFacts.before.claimOwners[0] === PLUGIN_ID &&
+        // The refusal as the second plugin observed it, not as the suite judges
+        // it: `register` answered null for the position the showcase holds.
+        claimFacts.answer === "refused" &&
+        // Only the showcase is ever an owner: the fixture never takes the
+        // position and its own marker never renders. The click lands on the
+        // composer, outside the modal, so the host also dismisses the
+        // showcase's layer (D8's outside-click rule) — the layer count is
+        // evidence in the detail below, not part of the claim this pins.
+        claimFacts.after.claimOwners.every((owner) => owner === PLUGIN_ID) &&
+        !claimFacts.after.fixtureSlots.includes("modal") &&
+        claimFacts.after.fixtureModalMarkers === 0 &&
+        claimFacts.after.layers <= claimFacts.before.layers &&
+        claimFacts.closed,
+      `the showcase held the modal position (layers ${claimFacts.before.layers}, claim owner ${JSON.stringify(claimFacts.before.claimOwners)}) and the fixture's own registration answered ${JSON.stringify(claimFacts.answer)} (${JSON.stringify(claimFacts.after.claimLabel)}); afterwards the window still carries ${claimFacts.after.layers} blocking layer(s) with claim owner ${JSON.stringify(claimFacts.after.claimOwners)}, the fixture's modal marker appears ${claimFacts.after.fixtureModalMarkers} time(s), and its mounted slots are ${JSON.stringify(claimFacts.after.fixtureSlots)}`,
     );
 
     // ── Resolve the permission so the turn can finish ──────────────────────
