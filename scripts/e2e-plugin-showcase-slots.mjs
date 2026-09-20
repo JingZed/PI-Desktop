@@ -25,7 +25,12 @@
  * - `composerControl` / `completionSource` / `composerReference` — the
  *   composer's left and right control rows, the completion popover opened by
  *   typing `/showcase`, and the plugin's chip after a reference is attached
- *   through the host's own `@` completion.
+ *   through the host's own `@` completion. The `beforeSend` region is checked
+ *   as the handover it is: it is the element immediately before the send
+ *   button, the host's own model picker and context display are on screen
+ *   *inside* it (each exactly once in the window, so no second host copy is
+ *   drawn), the plugin's own controls sit beside them, and the cycle button
+ *   really changes the order of the three pieces while keeping all of them.
  * - `inlineConfirm` — a permission request is raised by a *real* agent turn
  *   served by a local OpenAI-compatible SSE stub, and the plugin's card takes
  *   the position while that request is pending; closing it brings the host's
@@ -793,13 +798,17 @@ async function windowSnapshot(client) {
         createdAt: new Date().toISOString(),
       });
       // The fence the plugin claims, in a closed block: the host hands a
-      // component only a closed, in-limit block (code-blocks.ts).
+      // component only a closed, in-limit block (code-blocks.ts). It carries
+      // usage so the composer's own context display is on screen from the
+      // start — that display is one of the pieces the region hands over, so a
+      // probe of the region would otherwise be waiting on a turn.
       await append({
         id: fenceMessageId,
         role: "assistant",
         content: `Here is the block:\n\n${FENCE}\n`,
         modelId: MOCK_MODEL,
         status: "complete",
+        usage: { inputTokens: 4_000, outputTokens: 200, totalTokens: 4_200 },
         createdAt: new Date().toISOString(),
       });
       // The plugin's own tool row, under the forced name the host derives, and
@@ -1137,9 +1146,12 @@ async function windowSnapshot(client) {
     );
 
     // ── composerControl ────────────────────────────────────────────────────
+    // The two rows are selected by their own `data-pi-control-position`: the
+    // right row also contains the `beforeSend` region (checked next), and an
+    // unscoped `.composer-right …` selector would read that one instead.
     const controlFacts = await run(`
-      const left = $('.composer-left [data-pi-plugin="${PLUGIN_ID}"][data-pi-plugin-slot="composerControl"]');
-      const right = $('.composer-right [data-pi-plugin="${PLUGIN_ID}"][data-pi-plugin-slot="composerControl"]');
+      const left = $('.composer-left [data-pi-plugin="${PLUGIN_ID}"][data-pi-plugin-slot="composerControl"][data-pi-control-position="left"]');
+      const right = $('.composer-right [data-pi-plugin="${PLUGIN_ID}"][data-pi-plugin-slot="composerControl"][data-pi-control-position="right"]');
       // The title (and every label) lives on the plugin's own control, not on
       // the host's container, so it is read from the button itself.
       const titleOf = () =>
@@ -1173,6 +1185,184 @@ async function windowSnapshot(client) {
         controlFacts.overlayTrigger &&
         /draft \d+ char\(s\)/.test(controlFacts.leftTitle ?? ""),
       `left row: ${JSON.stringify(controlFacts.leftLabel)} (title ${JSON.stringify(controlFacts.leftTitle)}), right row: ${JSON.stringify(controlFacts.rightLabel)}`,
+    );
+
+    // ── the region immediately left of Send belongs to the plugin ──────────
+    // The product rule this pins: the host hands that region over whole — its
+    // own model picker, context display and prompt-enhancement control, the
+    // same elements it would draw itself — and the occupying plugin places
+    // them. So every one of those controls has to be *inside* the plugin's own
+    // container, immediately before the send button, each exactly once (no
+    // second host copy), with the plugin's own buttons beside them.
+    const regionFacts = await run(`
+      const regionSelector = '[data-pi-plugin="${PLUGIN_ID}"][data-pi-plugin-slot="composerControl"][data-pi-control-position="beforeSend"]';
+      const region = $(regionSelector);
+      // The send control is read from the region's own row, so a second
+      // composer elsewhere in the window can never be mistaken for this one.
+      const row = region?.parentElement ?? null;
+      const send = row?.querySelector('.send-btn') ?? null;
+      const picker = $('.composer-model-thinking-chip');
+      const context = $('.context-inspector');
+      const contextTrigger = $('.context-inspector-trigger');
+      const enhance = $('.composer-enhance-btn');
+      const inside = (node) => Boolean(node && region && region.contains(node));
+      // A node is on screen when it has a box and is not hidden by CSS; the
+      // control can be in the DOM and painted nowhere.
+      const visible = (node) => {
+        if (!node) return false;
+        const box = node.getBoundingClientRect();
+        const style = getComputedStyle(node);
+        return box.width > 0 && box.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+      };
+      // "Immediately left of Send": the very next element in the row is the
+      // send control, and the row holds one region and one send control. The
+      // strict read and the shape are both reported, so a failure says what the
+      // row really looked like.
+      const next = region?.nextElementSibling ?? null;
+      const sameRow = Boolean(region && send && region.parentElement === send.parentElement);
+      return {
+        regionFound: Boolean(region),
+        inComposerRight: Boolean(region?.closest('.composer-right')),
+        sendIsNextSibling: Boolean(region && send && region.nextElementSibling === send),
+        sameRow,
+        rowShape: next
+          ? next.tagName.toLowerCase() + '.' + (next.className || '') + ' then ' +
+            (next.nextElementSibling
+              ? next.nextElementSibling.tagName.toLowerCase() + '.' + (next.nextElementSibling.className || '')
+              : 'end')
+          : 'nothing after the region',
+        sendLabel: text(send),
+        regionCount: $$(regionSelector).length,
+        composerRightCount: $$('.composer-right').length,
+        sendCount: $$(regionSelector).length === 1 && row ? row.querySelectorAll('.send-btn').length : -1,
+        order: $('[data-pi-showcase-region]')?.getAttribute('data-pi-showcase-region-order') ?? null,
+        pieces: $$('[data-pi-showcase-region-piece]').map((node) =>
+          node.getAttribute('data-pi-showcase-region-piece'),
+        ),
+        pieceData: $$('[data-pi-showcase-region-piece]').map((node) =>
+          node.getAttribute('data-pi-showcase-region-data'),
+        ),
+        modelInside: inside(picker),
+        modelVisible: visible(picker),
+        modelText: text(picker),
+        contextInside: inside(contextTrigger),
+        contextVisible: visible(contextTrigger),
+        contextText: text(contextTrigger),
+        enhanceInside: inside(enhance),
+        enhanceVisible: visible(enhance),
+        ownControls: $$('[data-pi-showcase-region] [data-pi-showcase-trigger]').map((node) =>
+          node.getAttribute('data-pi-showcase-trigger'),
+        ),
+        ownReport: Boolean($('[data-pi-showcase-region] [data-pi-showcase-report]')),
+        // One of each in the whole window: the host draws no second copy.
+        modelCount: $$('.composer-model-thinking-chip').length,
+        contextCount: $$('.context-inspector').length,
+        enhanceCount: $$('.composer-enhance-btn').length,
+      };
+    `);
+    record(
+      "E2E-PLUGIN-showcase-composer-region-handover",
+      regionFacts.regionFound &&
+        regionFacts.inComposerRight &&
+        regionFacts.sameRow &&
+        regionFacts.sendIsNextSibling &&
+        regionFacts.regionCount === 1 &&
+        regionFacts.sendCount === 1 &&
+        regionFacts.order === "model,context,enhance" &&
+        JSON.stringify(regionFacts.pieces) === JSON.stringify(["model", "context", "enhance"]) &&
+        regionFacts.pieceData.every((value) => value === "yes") &&
+        regionFacts.modelInside &&
+        regionFacts.modelVisible &&
+        regionFacts.contextInside &&
+        regionFacts.contextVisible &&
+        regionFacts.enhanceInside &&
+        regionFacts.enhanceVisible &&
+        regionFacts.ownControls.includes("composerRegionCycle") &&
+        regionFacts.ownControls.includes("modal") &&
+        regionFacts.ownControls.includes("overlay") &&
+        regionFacts.ownReport &&
+        regionFacts.modelCount === 1 &&
+        regionFacts.contextCount === 1 &&
+        regionFacts.enhanceCount === 1,
+      `the plugin's region is the next element after which the send control sits (same row ${regionFacts.sameRow}, next in the row: ${JSON.stringify(regionFacts.rowShape)}, send is the region's next sibling ${regionFacts.sendIsNextSibling}, region/send mounts ${regionFacts.regionCount}/${regionFacts.sendCount} in ${regionFacts.composerRightCount} row(s)); it holds ${JSON.stringify(regionFacts.pieces)} in order ${JSON.stringify(regionFacts.order)} (data handed over: ${JSON.stringify(regionFacts.pieceData)}), with the host's model picker ${JSON.stringify(regionFacts.modelText)} inside=${regionFacts.modelInside} visible=${regionFacts.modelVisible}, the context display ${JSON.stringify(regionFacts.contextText)} inside=${regionFacts.contextInside} visible=${regionFacts.contextVisible}, the enhancement control inside=${regionFacts.enhanceInside} visible=${regionFacts.enhanceVisible}, the plugin's own controls ${JSON.stringify(regionFacts.ownControls)} plus a report button (${regionFacts.ownReport}) — host copies in the window: model ${regionFacts.modelCount}, context ${regionFacts.contextCount}, enhance ${regionFacts.enhanceCount}`,
+    );
+
+    // ── the plugin's order is what renders, and cycling it really changes it ─
+    // The same three pieces, a different sequence: the attributes and the DOM
+    // order have to move together, and no piece may disappear on the way.
+    const cycleFacts = await run(`
+      const orderOf = () =>
+        $$('[data-pi-showcase-region-piece]').map((node) =>
+          node.getAttribute('data-pi-showcase-region-piece'),
+        );
+      const attrOf = () => $('[data-pi-showcase-region]')?.getAttribute('data-pi-showcase-region-order') ?? null;
+      const click = () =>
+        $('[data-pi-showcase-trigger="composerRegionCycle"]')?.dispatchEvent(
+          new MouseEvent('click', { bubbles: true }),
+        );
+      const before = { attr: attrOf(), pieces: orderOf() };
+      click();
+      const first = await waitFor(
+        () => {
+          const attr = attrOf();
+          if (!attr || attr === before.attr) return null;
+          return { attr, pieces: orderOf() };
+        },
+        ${RUNTIME_PROBE_TIMEOUT},
+      );
+      click();
+      const second = await waitFor(
+        () => {
+          const attr = attrOf();
+          if (!attr || attr === first?.attr) return null;
+          return { attr, pieces: orderOf() };
+        },
+        ${RUNTIME_PROBE_TIMEOUT},
+      );
+      // One more press must come back round to the order this started in: it
+      // cycles, and the sequence is the plugin's own decision, not a toggle.
+      click();
+      const wrapped = await waitFor(
+        () => (attrOf() === before.attr ? { attr: attrOf(), pieces: orderOf() } : null),
+        ${RUNTIME_PROBE_TIMEOUT},
+      );
+      return {
+        before,
+        first,
+        second,
+        wrapped,
+        modelCount: $$('.composer-model-thinking-chip').length,
+        contextCount: $$('.context-inspector').length,
+        enhanceCount: $$('.composer-enhance-btn').length,
+        regionStillHoldsModel: Boolean(
+          $('[data-pi-showcase-region] .composer-model-thinking-chip'),
+        ),
+        regionStillHoldsContext: Boolean(
+          $('[data-pi-showcase-region] .context-inspector-trigger'),
+        ),
+        regionStillHoldsEnhance: Boolean($('[data-pi-showcase-region] .composer-enhance-btn')),
+        regionText: text($('[data-pi-showcase-region]')),
+      };
+    `);
+    record(
+      "E2E-PLUGIN-showcase-composer-region-order-cycle",
+      cycleFacts.before.attr === "model,context,enhance" &&
+        JSON.stringify(cycleFacts.before.pieces) === JSON.stringify(["model", "context", "enhance"]) &&
+        cycleFacts.first?.attr === "context,enhance,model" &&
+        JSON.stringify(cycleFacts.first?.pieces) === JSON.stringify(["context", "enhance", "model"]) &&
+        cycleFacts.second?.attr === "enhance,model,context" &&
+        JSON.stringify(cycleFacts.second?.pieces) ===
+          JSON.stringify(["enhance", "model", "context"]) &&
+        cycleFacts.wrapped?.attr === "model,context,enhance" &&
+        JSON.stringify(cycleFacts.wrapped?.pieces) ===
+          JSON.stringify(["model", "context", "enhance"]) &&
+        cycleFacts.regionStillHoldsModel &&
+        cycleFacts.regionStillHoldsContext &&
+        cycleFacts.regionStillHoldsEnhance &&
+        cycleFacts.modelCount === 1 &&
+        cycleFacts.contextCount === 1 &&
+        cycleFacts.enhanceCount === 1,
+      `the region's order went ${JSON.stringify(cycleFacts.before)} → ${JSON.stringify(cycleFacts.first)} → ${JSON.stringify(cycleFacts.second)} → ${JSON.stringify(cycleFacts.wrapped)} — every piece still inside the region (model ${cycleFacts.regionStillHoldsModel}, context ${cycleFacts.regionStillHoldsContext}, enhance ${cycleFacts.regionStillHoldsEnhance}), and still one of each in the window (${cycleFacts.modelCount}/${cycleFacts.contextCount}/${cycleFacts.enhanceCount}); region reads ${JSON.stringify(cycleFacts.regionText)}`,
     );
 
     // ── the live draft reaches a mounted plugin through the slot contract ──

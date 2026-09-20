@@ -40,7 +40,7 @@ export const PLUGIN_RENDERER_SLOTS = [
   "codeBlock",
   /** Extra block appended below one transcript entry. */
   "entryExtra",
-  /** Controls in the composer's left and right positions. */
+  /** Controls in the composer's control rows, including the region left of Send. */
   "composerControl",
   /** Candidate source for the composer's completion popover. */
   "completionSource",
@@ -135,6 +135,28 @@ export function isPluginRendererReplaceSlot(
 }
 
 /**
+ * The composer positions a `composerControl` registration can be asked for
+ * (spec 07-plugins/16 §2A.5).
+ *
+ * `left` and `right` are the composer's two control rows: additive positions
+ * that stack in registration order (D8). `beforeSend` is the region immediately
+ * left of the send/stop control, and it is handed over whole — it holds the
+ * host's own model picker, context display, and prompt-enhancement control — so
+ * exactly one registration holds it.
+ */
+export const PLUGIN_RENDERER_COMPOSER_POSITIONS = ["left", "right", "beforeSend"] as const;
+
+export type PiRendererComposerControlPosition =
+  (typeof PLUGIN_RENDERER_COMPOSER_POSITIONS)[number];
+
+/**
+ * The positions a `composerControl` registration that declares none is asked
+ * for: the two control rows, which is what every registration written before
+ * `beforeSend` existed means. Declaring `positions` opts into another set.
+ */
+export const PLUGIN_RENDERER_COMPOSER_DEFAULT_POSITIONS = ["left", "right"] as const;
+
+/**
  * Public design tokens a renderer slot may use. Host-maintained aliases of
  * internal `--ds-*` values, defined on `.pi-plugin-slot` only. The stability
  * contract is this prefix + this list: additions only; renames or removals
@@ -177,6 +199,7 @@ export type PiRendererAmbientProps = {
  */
 export type PluginRendererSlotDiagnosticCode =
   | "PLUGIN_SLOT_DUPLICATE"
+  | "PLUGIN_SLOT_INVALID_POSITION"
   | "PLUGIN_DATA_UNSERVED"
   | "PLUGIN_STYLE_REFUSED"
   | "PLUGIN_STYLE_SCOPED"
@@ -613,14 +636,25 @@ function escapeRegExp(value: string): string {
 }
 
 /**
- * Extra registration data a slot needs. Only `codeBlock` uses it today: the
- * host has to know which fenced language a component claims, and the language
- * name must carry the plugin's own prefix so a plugin cannot shadow `json`,
- * `ts` or `mermaid` (spec 07-plugins/16 §2A.5).
+ * Extra registration data a slot needs. `codeBlock` uses it to declare the
+ * fenced language it claims — the name must carry the plugin's own prefix so a
+ * plugin cannot shadow `json`, `ts` or `mermaid`; `composerControl` uses it to
+ * declare the composer positions it wants to be asked for (spec 07-plugins/16
+ * §2A.5).
  */
 export type PiRendererSlotOptions = {
   /** `codeBlock` only: the fenced language this component renders. */
   language?: string;
+  /**
+   * `composerControl` only: the composer positions this registration is asked
+   * for. Omitted means `PLUGIN_RENDERER_COMPOSER_DEFAULT_POSITIONS` — the two
+   * control rows, which is what every registration written before `beforeSend`
+   * existed means. `beforeSend` is one claim: a second registration that
+   * declares it is refused with `PLUGIN_SLOT_DUPLICATE`, and a value that is
+   * not a non-empty subset of `PLUGIN_RENDERER_COMPOSER_POSITIONS` is refused
+   * with `PLUGIN_SLOT_INVALID_POSITION`.
+   */
+  positions?: readonly PiRendererComposerControlPosition[];
 };
 
 /**
@@ -793,21 +827,37 @@ export type PiRendererInlineConfirmProps = {
 };
 
 /**
- * What the host hands a `composerControl` renderer: which of the composer's two
- * control rows this mount is, and the draft those controls act on.
+ * What the host hands a `composerControl` renderer: which composer position this
+ * mount is, the draft those controls act on, and — at `beforeSend` — the region
+ * the host built for it.
  *
- * The slot is mounted twice — once at the end of the composer's left control
- * row and once at the end of its right one — so one registration is asked for
- * both positions and decides for itself which one it draws in; returning `null`
- * for the other leaves no hole. The host's own controls are already in the row
- * when a component is mounted, so plugin controls follow them and can never
- * push the host's mode, permission, model, enhancement, or send controls out of
- * place (D8). A component renders one control, and may dispatch the actions its
- * manifest declares; it cannot remove, wrap, or reorder the host's controls.
+ * The slot is mounted three times: at the end of the composer's left control
+ * row, at the end of its right one, and at `beforeSend`, the region immediately
+ * left of the send/stop control. A registration is asked only for the positions
+ * it declares (`PiRendererSlotOptions.positions`); declaring none keeps the two
+ * rows, which is what a registration written before `beforeSend` existed means.
+ * The component decides for itself what it draws in each position it asked for
+ * and returns `null` for the others; that leaves no hole, because the host's own
+ * controls in the two rows sit outside the mount, and at `beforeSend` the host's
+ * own drawing of the region is the mount's fallback.
+ *
+ * `beforeSend` is one claim (the first registration that declares it; a later
+ * one is refused with `PLUGIN_SLOT_DUPLICATE`), because the host hands the
+ * position over whole: `modelControl`, `contextControl`, and `enhanceControl`
+ * are the host's *own nodes* — the elements the host would draw itself, not
+ * copies — together with the data behind them. The component decides the order
+ * of those pieces inside the region, may add controls of its own, and may leave
+ * a piece out; a piece it does not render is not drawn at all, and the host
+ * draws no second copy of a piece the component renders. With nobody holding the
+ * claim the host draws exactly its own three pieces, in its own order, and a
+ * component that crashes gives the region back to them (D10).
+ *
+ * A component that wants to change the draft dispatches an action; the props are
+ * read-only.
  */
 export type PiRendererComposerControlProps = {
-  /** Which control row this mount fills. */
-  position: "left" | "right";
+  /** Which composer position this mount fills. */
+  position: PiRendererComposerControlPosition;
   /**
    * The session the composer is drafting for. Absent for a draft that has no
    * session yet (a new-task composer), rather than an empty id.
@@ -819,8 +869,92 @@ export type PiRendererComposerControlProps = {
    * component that wants to change the draft dispatches an action.
    */
   draft: string;
+  /**
+   * `beforeSend` only: the host's own model picker, as a node to render
+   * unchanged. Absent at `left` / `right`.
+   */
+  modelControl?: PiRendererNode;
+  /** `beforeSend` only: what that picker is showing and acting on. */
+  modelSelection?: PiRendererComposerModelSelection;
+  /**
+   * `beforeSend` only: the host's own context display, or `null` when the host
+   * has no measured turn to draw it from — there is nothing to hand over then.
+   */
+  contextControl?: PiRendererNode | null;
+  /** `beforeSend` only: the figures that display is drawn from, or `null`. */
+  contextUsage?: PiRendererComposerContextUsage | null;
+  /**
+   * `beforeSend` only: the host's own prompt-enhancement control, including its
+   * undo control when there is something to undo.
+   */
+  enhanceControl?: PiRendererNode;
+  /** `beforeSend` only: the state those controls are in. */
+  enhancement?: PiRendererComposerEnhancement;
 };
 
+/**
+ * A React node the host built, handed to a slot component unchanged. The host
+ * and the plugin share one React instance (ADR 0291), so the node renders as
+ * the host's own component wherever the plugin puts it.
+ */
+export type PiRendererNode = unknown;
+
+/**
+ * What the host's model picker is showing, for a `beforeSend` component that
+ * draws its own version of the control. Deliberately flat display data: the
+ * picker's menu, search, keyboard handling, and the session write behind a
+ * selection stay host-owned.
+ */
+export type PiRendererComposerModelSelection = {
+  /** The provider the session is bound to, when it is bound to one. */
+  providerId?: string;
+  /** The model id the session is bound to, when it is bound to one. */
+  modelId?: string;
+  /** The model label the host's own picker chip shows. */
+  label: string;
+  /**
+   * The reasoning level id the session runs at, as the host's own
+   * `ThinkingLevel` vocabulary spells it (`"off"` when there is none).
+   */
+  thinkingLevel: string;
+  /** That level as the host's own chip writes it. */
+  thinkingLabel: string;
+  /** True when the host holds a usable provider/model for this session. */
+  ready: boolean;
+};
+
+/**
+ * What the host's context display is drawing, for a `beforeSend` component that
+ * draws its own version of it. The figures are the host's own computation over
+ * the newest measured turn and the session's context window.
+ */
+export type PiRendererComposerContextUsage = {
+  /** Tokens the newest measured turn occupies. */
+  usedTokens: number;
+  remainingTokens: number;
+  /** The window both are measured against. */
+  contextWindow: number;
+  usedRatio: number;
+  remainingRatio: number;
+  /** `usedRatio` / `remainingRatio` as whole percentages. */
+  usedPercent: number;
+  remainingPercent: number;
+};
+
+/**
+ * The state of the host's prompt-enhancement control, for a `beforeSend`
+ * component that draws its own version of it. Enhancing a draft is the host's
+ * own call to the model: the node is what starts it, and this is what the
+ * component can say about it.
+ */
+export type PiRendererComposerEnhancement = {
+  /** True when the host's own control would run for the draft it was handed. */
+  enabled: boolean;
+  /** True while the host's own enhancement call is running. */
+  busy: boolean;
+  /** The draft text the host's undo would restore; `null` with nothing to undo. */
+  undoText: string | null;
+};
 /**
  * What the host hands a `completionSource` renderer: the query the completion
  * popover is open for.

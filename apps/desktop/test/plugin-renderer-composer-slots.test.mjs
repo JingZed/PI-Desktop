@@ -103,7 +103,7 @@ const AnchoredMenu = ({ trigger, open, children }) =>
   );
 
 const pluginSdk = await import("@pi-desktop/plugin-sdk");
-const { PluginSlot, PluginSlotBoundary } = loadTsx(
+const { PluginSlot, PluginSlotBoundary, useSlotRegistrations } = loadTsx(
   "../src/plugins/renderer-slots/SlotOutlet.tsx",
   {
     react: React,
@@ -128,7 +128,8 @@ const { useRendererCandidates } = loadTsx(
 const outletImports = {
   react: React,
   "react/jsx-runtime": jsxRuntime,
-  "../../../plugins/renderer-slots/SlotOutlet": { PluginSlot },
+  "@pi-desktop/plugin-sdk": pluginSdk,
+  "../../../plugins/renderer-slots/SlotOutlet": { PluginSlot, useSlotRegistrations },
   "../../../plugins/renderer-slots/use-renderer-candidates": { useRendererCandidates },
   "../../../stores/app-store": storeModule,
 };
@@ -146,6 +147,18 @@ const { ComposerReferenceSlot } = loadTsx(
   { ...outletImports, "./model": {} },
 );
 
+/**
+ * The two host pieces that render as themselves inside the composer's own
+ * toolbar. They are markers rather than the real components (which need the
+ * store, portals and menus), but they are the *elements the host builds*: the
+ * region tests below locate them inside whatever the plugin draws.
+ */
+const ContextDisplay = ({ contextWindow }) =>
+  React.createElement("span", { className: "host-context-display" }, `context:${contextWindow}`);
+const ModelPicker = ({ modelLabel }) =>
+  React.createElement("span", { className: "host-model-picker" }, `model:${modelLabel}`);
+const contextUsageModule = await import("../src/lib/context-usage.ts");
+
 const { ComposerToolbar } = loadTsx(
   "../src/features/chat/composer/ComposerToolbar.tsx",
   {
@@ -154,17 +167,18 @@ const { ComposerToolbar } = loadTsx(
     "@pi-desktop/shared": shared,
     "../../../lib/bridge": { bridgePlatform: () => "darwin" },
     "../../../components/settings/AnchoredMenu": { AnchoredMenu },
-    "../../../components/ContextUsageInspector": { ContextUsageInspector: () => null },
+    "../../../components/ContextUsageInspector": { ContextUsageInspector: ContextDisplay },
     "../../../components/ui": { TooltipButton },
     "../../../components/icons": new Proxy({}, { get: () => Icon }),
     "./ComposerModeIcon": { ModeIcon: () => null },
-    "./ComposerModelPicker": { ComposerModelPicker: () => null },
+    "./ComposerModelPicker": { ComposerModelPicker: ModelPicker },
     "./model": {
       MODE_LABEL_KEYS: { agent: "agent", plan: "plan", goal: "goal" },
       PERMISSION_MODE_I18N_KEYS: { ask: "ask", "accept-edits": "accept-edits", auto: "auto" },
       nextMode: (mode) => mode,
     },
     "./hooks/useComposerModelMenu": {},
+    "../../../lib/context-usage": contextUsageModule,
     "./ComposerControlSlot": { ComposerControlSlot },
   },
 );
@@ -223,8 +237,21 @@ function containers(markup) {
 }
 
 /* ---------- composerControl ---------- */
+/** The composer's own context props, in the shape Composer hands the toolbar. */
+const CONTEXT_USAGE = {
+  usage: { inputTokens: 1_000, outputTokens: 200, totalTokens: 1_200 },
+  turnUsage: { inputTokens: 1_000, outputTokens: 200, totalTokens: 1_200 },
+  contextWindow: 200_000,
+  tools: [],
+};
 
-function renderToolbar({ draft = "hello", sessionId = "session-1" } = {}) {
+
+function renderToolbar({
+  draft = "hello",
+  sessionId = "session-1",
+  contextUsage = null,
+  enhancementUndoText = null,
+} = {}) {
   storeState.activeSessionId = sessionId;
   return renderToStaticMarkup(
     React.createElement(ComposerToolbar, {
@@ -245,13 +272,13 @@ function renderToolbar({ draft = "hello", sessionId = "session-1" } = {}) {
       modelMenu: { open: false, setOpen: () => {} },
       modelLabel: "Model",
       thinkingLabel: "off",
-      contextUsage: null,
+      contextUsage,
       enhancementDraft: draft,
       value: draft,
       modelReady: true,
       sendBlocked: false,
       enhancingPrompt: false,
-      enhancementUndoText: null,
+      enhancementUndoText,
       enhancePrompt: async () => {},
       undoPromptEnhancement: () => {},
       clearEnhancementError: () => {},
@@ -343,13 +370,219 @@ test("a draft with no session reports no sessionId at all", () => {
 
 test("with nothing registered for composerControl the toolbar is byte-identical", () => {
   reset();
-  const bare = renderToolbar();
+  const contextUsage = CONTEXT_USAGE;
+  const enhancementUndoText = "older draft";
+  const bare = renderToolbar({ contextUsage, enhancementUndoText });
   registerSlot("entry", () => React.createElement("span", null, "elsewhere"));
-  const withAnotherSlot = renderToolbar();
+  const withAnotherSlot = renderToolbar({ contextUsage, enhancementUndoText });
   assert.equal(withAnotherSlot, bare);
   assert.doesNotMatch(bare, /data-pi-plugin/);
   assert.match(bare, /class="composer-left"/);
   assert.match(bare, /class="send-btn"/);
+  // The region nobody holds is the host's own drawing of it: its three pieces
+  // in the host's own order, each exactly once, immediately left of Send.
+  assert.doesNotMatch(bare, /data-pi-control-position/);
+  const order = [
+    'class="host-context-display"',
+    'class="host-model-picker"',
+    "composer-enhance-btn",
+    "composer-enhance-undo",
+    'class="send-btn"',
+  ].map((needle) => bare.indexOf(needle));
+  assert.ok(order.every((index) => index > 0), `host region pieces in order: ${JSON.stringify(order)}`);
+  assert.ok(order.every((index, position) => position === 0 || order[position - 1] < index));
+  assert.equal((bare.match(/host-model-picker/g) ?? []).length, 1);
+  assert.equal((bare.match(/host-context-display/g) ?? []).length, 1);
+  assert.equal((bare.match(/composer-enhance-btn/g) ?? []).length, 1);
+});
+
+/* ---------- composerControl: the region left of Send ---------- */
+
+let regionProps = [];
+
+/**
+ * The occupying component: it renders all three handed pieces, in its own
+ * order, and adds a button of its own beside them.
+ */
+function RegionControl(props) {
+  regionProps.push(props);
+  const pieces = {
+    model: props.modelControl,
+    context: props.contextControl,
+    enhance: props.enhanceControl,
+  };
+  return React.createElement("span", { className: "acme-region" }, [
+    ...["enhance", "model", "context"].map((name) =>
+      React.createElement("span", { key: name, "data-pi-piece": name }, [
+        pieces[name],
+        React.createElement("span", { key: "own" }, `own-${name}`),
+      ]),
+    ),
+    React.createElement("button", { key: "own", type: "button" }, "plugin-own-control"),
+  ]);
+}
+
+test("the region left of Send is handed over whole, and the plugin's order is what renders", () => {
+  reset();
+  regionProps = [];
+  registerSlot("composerControl", RegionControl, { positions: ["beforeSend"] });
+  const markup = renderToolbar({
+    draft: "hello world",
+    contextUsage: CONTEXT_USAGE,
+    enhancementUndoText: "older draft",
+  });
+
+  const [region] = containers(markup);
+  assert.ok(region, "the plugin drew in the region");
+  assert.match(region, /data-pi-plugin-slot="composerControl"/);
+  assert.match(region, /data-pi-control-position="beforeSend"/);
+  // One mount only: a registration that declared `beforeSend` is not asked for
+  // the two control rows as well.
+  assert.equal(containers(markup).length, 1);
+  const sendIndex = markup.indexOf('class="send-btn"');
+  assert.ok(markup.indexOf('class="composer-right"') < markup.indexOf(region));
+  assert.ok(markup.indexOf(region) < sendIndex, "the region sits left of the send control");
+  assert.doesNotMatch(
+    markup.slice(markup.indexOf(region), sendIndex),
+    /data-pi-control-position="right"/,
+  );
+
+  // The plugin's order, not the host's (the host draws context, model, enhance).
+  const order = ["enhance", "model", "context"].map((name) =>
+    markup.indexOf(`data-pi-piece="${name}"`),
+  );
+  assert.ok(order[0] > 0 && order[0] < order[1] && order[1] < order[2]);
+  assert.equal((markup.match(/data-pi-piece="/g) ?? []).length, 3);
+  // And every host piece is drawn exactly once, inside the plugin's own row:
+  // the host does not draw a second copy of what the plugin rendered.
+  assert.equal((markup.match(/host-context-display/g) ?? []).length, 1);
+  assert.equal((markup.match(/host-model-picker/g) ?? []).length, 1);
+  assert.equal((markup.match(/composer-enhance-btn/g) ?? []).length, 1);
+  assert.equal((markup.match(/composer-enhance-undo/g) ?? []).length, 1);
+  assert.match(markup, /plugin-own-control/);
+
+  // The nodes are the host's own elements, and the data is the host's own.
+  assert.deepEqual(regionProps.map((props) => props.position), ["beforeSend"]);
+  assert.equal(regionProps[0].draft, "hello world");
+  assert.equal(regionProps[0].sessionId, "session-1");
+  assert.deepEqual(Object.keys(regionProps[0]).sort(), [
+    "contextControl",
+    "contextUsage",
+    "dispatch",
+    "draft",
+    "enhanceControl",
+    "enhancement",
+    "modelControl",
+    "modelSelection",
+    "position",
+    "sessionId",
+  ]);
+  assert.equal(regionProps[0].modelControl.type, ModelPicker);
+  assert.equal(regionProps[0].contextControl.type, ContextDisplay);
+  const enhanceChildren = React.Children.toArray(regionProps[0].enhanceControl.props.children);
+  assert.equal(enhanceChildren.length, 2, "the enhancement node carries the control and its undo");
+  assert.match(enhanceChildren[0].props.className, /composer-enhance-btn/);
+  assert.match(enhanceChildren[1].props.className, /composer-enhance-undo/);
+  assert.deepEqual(regionProps[0].modelSelection, {
+    providerId: "provider-1",
+    modelId: "model-1",
+    label: "Model",
+    thinkingLevel: "off",
+    thinkingLabel: "off",
+    ready: true,
+  });
+  assert.deepEqual(regionProps[0].contextUsage, {
+    ...contextUsageModule.calculateContextUsage(CONTEXT_USAGE.usage, 200_000),
+    contextWindow: 200_000,
+  });
+  assert.deepEqual(regionProps[0].enhancement, {
+    enabled: true,
+    busy: false,
+    undoText: "older draft",
+  });
+  assert.equal(typeof regionProps[0].dispatch, "function");
+});
+
+test("with no measured turn the region is still handed over, with an empty context piece", () => {
+  reset();
+  regionProps = [];
+  registerSlot("composerControl", RegionControl, { positions: ["beforeSend"] });
+  const markup = renderToolbar({ contextUsage: null });
+  assert.equal(regionProps.length, 1);
+  assert.equal(regionProps[0].contextControl, null);
+  assert.equal(regionProps[0].contextUsage, null);
+  assert.equal(regionProps[0].modelControl.type, ModelPicker);
+  assert.equal(regionProps[0].enhancement.undoText, null);
+  assert.equal((markup.match(/host-model-picker/g) ?? []).length, 1);
+  assert.equal((markup.match(/host-context-display/g) ?? []).length, 0);
+  assert.equal(containers(markup).length, 1);
+});
+
+test("a registration that declared no positions keeps the two rows and never draws in the region", () => {
+  reset();
+  composerControlProps = [];
+  registerSlot("composerControl", (props) => {
+    composerControlProps.push(props);
+    return React.createElement("span", { className: "acme-control" }, props.position);
+  });
+  const markup = renderToolbar({
+    contextUsage: CONTEXT_USAGE,
+    enhancementUndoText: "older draft",
+  });
+  assert.deepEqual(composerControlProps.map((props) => props.position), ["left", "right"]);
+  // The handover keys exist at `beforeSend` and nowhere else: the rows' contract
+  // is exactly what it was.
+  assert.deepEqual(Object.keys(composerControlProps[0]).sort(), [
+    "dispatch",
+    "draft",
+    "position",
+    "sessionId",
+  ]);
+  assert.equal(containers(markup).length, 2);
+  assert.doesNotMatch(markup, /data-pi-control-position="beforeSend"/);
+  // With nobody holding the region the host draws its own three pieces, in its
+  // own order, each exactly once.
+  assert.equal((markup.match(/host-model-picker/g) ?? []).length, 1);
+  assert.equal((markup.match(/host-context-display/g) ?? []).length, 1);
+  assert.equal((markup.match(/composer-enhance-btn/g) ?? []).length, 1);
+  const contextIndex = markup.indexOf('class="host-context-display"');
+  const modelIndex = markup.indexOf('class="host-model-picker"');
+  const enhanceIndex = markup.indexOf("composer-enhance-btn");
+  const sendIndex = markup.indexOf('class="send-btn"');
+  assert.ok(contextIndex < modelIndex && modelIndex < enhanceIndex && enhanceIndex < sendIndex);
+});
+
+test("beforeSend is one claim, and its positions must come from the published vocabulary", () => {
+  reset();
+  registerSlot("composerControl", RegionControl, { positions: ["beforeSend"] });
+  const refused = pluginSlots.register("acme.second", "composerControl", RegionControl, {
+    positions: ["beforeSend"],
+  });
+  assert.equal(refused, null, "a second claim on the region is refused, never stacked");
+  assert.deepEqual(
+    pluginSlots.listDiagnostics("acme.second").map((entry) => [entry.code, entry.detail]),
+    [
+      [
+        "PLUGIN_SLOT_DUPLICATE",
+        "the beforeSend composer position is already claimed by acme.composer",
+      ],
+    ],
+  );
+  const invalid = pluginSlots.register("acme.third", "composerControl", RegionControl, {
+    positions: ["left", "top"],
+  });
+  assert.equal(invalid, null, "a position outside the vocabulary is refused, not interpreted");
+  assert.equal(
+    pluginSlots.listDiagnostics("acme.third")[0].code,
+    "PLUGIN_SLOT_INVALID_POSITION",
+  );
+  assert.deepEqual(
+    pluginSlots.list("composerControl").map((entry) => [entry.pluginId, entry.positions]),
+    [["acme.composer", ["beforeSend"]]],
+  );
+  const markup = renderToolbar({ contextUsage: CONTEXT_USAGE });
+  assert.equal(containers(markup).length, 1);
+  assert.match(markup, /data-pi-plugin="acme\.composer"/);
 });
 
 /* ---------- completionSource ---------- */

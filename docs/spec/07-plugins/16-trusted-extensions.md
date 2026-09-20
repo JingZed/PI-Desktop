@@ -152,8 +152,9 @@ Style isolation is a host auto-scope scheme, not Shadow DOM:
 
 Replace-type slots (`entry`, `toolCard`, `inlineConfirm`, `modal`) take at most
 one registration (first claim wins). A later registration is refused with
-`PLUGIN_SLOT_DUPLICATE`. Additive slots stack in registration order (D8).
-`codeBlock` keeps language claims.
+`PLUGIN_SLOT_DUPLICATE`. Additive slots stack in registration order (D8);
+`composerControl` is one of those in its two control rows and a one-claim
+handover position at `beforeSend` (below). `codeBlock` keeps language claims.
 
 A replace position hands the claiming component the data the host surface it
 takes over was going to display (ADR 0291): `entry` is handed the message the
@@ -175,6 +176,23 @@ registration stands, and `ui.openModal` / `ui.openOverlay` show it again
 additive: a component written against an earlier host receives fewer keys, and
 the additive `entryExtra` position deliberately keeps the identity-only shape
 (`{ entry: { id, role, pluginId? }, sessionId }`).
+
+The region immediately left of the send control is a handover position of its
+own: `composerControl` at `beforeSend`. The host hands over what it would draw
+there — its own model picker, context display, and prompt-enhancement control,
+as **the host's own elements** plus the data behind them (`modelControl` /
+`modelSelection`, `contextControl` / `contextUsage`, `enhanceControl` /
+`enhancement`) — and the plugin decides the order of those pieces, may add
+controls of its own, and may omit a piece: a piece the component does not render
+is not drawn, and the host draws no second copy of one it does render. With
+nobody holding the position the host draws its own three pieces, in its own
+order, exactly as before; a component that crashes gives the region back to them
+(§2A.4). A `composerControl` registration is asked only for the positions it
+declares (`options.positions`, one of `left | right | beforeSend`); declaring
+none means the two control rows, so a component written before `beforeSend`
+existed is never handed a region it never asked for. `beforeSend` is one claim:
+a second registration that declares it is refused with `PLUGIN_SLOT_DUPLICATE`,
+and a list outside the published positions with `PLUGIN_SLOT_INVALID_POSITION`.
 
 Shadow DOM was rejected because portaled plugin UI would escape a shadow root
 (41 `createPortal` call sites across 18 renderer files).
@@ -203,7 +221,7 @@ Shadow DOM was rejected because portaled plugin UI would escape a shadow root
 | `toolCard` | The turn / tool card body for the plugin's own tools |
 | `codeBlock` | A fenced code block, per language |
 | `entryExtra` | An extra block below one transcript entry |
-| `composerControl` | Controls in the composer's left and right positions |
+| `composerControl` | Controls in the composer's two control rows, and the region immediately left of the send control |
 | `completionSource` | Candidates for the composer's completion popover |
 | `inlineConfirm` | An inline confirmation card |
 | `modal` | A blocking, app-level dialog |

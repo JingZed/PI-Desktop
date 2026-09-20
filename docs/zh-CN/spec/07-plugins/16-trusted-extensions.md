@@ -122,7 +122,8 @@ realm 本身不是边界，全局桥句柄始终可达：`contextBridge` 把 `wi
 
 替换型槽位（`entry`、`toolCard`、`inlineConfirm`、`modal`）至多一个注册
 （先 claim 者占用）。后来的注册以 `PLUGIN_SLOT_DUPLICATE` 拒绝。叠加型槽位
-按注册顺序堆叠（D8）。`codeBlock` 仍按语言 claim。
+按注册顺序堆叠（D8）；`composerControl` 在其两条控制行上属于叠加型，而在
+`beforeSend` 上是单 claim 的整体交出位置（见下）。`codeBlock` 仍按语言 claim。
 
 替换型位置会把所取代的宿主 surface 原本要显示的数据交给占用它的组件
 （ADR 0291）：`entry` 拿到宿主那一行原本会画的消息（`message.text`、
@@ -138,6 +139,19 @@ realm 本身不是边界，全局桥句柄始终可达：`contextBridge` 把 `wi
 而 `ui.openModal` / `ui.openOverlay` 会让它重新出现（§2A.7）。这些 props 是纯增量的：按更早宿主
 编写的组件只是拿到的键更少；叠加型的 `entryExtra` 位置刻意保持只有身份的形状
 （`{ entry: { id, role, pluginId? }, sessionId }`）。
+
+发送键左侧的那块区域是一个独立的整体交出位置：`composerControl` 的
+`beforeSend`。宿主把它本来会在那里绘制的东西整体交出 —— 自己的模型选择器、上下文
+占用显示与提示增强控件，都是**宿主自己的元素**，外加它们背后的数据（`modelControl` /
+`modelSelection`、`contextControl` / `contextUsage`、`enhanceControl` /
+`enhancement`）—— 三者的顺序由插件决定，插件可以添加自己的控件，也可以省略某一块：
+组件没有渲染的那一块就不会出现，而组件渲染了的那一块宿主不会再画第二份。没有插件占用
+该位置时，宿主按自己的顺序绘制自己的三块，与之前完全一致；组件抛错则位置回到宿主手中
+（§2A.4）。`composerControl` 的注册只会被问到它声明的位置（`options.positions`，
+取值为 `left | right | beforeSend` 之一）；不声明即保持两条控制行，因此
+`beforeSend` 出现之前写成的组件永远不会被塞进一块它没有要求的区域。`beforeSend`
+是单 claim：第二个声明它的注册会以 `PLUGIN_SLOT_DUPLICATE` 拒绝，取值不在已发布
+位置集合内的则以 `PLUGIN_SLOT_INVALID_POSITION` 拒绝。
 
 选择拒绝 Shadow DOM 的原因：被 portal 的插件 UI 会逃出 shadow root
 （渲染层 18 个文件、41 处 `createPortal` 调用）。
@@ -162,7 +176,7 @@ realm 本身不是边界，全局桥句柄始终可达：`contextBridge` 把 `wi
 | `toolCard` | 插件自有工具的回合 / 工具卡片主体 |
 | `codeBlock` | 按语言的围栏代码块渲染器 |
 | `entryExtra` | 某条转录条目下方的附加块 |
-| `composerControl` | composer 左右位置的控制项 |
+| `composerControl` | composer 两条控制行，以及发送键左侧的整体交出区域 |
 | `completionSource` | composer 补全弹层的候选项来源 |
 | `inlineConfirm` | 内联确认卡 |
 | `modal` | 阻塞式、应用级对话框 |

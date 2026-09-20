@@ -11,7 +11,12 @@
  * `PLUGIN_SLOT_DUPLICATE` so mounts never stack full replacements.
  */
 import type { ReactNode } from "react";
-import type { PiRendererSlotOptions, PluginRendererSlot } from "@pi-desktop/plugin-sdk";
+import {
+  PLUGIN_RENDERER_COMPOSER_POSITIONS,
+  type PiRendererComposerControlPosition,
+  type PiRendererSlotOptions,
+  type PluginRendererSlot,
+} from "@pi-desktop/plugin-sdk";
 import { isPluginRendererReplaceSlot } from "@pi-desktop/plugin-sdk";
 import {
   codeBlockLanguageProblem,
@@ -55,6 +60,13 @@ export type PluginSlotRegistration = {
   component: PluginSlotComponent;
   /** `codeBlock` only: the fenced language this component claimed. */
   language?: string;
+  /**
+   * `composerControl` only: the composer positions this registration declared,
+   * absent when it declared none — which means the two control rows
+   * (`PLUGIN_RENDERER_COMPOSER_DEFAULT_POSITIONS`). The registry normalizes and
+   * refuses a bad list, so a mount can compare against it directly.
+   */
+  positions?: readonly PiRendererComposerControlPosition[];
 };
 
 /**
@@ -76,6 +88,7 @@ export type PluginSlotDiagnostic = {
     | "PLUGIN_SLOT_NOT_DECLARED"
     | "PLUGIN_SLOT_INVALID_COMPONENT"
     | "PLUGIN_SLOT_DUPLICATE"
+    | "PLUGIN_SLOT_INVALID_POSITION"
     | "PLUGIN_DATA_UNSERVED"
     | "PLUGIN_STYLE_REFUSED"
     | "PLUGIN_STYLE_SCOPED"
@@ -116,6 +129,11 @@ function keyFor(pluginId: string, slot: PluginRendererSlot): string {
   return pluginId + KEY_SEP + slot;
 }
 
+/** True for a value from the SDK's published composer-position vocabulary. */
+function isComposerPosition(value: unknown): value is PiRendererComposerControlPosition {
+  return (PLUGIN_RENDERER_COMPOSER_POSITIONS as readonly unknown[]).includes(value);
+}
+
 class PluginSlotRegistry {
   /** Keyed by `(pluginId, slot)`, each list in registration order. */
   private readonly registrations = new Map<string, PluginSlotRegistration[]>();
@@ -138,7 +156,9 @@ class PluginSlotRegistry {
   /**
    * Registers one component. Returns the handle the plugin uses to withdraw it,
    * or null when the host refused the registration — `codeBlock` additionally
-   * needs the language it claims, which must be namespaced with its own id.
+   * needs the language it claims, which must be namespaced with its own id, and
+   * `composerControl` may declare the composer positions it wants to be asked
+   * for, where `beforeSend` is one claim.
    */
   register(
     pluginId: string,
@@ -156,6 +176,7 @@ class PluginSlotRegistry {
       return null;
     }
     let language: string | undefined;
+    let positions: readonly PiRendererComposerControlPosition[] | undefined;
     if (slot === "codeBlock") {
       language = normalizeCodeBlockLanguage(options?.language);
       const problem = codeBlockLanguageProblem(pluginId, language);
@@ -176,6 +197,39 @@ class PluginSlotRegistry {
           return null;
         }
       }
+    } else if (slot === "composerControl" && options?.positions !== undefined) {
+      const declared: unknown = options.positions;
+      if (
+        !Array.isArray(declared) ||
+        declared.length === 0 ||
+        !declared.every(isComposerPosition)
+      ) {
+        this.report({
+          pluginId,
+          slot,
+          code: "PLUGIN_SLOT_INVALID_POSITION",
+          detail: `options.positions must be a non-empty list of ${PLUGIN_RENDERER_COMPOSER_POSITIONS.join(" | ")}`,
+        });
+        return null;
+      }
+      positions = [...new Set(declared)];
+      // `beforeSend` is one claim: the host hands that region over whole, so a
+      // second component there would draw a second copy of the host's own
+      // controls. `left` and `right` stay additive, as they always were.
+      if (positions.includes("beforeSend")) {
+        const owner = this.list("composerControl").find((registration) =>
+          registration.positions?.includes("beforeSend"),
+        );
+        if (owner) {
+          this.report({
+            pluginId,
+            slot,
+            code: "PLUGIN_SLOT_DUPLICATE",
+            detail: `the beforeSend composer position is already claimed by ${owner.pluginId}`,
+          });
+          return null;
+        }
+      }
     }
     const key = keyFor(pluginId, slot);
     const list = this.registrations.get(key) ?? [];
@@ -184,6 +238,7 @@ class PluginSlotRegistry {
       slot,
       component: component as PluginSlotComponent,
       ...(language === undefined ? {} : { language }),
+      ...(positions === undefined ? {} : { positions }),
     };
     list.push(entry);
     this.registrations.set(key, list);

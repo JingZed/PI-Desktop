@@ -1,5 +1,5 @@
 import { bridgePlatform } from "../../../lib/bridge";
-import type { Dispatch, SetStateAction } from "react";
+import { useMemo, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import type { TFunction } from "i18next";
 import {
   keybindingDisplayParts,
@@ -29,7 +29,11 @@ import {
   nextMode,
 } from "./model";
 import type { useComposerModelMenu } from "./hooks/useComposerModelMenu";
-import { ComposerControlSlot } from "./ComposerControlSlot";
+import { calculateContextUsage } from "../../../lib/context-usage";
+import {
+  ComposerControlSlot,
+  type ComposerControlHandoff,
+} from "./ComposerControlSlot";
 
 type ModelMenuController = ReturnType<typeof useComposerModelMenu>;
 type ContextUsage = Parameters<typeof ContextUsageInspector>[0];
@@ -104,6 +108,109 @@ export function ComposerToolbar({
 }: ComposerToolbarProps) {
   const platform = (bridgePlatform()) as ShortcutPlatform;
   const steeringShortcut = keybindingDisplayParts("Alt+Enter", platform).join("+");
+  // The region immediately left of the send control is a plugin position
+  // (`composerControl`, `beforeSend`). These are the three pieces the host
+  // builds for it: the model picker, the context display, and the prompt
+  // enhancement control. They are built exactly once — with nobody holding the
+  // position the slot outlet draws them itself, and with a holder the host
+  // hands the same elements over, so a piece the plugin renders is never drawn
+  // twice (ComposerControlSlot).
+  //
+  // The one condition the host's enhancement control is disabled by. The region
+  // hands it over as data as well (`enhancement.enabled`).
+  const enhanceDisabled =
+    !enhancementDraft.trim() ||
+    enhancementDraft.trim().startsWith("/") ||
+    !modelReady ||
+    sendBlocked ||
+    enhancingPrompt;
+  const contextControl = contextUsage ? <ContextUsageInspector {...contextUsage} /> : null;
+  const modelControl = (
+    <ComposerModelPicker
+      t={t}
+      controller={modelMenu}
+      modelLabel={modelLabel}
+      thinkingLabel={thinkingLabel}
+      thinkingLevel={thinkingLevel}
+      selectedProviderId={providerId}
+      selectedModelId={modelId}
+      controlsBlocked={controlsBlocked}
+      onCloseOtherMenus={() => setPermissionOpen(false)}
+    />
+  );
+  const enhanceControl: ReactNode = (
+    <>
+      <TooltipButton
+        type="button"
+        className={`icon-btn icon-btn-square composer-enhance-btn${enhancingPrompt ? " is-loading" : ""}`}
+        tooltip={t("chat.enhancePrompt")}
+        ariaLabel={enhancingPrompt ? t("chat.enhancingPrompt") : t("chat.enhancePrompt")}
+        aria-busy={enhancingPrompt}
+        disabled={enhanceDisabled}
+        onClick={() => void enhancePrompt()}
+      >
+        {enhancingPrompt ? (
+          <>
+            <span className="tool-spinner" aria-hidden="true" />
+            <span>{t("chat.enhancingPrompt")}</span>
+          </>
+        ) : (
+          <IconSparkles size={15} aria-hidden="true" />
+        )}
+      </TooltipButton>
+      {enhancementUndoText !== null ? (
+        <TooltipButton
+          type="button"
+          className="icon-btn icon-btn-square composer-enhance-undo"
+          tooltip={t("chat.undoEnhancement")}
+          ariaLabel={t("chat.undoEnhancement")}
+          disabled={controlsBlocked}
+          onClick={undoPromptEnhancement}
+        >
+          <IconUndo2 size={15} aria-hidden="true" />
+        </TooltipButton>
+      ) : null}
+    </>
+  );
+  // The data behind those pieces, so a plugin handed the region can draw its
+  // own version of any of them instead of only embedding the host's node.
+  const modelSelection = useMemo(
+    () => ({
+      ...(providerId === undefined ? {} : { providerId }),
+      ...(modelId === undefined ? {} : { modelId }),
+      label: modelLabel,
+      thinkingLevel,
+      thinkingLabel,
+      ready: modelReady,
+    }),
+    [providerId, modelId, modelLabel, thinkingLevel, thinkingLabel, modelReady],
+  );
+  const contextUsageData = useMemo(
+    () =>
+      contextUsage
+        ? {
+            ...calculateContextUsage(contextUsage.usage, contextUsage.contextWindow),
+            contextWindow: contextUsage.contextWindow,
+          }
+        : null,
+    [contextUsage],
+  );
+  const enhancement = useMemo(
+    () => ({
+      enabled: !enhanceDisabled,
+      busy: enhancingPrompt,
+      undoText: enhancementUndoText,
+    }),
+    [enhanceDisabled, enhancingPrompt, enhancementUndoText],
+  );
+  const regionHandoff: ComposerControlHandoff = {
+    modelControl,
+    modelSelection,
+    contextControl,
+    contextUsage: contextUsageData,
+    enhanceControl,
+    enhancement,
+  };
   return (
     <div className="composer-toolbar">
       <div className="composer-left">
@@ -236,54 +343,21 @@ export function ComposerToolbar({
       </div>
 
       <div className="composer-right">
-        {contextUsage ? <ContextUsageInspector {...contextUsage} /> : null}
-        <ComposerModelPicker
-          t={t}
-          controller={modelMenu}
-          modelLabel={modelLabel}
-          thinkingLabel={thinkingLabel}
-          thinkingLevel={thinkingLevel}
-          selectedProviderId={providerId}
-          selectedModelId={modelId}
-          controlsBlocked={controlsBlocked}
-          onCloseOtherMenus={() => setPermissionOpen(false)}
-        />
-        <TooltipButton
-          type="button"
-          className={`icon-btn icon-btn-square composer-enhance-btn${enhancingPrompt ? " is-loading" : ""}`}
-          tooltip={t("chat.enhancePrompt")}
-          ariaLabel={enhancingPrompt ? t("chat.enhancingPrompt") : t("chat.enhancePrompt")}
-          aria-busy={enhancingPrompt}
-          disabled={
-            !enhancementDraft.trim() ||
-            enhancementDraft.trim().startsWith("/") ||
-            !modelReady ||
-            sendBlocked ||
-            enhancingPrompt
-          }
-          onClick={() => void enhancePrompt()}
+        {/* The region immediately left of the send control belongs to plugins
+          * (`composerControl`, `beforeSend`). The three pieces above are the
+          * host's own drawing of it: with nobody holding the position they are
+          * what this mount renders, and with a holder they are handed over
+          * instead — the same elements, so a piece the plugin renders is never
+          * drawn twice. */}
+        <ComposerControlSlot
+          position="beforeSend"
+          draft={value}
+          handoff={regionHandoff}
         >
-          {enhancingPrompt ? (
-            <>
-              <span className="tool-spinner" aria-hidden="true" />
-              <span>{t("chat.enhancingPrompt")}</span>
-            </>
-          ) : (
-            <IconSparkles size={15} aria-hidden="true" />
-          )}
-        </TooltipButton>
-        {enhancementUndoText !== null ? (
-          <TooltipButton
-            type="button"
-            className="icon-btn icon-btn-square composer-enhance-undo"
-            tooltip={t("chat.undoEnhancement")}
-            ariaLabel={t("chat.undoEnhancement")}
-            disabled={controlsBlocked}
-            onClick={undoPromptEnhancement}
-          >
-            <IconUndo2 size={15} aria-hidden="true" />
-          </TooltipButton>
-        ) : null}
+          {contextControl}
+          {modelControl}
+          {enhanceControl}
+        </ComposerControlSlot>
         {runActive && !hasDraftContent ? (
           <TooltipButton
             type="button"

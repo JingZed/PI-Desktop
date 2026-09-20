@@ -32,11 +32,16 @@
  *     `plugin_<id>_<tool>` prefix), which is why this plugin contributes
  *     `showcase_note` from its headless half. The card re-draws the call it
  *     stands in for — its name, arguments and result — beside its own controls.
- *   `composerControl`  — one registration asked for both composer control rows;
- *     it decides for itself which row it draws in (`position`), opens the layer
+ *   `composerControl`  — one registration, asked for all three composer
+ *     positions (the two control rows and the region immediately left of Send);
+ *     it decides for itself what it draws in each (`position`), opens the layer
  *     positions, and drives the draft through the declared
  *     `composer.readDraft` / `composer.replaceDraft` actions (including one
- *     deliberate `DRAFT_CONFLICT` and one unrouted `composer.insertText`).
+ *     deliberate `DRAFT_CONFLICT` and one unrouted `composer.insertText`). At
+ *     `beforeSend` the host hands the region over whole — its own model picker,
+ *     context display, and prompt-enhancement control as nodes, plus the data
+ *     behind them — and this module keeps all three pieces while reordering
+ *     them and adding its own buttons beside them.
  *   `completionSource` — rows inside the completion popover, below the host's.
  *   `composerReference`— the plugin's own chip beside the composer's chips.
  *   `inlineConfirm`, `modal`, `overlay` — the three layer positions. They are
@@ -1207,27 +1212,185 @@ function OverlayCard({ sessionId }) {
 }
 
 /**
- * `composerControl`: one registration, two control rows.
+ * The orders the region's cycle button walks: the same three pieces, three
+ * sequences. The host hands the region over whole, so the order inside it is
+ * this plugin's decision — and this demo keeps all three every time.
+ */
+const COMPOSER_REGION_ORDERS = [
+  ["model", "context", "enhance"],
+  ["context", "enhance", "model"],
+  ["enhance", "model", "context"],
+];
+
+/**
+ * The `beforeSend` region: the host's own three pieces, in this plugin's order.
  *
- * The host mounts the same registration at the end of the composer's left row
- * and at the end of its right row, and hands it `{ position, draft, sessionId? }`.
- * The component decides for itself which row it draws in and returns `null` for
- * the other, which leaves no hole. The `draft` prop is what the host handed over
- * at render time and is read-only; the left row's own buttons drive the same
- * draft through the declared `composer.readDraft` / `composer.replaceDraft`
- * actions (D8 keeps the host's own controls where they are). These buttons also
- * control this plugin's own layer registrations, which is something a composer
- * control can really do today.
+ * The host hands over `modelControl` / `contextControl` / `enhanceControl` as
+ * nodes — the elements its own toolbar draws — plus the data behind them
+ * (`modelSelection`, `contextUsage`, `enhancement`). This component only places
+ * those nodes: every piece is drawn exactly once, in the order shown on the
+ * control (`data-pi-showcase-region-order`), and the plugin's own buttons sit
+ * beside them. A piece whose data is `null` (the host has no measured turn to
+ * draw a context display from) is marked on the control instead of being
+ * silently dropped.
+ */
+function ComposerRegion({
+  modelControl,
+  modelSelection,
+  contextControl,
+  contextUsage,
+  enhanceControl,
+  enhancement,
+  draftLength,
+  sessionNote,
+  dispatch,
+}) {
+  const [orderIndex, setOrderIndex] = useState(0);
+  const order = COMPOSER_REGION_ORDERS[orderIndex];
+  const pieces = {
+    model: modelControl,
+    context: contextControl,
+    enhance: enhanceControl,
+  };
+  const data = {
+    model: modelSelection,
+    context: contextUsage,
+    enhance: enhancement,
+  };
+  const modalOpen = openLayers.has("modal");
+  const overlayOpen = openLayers.has("overlay");
+  const cycle = () => {
+    const next = (orderIndex + 1) % COMPOSER_REGION_ORDERS.length;
+    setOrderIndex(next);
+    // Reported to the plugin process like every other control here, so the
+    // console shows the order the window is really drawing.
+    void reportToProcess(dispatch, "renderer.slot", {
+      slot: "composerControl",
+      position: "beforeSend",
+      order: COMPOSER_REGION_ORDERS[next],
+    });
+  };
+  return createElement(
+    "span",
+    {
+      className: "acme-plugin-showcase__row acme-plugin-showcase__region",
+      "data-pi-showcase-region": "beforeSend",
+      "data-pi-showcase-region-order": order.join(","),
+      title:
+        `Showcase demo · the region left of Send · draft ${draftLength} char(s) · ${sessionNote}. ` +
+        "The host handed over its model picker, context display and prompt-enhancement " +
+        "control as nodes plus their data; this control orders them itself and adds its own buttons.",
+    },
+    [
+      ...order.map((piece) =>
+        createElement(
+          "span",
+          {
+            key: piece,
+            className: "acme-plugin-showcase__region-piece",
+            "data-pi-showcase-region-piece": piece,
+            // What the host handed over for this piece: "yes" when its data
+            // arrived, "none" when the host had nothing to hand over.
+            "data-pi-showcase-region-data": data[piece] ? "yes" : "none",
+          },
+          [
+            pieces[piece],
+            data[piece]
+              ? null
+              : createElement(
+                  "span",
+                  { key: "none", className: "acme-plugin-showcase__muted" },
+                  `${piece}: nothing handed over yet`,
+                ),
+          ],
+        ),
+      ),
+      createElement(
+        "button",
+        {
+          key: "cycle",
+          type: "button",
+          className: "acme-plugin-showcase__button pi-slot-btn",
+          "data-pi-showcase-trigger": "composerRegionCycle",
+          title:
+            "Cycles the order of the three pieces the host handed this region. " +
+            "No piece is ever dropped; only their sequence changes.",
+          onClick: cycle,
+        },
+        `Showcase: cycle region order (${order.join(" → ")})`,
+      ),
+      // This plugin's own controls beside the host's pieces — the same layer
+      // toggles the right row carries, drawn here because the plugin decides
+      // what the region holds. Adding is allowed; the host's pieces stay.
+      createElement(
+        "button",
+        {
+          key: "modal",
+          type: "button",
+          className: "acme-plugin-showcase__button pi-slot-btn",
+          "data-pi-showcase-trigger": "modal",
+          title: "Registration is what puts the modal layer on screen.",
+          onClick: () => setLayerOpen("modal", !modalOpen, dispatch),
+        },
+        modalOpen ? "Showcase: close modal" : "Showcase: modal",
+      ),
+      createElement(
+        "button",
+        {
+          key: "overlay",
+          type: "button",
+          className: "acme-plugin-showcase__button pi-slot-btn",
+          "data-pi-showcase-trigger": "overlay",
+          title: "Registration is what puts the overlay layer on screen.",
+          onClick: () => setLayerOpen("overlay", !overlayOpen, dispatch),
+        },
+        overlayOpen ? "Showcase: close overlay" : "Showcase: overlay",
+      ),
+      createElement(ProcessReportButton, { key: "report", dispatch }),
+    ],
+  );
+}
+
+/**
+ * `composerControl`: one registration, three control positions.
+ *
+ * The host mounts the same registration at the end of the composer's left row,
+ * at the end of its right row, and in the `beforeSend` region immediately left
+ * of the send button; this module declares all three (`positions`) and hands it
+ * `{ position, draft, sessionId? }`. The component decides for itself which
+ * position it draws in and returns `null` for the others, which leaves no hole.
+ * The `draft` prop is what the host handed over at render time and is read-only;
+ * the left row's own buttons drive the same draft through the declared
+ * `composer.readDraft` / `composer.replaceDraft` actions (D8 keeps the host's
+ * own controls where they are). These buttons also control this plugin's own
+ * layer registrations, which is something a composer control can really do
+ * today.
+ *
+ * `beforeSend` is the handover position: the host hands over the region whole —
+ * its own model picker (`modelControl`), context display (`contextControl`), and
+ * prompt-enhancement control (`enhanceControl`) as *nodes*, plus the data behind
+ * them (`modelSelection`, `contextUsage`, `enhancement`) — and this component
+ * decides the order of those three pieces, keeps all of them, and adds its own
+ * buttons beside them (see `ComposerRegion`). It never drops a piece and never
+ * draws one twice: it only renders the host's nodes, in its own order.
  *
  * A mount reports this module's live state to the plugin process (see
  * `useMountReport`), so the console's "slot-side reports" tile reflects a window
  * a user has really mounted a position in, with no button press needed.
  */
-function ComposerControl({ position, draft, sessionId, dispatch }) {
+function ComposerControl({ position, draft, sessionId, dispatch, ...region }) {
   useLayerState();
   useMountReport(dispatch);
   const draftLength = typeof draft === "string" ? draft.length : 0;
   const sessionNote = sessionId ? `session ${sessionId}` : "no session yet";
+  if (position === "beforeSend") {
+    return createElement(ComposerRegion, {
+      draftLength,
+      sessionNote,
+      dispatch,
+      ...region,
+    });
+  }
   if (position === "left") {
     const open = openLayers.has("inlineConfirm");
     return createElement("span", { className: "acme-plugin-showcase__row" }, [
@@ -1454,7 +1617,13 @@ export function onLoad(pi) {
   // options.
   registerSlot("codeBlock", KeyValueBlock, { language: CODE_LANGUAGE });
   registerSlot("toolCard", ToolCard);
-  registerSlot("composerControl", ComposerControl);
+  // All three composer positions this registration draws in: the two control
+  // rows and the region immediately left of Send, which the host hands over
+  // whole (model picker, context display, enhancement control, plus their
+  // data). `beforeSend` is one claim; this is where the showcase takes it.
+  registerSlot("composerControl", ComposerControl, {
+    positions: ["left", "right", "beforeSend"],
+  });
   registerSlot("completionSource", CompletionSource);
   registerSlot("composerReference", ComposerReference);
   // The three layer positions are registered on demand by the composer controls
