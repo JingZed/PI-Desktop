@@ -16,7 +16,10 @@ copy-me shape for `manifest.renderer` (spec `07-plugins/16-trusted-extensions.md
   fails manifest validation; a manifest that asks for it but was never granted it
   loads with the entry skipped and audited.
 - **Component slots.** `entryExtra` (a component-only slot, one extra block below
-  a transcript entry) and `modal` (a blocking, app-level dialog).
+  a transcript entry) and `modal` (a blocking, app-level dialog). The modal
+  registration *is* the layer, so its card carries a **Close the modal** button
+  that withdraws the registration; Escape is the host's own dismissal and leaves
+  the registration — and the card's `useState` counter — in place.
 - **Data in, actions out.** A slot component is handed two things: the slot's
   host data as props, and `dispatch(action, payload)`, which acts for the plugin
   that registered the component (ADR 0294). `rendererData` and
@@ -75,7 +78,10 @@ extension packages and is a different flow.
 
 The plugin row shows a `renderer` capability chip once the entry is served. The
 slots draw wherever the host's current surfaces mount them: the badge below a
-transcript entry, the dialog as an app-level modal.
+transcript entry, the dialog as an app-level modal. The dialog is up as soon as
+the entry runs — a registration is the layer — so **Close the modal** takes it
+away, and pressing Escape hides it the host's way (the registration stays, so the
+next render of that position brings the dialog back with its counter intact).
 
 The badge carries both classes of action, and each one reports what really came
 back rather than a tick:

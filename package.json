@@ -56,6 +56,7 @@
     "test:e2e:collaboration": "node scripts/e2e-session-collaboration.mjs",
     "test:e2e:session-completion": "node scripts/e2e-session-completion.mjs",
     "test:e2e:plugin-slots": "node scripts/e2e-plugin-slots.mjs",
+    "test:e2e:plugin-showcase": "node scripts/e2e-plugin-showcase-slots.mjs",
     "test:e2e:remote-host": "node scripts/e2e-remote-host.mjs"
   },
   "devDependencies": {

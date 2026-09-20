@@ -181,8 +181,14 @@ function EntryExtraBadge({ entry, dispatch }) {
  * `modal`: a blocking, app-level dialog. The counter is the point of the
  * example — `useState` comes from the host's React, so a hook used here behaves
  * exactly as it does in host UI, and nothing is duplicated to make that work.
+ *
+ * Registration *is* the layer (spec 07-plugins/16 2A.5): the host mounts this
+ * position as soon as the plugin registers it, which is why the card carries a
+ * close button that withdraws that registration. Escape is still the host's own
+ * dismissal, and it leaves the registration — and so this card's own state —
+ * alone.
  */
-function SlotsDemoModal() {
+function SlotsDemoModal({ onClose }) {
   const [renders, setRenders] = useState(0);
 
   return createElement("div", { className: "acme-slots-demo__card" }, [
@@ -206,17 +212,34 @@ function SlotsDemoModal() {
       },
       "Re-render",
     ),
+    createElement(
+      "button",
+      {
+        key: "close",
+        type: "button",
+        className: "acme-slots-demo__button acme-slots-demo__close",
+        "data-slots-demo-close": "modal",
+        onClick: onClose,
+      },
+      "Close the modal",
+    ),
   ]);
 }
 
 /**
  * Required by the host. There is no `onUnload` here on purpose: the host removes
  * every registration and the injected sheet when the plugin is unloaded,
- * disabled, or uninstalled, so a plugin that only registers slots has nothing to
- * clean up (D10).
+ * disabled, or uninstalled, so a plugin that only registers slots has nothing
+ * to clean up (D10).
+ *
+ * The modal's card closes by removing the handle this registration returned, so
+ * a plugin that registers a layer at load still gives the user a way out that
+ * is not the host's Escape key.
  */
 export function onLoad(pi) {
   pi.ui.injectStyle(STYLES);
   pi.slots.register("entryExtra", EntryExtraBadge);
-  pi.slots.register("modal", SlotsDemoModal);
+  const modal = pi.slots.register("modal", (props) =>
+    createElement(SlotsDemoModal, { ...props, onClose: () => modal.remove() }),
+  );
 }
