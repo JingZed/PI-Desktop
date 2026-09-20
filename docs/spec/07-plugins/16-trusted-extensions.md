@@ -285,9 +285,11 @@ host to call in the renderer (ADR 0294 decision 6).
 - This is a renderer-local path and is not an IPC channel: no host-core or
   Electron main message carries a function call, and a function must not make
   one because it must not perform I/O.
-- No host position calls a registered function yet. The positions that need a
-  synchronous plugin answer are among the eight component slots that are still
-  not mounted (two of the ten in §2A.5 render today).
+- No host position calls a registered function yet. All ten component slots in
+  §2A.5 are now mounted, but every position hands its data to a component as
+  ordinary props — including the ones that a synchronous answer was designed
+  for, a code block and a composer control. A registered function's callers are
+  therefore tests, and `callRendererFunction` is the only way in.
 
 ## 3. Contribution and import
 
