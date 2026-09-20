@@ -350,7 +350,7 @@ export function createPluginServices({
       if (!getHost()) {
         throw Object.assign(new Error("host unavailable"), { code: "UNSUPPORTED" });
       }
-      const parsed = parsePluginModelKey(input.modelKey);
+      const parsed = parsePluginModelKey(String(input.modelKey ?? ""));
       if (!parsed) {
         throw Object.assign(new Error("modelKey must be providerId/modelId"), {
           code: "INVALID_ARGUMENT",

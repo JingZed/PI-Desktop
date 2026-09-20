@@ -1738,6 +1738,7 @@ sklm: {
       actions: {
         "plugin.call": "Eigenen Hintergrundcode aufrufen",
         "composer.replaceDraft": "Entwurf im Eingabefeld ersetzen",
+        "composer.readDraft": "Entwurf im Eingabefeld lesen",
         "composer.insertText": "Text im Eingabefeld einfügen",
         "composer.attachPath": "Datei oder Ordner anhängen",
         "ui.openOverlay": "Überlagerung öffnen",

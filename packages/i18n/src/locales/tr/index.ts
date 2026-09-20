@@ -1755,6 +1755,7 @@ importConfirm: "İçe aktarılan uzantılar ajan sürecinde, ajanın kendi araç
       actions: {
         "plugin.call": "Kendi arka plan kodunu çağırma",
         "composer.replaceDraft": "Yazma alanı taslağını değiştirme",
+        "composer.readDraft": "Yazma alanı taslağını okuma",
         "composer.insertText": "Yazma alanına metin ekleme",
         "composer.attachPath": "Dosya veya klasör ekleme",
         "ui.openOverlay": "Kaplama açma",

@@ -1755,6 +1755,7 @@ importConfirm: "가져온 확장은 에이전트 프로세스 안에서 에이�
       actions: {
         "plugin.call": "자체 백그라운드 코드 호출",
         "composer.replaceDraft": "작성기 임시 내용 바꾸기",
+        "composer.readDraft": "작성기 임시 내용 읽기",
         "composer.insertText": "작성기에 텍스트 삽입",
         "composer.attachPath": "파일 또는 폴더 첨부",
         "ui.openOverlay": "오버레이 열기",

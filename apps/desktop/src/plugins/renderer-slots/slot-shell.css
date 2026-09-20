@@ -50,7 +50,7 @@
   color: var(--pi-slot-text);
   font-family: var(--pi-slot-font);
   font-size: var(--pi-slot-text-sm);
-  line-height: 1.4;
+  line-height: var(--leading-normal);
   cursor: pointer;
 }
 
@@ -73,7 +73,7 @@
   color: var(--pi-slot-text-muted);
   font-family: var(--pi-slot-font);
   font-size: var(--pi-slot-text-xs);
-  line-height: 1.5;
+  line-height: var(--leading-relaxed);
 }
 
 .pi-plugin-slot .pi-slot-field {

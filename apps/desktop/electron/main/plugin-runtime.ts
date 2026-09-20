@@ -4181,18 +4181,17 @@ export class PluginRuntime {
       // Use services.listModels directly: this grant must not require models.list.
       const rows = (await this.services.listModels?.()) ?? [];
       const list = Array.isArray(rows) ? rows : [];
-      const row = list.find(
-        (item) =>
-          item &&
-          typeof item === "object" &&
-          (item as { isDefault?: boolean }).isDefault === true &&
-          typeof (item as { modelKey?: unknown }).modelKey === "string",
-      ) as { modelKey?: string } | undefined;
-      const fallback = list.find(
-        (item) =>
-          item && typeof item === "object" && typeof (item as { modelKey?: unknown }).modelKey === "string",
-      ) as { modelKey?: string } | undefined;
-      modelKey = String(row?.modelKey ?? fallback?.modelKey ?? "").trim();
+      // Rows are `PluginModelInfo`: the model identity is `key`
+      // (`providerId/modelId`), and the host's own default row is `isDefault`.
+      const keyOf = (item: unknown): string => {
+        if (!item || typeof item !== "object") return "";
+        const key = (item as { key?: unknown }).key;
+        return typeof key === "string" ? key.trim() : "";
+      };
+      const preferred = list.find(
+        (item) => (item as { isDefault?: boolean }).isDefault === true && keyOf(item) !== "",
+      );
+      modelKey = keyOf(preferred) || keyOf(list.find((item) => keyOf(item) !== ""));
       if (!modelKey || !modelKey.includes("/")) {
         throw apiError("NO_MODEL", "no configured model for agent.model.complete");
       }

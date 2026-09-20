@@ -123,7 +123,7 @@ test("marketplace source settings omit redundant explanatory copy", () => {
 
 test("installed plugin rows keep secondary detail behind a disclosure", () => {
   assert.match(pageSrc, /function PluginRowDetails/);
-  assert.match(pageSrc, /<details className="plugins-row-details">/);
+  assert.match(pageSrc, /<details className="plugins-row-details"/);
   assert.match(pageSrc, /<ScopeControl[\s\S]*?compact/);
 });
 

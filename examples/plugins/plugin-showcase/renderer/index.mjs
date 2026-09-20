@@ -173,6 +173,7 @@ const STYLES = `
   color: var(--pi-slot-text-muted, inherit);
   font-size: var(--pi-slot-text-xs, 0.75rem);
   line-height: 1.7;
+}
 
 .acme-plugin-showcase__kv {
   display: block;

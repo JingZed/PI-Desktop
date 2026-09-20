@@ -1736,6 +1736,7 @@ sklm: {
       actions: {
         "plugin.call": "呼叫外掛自身的背景程式碼",
         "composer.replaceDraft": "取代輸入框草稿",
+        "composer.readDraft": "讀取輸入框草稿",
         "composer.insertText": "在輸入框中插入文字",
         "composer.attachPath": "附加檔案或資料夾",
         "ui.openOverlay": "開啟浮層",

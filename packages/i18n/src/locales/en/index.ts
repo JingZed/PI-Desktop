@@ -1761,6 +1761,7 @@ importConfirm: "Imported extensions run inside the agent process with the same a
       actions: {
         "plugin.call": "Call its own background code",
         "composer.replaceDraft": "Replace the composer draft",
+        "composer.readDraft": "Read the composer draft",
         "composer.insertText": "Insert text into the composer",
         "composer.attachPath": "Attach a file or folder",
         "ui.openOverlay": "Open an overlay",

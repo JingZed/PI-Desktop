@@ -1738,6 +1738,7 @@ sklm: {
       actions: {
         "plugin.call": "Appeler son propre code en arrière-plan",
         "composer.replaceDraft": "Remplacer le brouillon du composeur",
+        "composer.readDraft": "Lire le brouillon du composeur",
         "composer.insertText": "Insérer du texte dans le composeur",
         "composer.attachPath": "Joindre un fichier ou un dossier",
         "ui.openOverlay": "Ouvrir une surcouche",

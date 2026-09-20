@@ -1736,6 +1736,7 @@ sklm: {
       actions: {
         "plugin.call": "调用插件自身的后台代码",
         "composer.replaceDraft": "替换输入框草稿",
+        "composer.readDraft": "读取输入框草稿",
         "composer.insertText": "在输入框中插入文本",
         "composer.attachPath": "添加文件或文件夹",
         "ui.openOverlay": "打开浮层",

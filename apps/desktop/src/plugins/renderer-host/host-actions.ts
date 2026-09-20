@@ -4,14 +4,16 @@
  * this module is what it routes to, and it is installed once at app start from
  * `src/main.tsx` next to the other renderer-side installs.
  *
- * Three of the nine vocabulary names are implemented here:
+ * Four of the ten vocabulary names are implemented here:
  *
  * - `plugin.call { method, args? }` forwards to the plugin's own headless entry
  *   through `api.pluginRendererCall`, which re-checks the manifest in the main
  *   process and relays to that plugin's process.
  * - `ui.toast { message, variant? }` raises the shell's existing toast.
- * - `composer.replaceDraft { text }` writes the draft through the one external
- *   path a mounted composer consumes.
+ * - `composer.readDraft {}` answers a snapshot of the active session's draft.
+ * - `composer.replaceDraft { text, expectedGeneration?, fileReferences? }`
+ *   writes the draft through the one external path a mounted composer consumes,
+ *   and answers with the previous snapshot and the new generation.
  *
  * The other six names have no handler, so the relay refuses them as
  * `PLUGIN_ACTION_UNROUTED` instead of resolving `undefined`.
@@ -24,6 +26,7 @@
  * a security boundary.
  */
 import { api } from "../../lib/api";
+import type { ComposerDraftFileReference } from "../../lib/composer-smart-stop";
 import { useAppStore } from "../../stores/app-store";
 import { pluginSlots, type PluginSlotDiagnostic } from "../renderer-slots/registry";
 import { refuseRendererAction, registerHostRendererAction } from "./relay";
@@ -125,7 +128,7 @@ export type ComposerDraftSnapshot = {
   sessionId: string;
   generation: number;
   text: string;
-  fileReferences: ReadonlyArray<{ id: string; path?: string; name?: string }>;
+  fileReferences: ComposerDraftFileReference[];
 };
 
 type ReplaceDraftOk = {
@@ -214,12 +217,20 @@ async function replaceComposerDraft(
     );
   }
   const refsInput = record?.fileReferences;
-  const fileReferences =
+  // The snapshot carries the composer's own chip entries (`path` + `name`), so
+  // a plugin can hand an earlier snapshot straight back and keep its chips.
+  const fileReferences: ComposerDraftFileReference[] =
     refsInput === "preserve"
       ? [...previous.fileReferences]
       : Array.isArray(refsInput)
-        ? refsInput.filter((item): item is { id: string; path?: string; name?: string } =>
-            Boolean(item && typeof item === "object" && typeof (item as { id?: unknown }).id === "string"),
+        ? refsInput.filter(
+            (item): item is ComposerDraftFileReference =>
+              Boolean(
+                item &&
+                  typeof item === "object" &&
+                  typeof (item as { path?: unknown }).path === "string" &&
+                  typeof (item as { name?: unknown }).name === "string",
+              ),
           )
         : [];
   const nextGeneration = generation + 1;
@@ -260,7 +271,7 @@ function prefillConsumed(deadlineMs: number): Promise<boolean> {
 
 /**
  * Registers the three implemented actions. Called once from the app entry;
- * calling it again registers the same functions, so the relay is never left
+ * Registers the four implemented actions. Called once from the app entry;
  * half wired.
  */
 export function installRendererHostActions(): void {

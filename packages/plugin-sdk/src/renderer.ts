@@ -194,7 +194,8 @@ export const PLUGIN_RENDERER_ACTIONS = [
   "plugin.call",
   /**
    * Replaces the active session's whole composer draft. Payload
-   * `{ text: string, expectedGeneration?: number, fileReferences?: [] | "preserve" }`.
+   * `{ text: string, expectedGeneration?: number, fileReferences?: "preserve" |
+   * Array<{ path: string; name: string; kind?: "image" | "file"; mimeType?: string }> }`.
    * Resolves with `{ ok: true, generation, previous }` once a mounted composer
    * consumed the write; refuses with `PLUGIN_ACTION_DRAFT_UNCONSUMED` when none
    * did, or `DRAFT_CONFLICT` on generation mismatch.
@@ -203,7 +204,10 @@ export const PLUGIN_RENDERER_ACTIONS = [
   /**
    * Reads a snapshot of the active session composer draft for the calling
    * plugin. Payload `{}`. Resolves with `{ sessionId, generation, text,
-   * fileReferences }`. Refused with a coded error when no session is active.
+   * fileReferences }`, where each reference is the composer's own chip shape
+   * (`{ path, name, kind?, mimeType? }`) — the host holds no plugin-owned id, so
+   * `path` is the identity. Refused with a coded error when no session is
+   * active.
    */
   "composer.readDraft",
   /**
@@ -366,7 +370,7 @@ export type PiRendererApi = {
      *
      * The host auto-scopes every selector under this plugin's
      * `data-pi-plugin` container before the sheet is served. Top-level `html`,
-     * `body`, or `*` (including nested in `@media`) are refused with
+     * `body`, or `*` (including nested in any block at-rule) are refused with
      * `PLUGIN_STYLE_REFUSED`. `:root` is rewritten to the plugin container so
      * theme branches stay writable. Public design tokens are the
      * `--pi-slot-*` names in `PLUGIN_SLOT_DESIGN_TOKENS`; host-internal
@@ -395,11 +399,15 @@ export type PiRendererModule = {
 export const PLUGIN_STYLE_FORBIDDEN_ROOT_SELECTORS = ["html", "body", "*"] as const;
 
 /**
- * Scope every non-at-rule selector in `css` under the plugin's own container.
- * `:root` becomes the container (and `:root[data-theme=…]` becomes the
- * container carrying `data-pi-theme`). Selectors already prefixed with this
- * plugin's container are left alone. `@keyframes` / `@font-face` names are
- * rewritten to `pi-<pluginId>-<name>`.
+ * Scope every selector in `css` under the plugin's own container, descending
+ * into every block at-rule body except the descriptor / keyframe-step ones
+ * (`@keyframes`, `@font-face`, `@page`, …). An at-rule this host has never
+ * heard of — `@starting-style` today, whatever ships next — is therefore
+ * scoped exactly like `@media`, never passed through. `:root` becomes the
+ * container (and `:root[data-theme=…]` becomes the container carrying
+ * `data-pi-theme`). Selectors already prefixed with this plugin's container are
+ * left alone. `@keyframes` / `@font-face` names are rewritten once per sheet,
+ * wherever they sit.
  *
  * Throws `PLUGIN_STYLE_REFUSED` for forbidden root selectors or `@import`.
  * This is the author-facing preview helper; the host runs the same rewrite at
@@ -411,8 +419,12 @@ export function scopePluginStyle(pluginId: string, css: string): string {
 
 /**
  * Implementation lives behind this indirection only so the pure rewrite can be
- * unit-tested without pulling the desktop app. Host injectors import
- * `scopePluginStyle` from the SDK or their local copy of the same algorithm.
+ * unit-tested without pulling the desktop app. Two passes, in this order:
+ * rewrite `@keyframes` / `@font-face` names and the `animation*` values that
+ * reference them exactly once for the whole sheet, then let
+ * `scopeRuleSelectors` walk in and scope selectors only. Keeping the name
+ * rewrite out of the recursion is what stops a keyframe or font-face nested in
+ * a conditional group from being prefixed twice.
  */
 function scopePluginStyleImpl(pluginId: string, css: string): string {
   const withoutComments = css.replace(/\/\*[\s\S]*?\*\//g, "");
@@ -449,34 +461,56 @@ function scopePluginStyleImpl(pluginId: string, css: string): string {
       return `${prop}${rewritten}`;
     },
   );
+  return scopeRuleSelectors(working, pluginId, container);
+}
 
+/**
+ * At-rules whose body is a list of descriptors or keyframe steps rather than a
+ * rule list: their bodies are copied verbatim, because entering them would
+ * rewrite something that is not a selector. Every other block at-rule body is
+ * entered, so an at-rule this host has never heard of is scoped like `@media`
+ * instead of passing its selectors through unscoped.
+ */
+const VERBATIM_AT_RULE_BODIES =
+  /^@(?:-webkit-)?(?:keyframes|font-face|page|property|counter-style|font-feature-values|color-profile|viewport)\b/i;
+
+/**
+ * Pass 2: scope the selectors of an already renamed sheet. Every block at-rule
+ * body is entered except `VERBATIM_AT_RULE_BODIES`; at-rules without a block
+ * (`@charset`, `@namespace`, …) are left as written. Recursion goes through
+ * this function, never through `scopePluginStyleImpl`, so the name rewrite
+ * cannot run a second time on nested content. Trimmed at every level, exactly
+ * as the recursive call to `scopePluginStyleImpl` used to be.
+ */
+function scopeRuleSelectors(css: string, pluginId: string, container: string): string {
   const out: string[] = [];
   let index = 0;
-  while (index < working.length) {
-    const brace = working.indexOf("{", index);
+  while (index < css.length) {
+    const brace = css.indexOf("{", index);
     if (brace < 0) {
-      out.push(working.slice(index));
+      out.push(css.slice(index));
       break;
     }
     const start = Math.max(
-      working.lastIndexOf("}", brace - 1),
-      working.lastIndexOf("{", brace - 1),
-      working.lastIndexOf(";", brace),
+      css.lastIndexOf("}", brace - 1),
+      css.lastIndexOf("{", brace - 1),
+      css.lastIndexOf(";", brace),
     );
-    const selectorText = working.slice(start + 1, brace);
+    const selectorText = css.slice(start + 1, brace);
     const blockStart = brace;
-    const blockEnd = findBlockEnd(working, brace);
-    const body = working.slice(blockStart, blockEnd + 1);
+    const blockEnd = findBlockEnd(css, brace);
+    const body = css.slice(blockStart, blockEnd + 1);
 
     if (!selectorText.trim() || selectorText.trimStart().startsWith("@")) {
-      // At-rule: recurse into its body when it is a conditional group.
+      // At-rule with a block: recurse into its body unless that body is
+      // descriptors or keyframe steps.
       const at = selectorText.trimStart();
-      if (/^@(?:media|supports|container|layer|scope)\b/i.test(at) && blockEnd > blockStart) {
-        const inner = working.slice(blockStart + 1, blockEnd);
-        const scopedInner = scopePluginStyleImpl(pluginId, inner);
-        out.push(working.slice(index, start + 1), selectorText, "{", scopedInner, "}");
+      if (!VERBATIM_AT_RULE_BODIES.test(at) && blockEnd > blockStart) {
+        const inner = css.slice(blockStart + 1, blockEnd);
+        const scopedInner = scopeRuleSelectors(inner, pluginId, container);
+        out.push(css.slice(index, start + 1), selectorText, "{", scopedInner, "}");
       } else {
-        out.push(working.slice(index, blockEnd + 1));
+        out.push(css.slice(index, blockEnd + 1));
       }
       index = blockEnd + 1;
       continue;
@@ -487,7 +521,7 @@ function scopePluginStyleImpl(pluginId: string, css: string): string {
       .map((part) => scopeSelector(part.trim(), pluginId, container))
       .filter((part) => part.length > 0)
       .join(", ");
-    out.push(working.slice(index, start + 1), scopedSelector, body);
+    out.push(css.slice(index, start + 1), scopedSelector, body);
     index = blockEnd + 1;
   }
   return out.join("").trim();

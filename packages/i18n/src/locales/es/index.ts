@@ -1738,6 +1738,7 @@ sklm: {
       actions: {
         "plugin.call": "Llamar a su propio código en segundo plano",
         "composer.replaceDraft": "Reemplazar el borrador del compositor",
+        "composer.readDraft": "Leer el borrador del compositor",
         "composer.insertText": "Insertar texto en el compositor",
         "composer.attachPath": "Adjuntar un archivo o una carpeta",
         "ui.openOverlay": "Abrir una capa superpuesta",

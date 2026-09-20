@@ -117,7 +117,12 @@ export type RendererActionRefusalCode =
   | "PLUGIN_ACTION_UNDECLARED"
   | "PLUGIN_ACTION_UNROUTED"
   | "PLUGIN_ACTION_INVALID_PAYLOAD"
-  | "PLUGIN_ACTION_DRAFT_UNCONSUMED";
+  | "PLUGIN_ACTION_DRAFT_UNCONSUMED"
+  // A handler may need the live UI to answer: `composer.readDraft` refuses
+  // `NO_SESSION` when no session is active, and `composer.replaceDraft` refuses
+  // `DRAFT_CONFLICT` when the caller's `expectedGeneration` is stale.
+  | "NO_SESSION"
+  | "DRAFT_CONFLICT";
 
 /**
  * Builds the coded error and records the same refusal as a diagnostic. The
