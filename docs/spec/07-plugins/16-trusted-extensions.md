@@ -511,7 +511,9 @@ the declaration so `getFlag` works but exposes no CLI or UI in v1;
 ## 6. Event mapping
 
 Events fire from the desktop runtime's existing hook points. Handler results
-are honored where the event type defines a result.
+are honored where the event type defines a result. Slot 6
+(`runtime.request.before`) is withdrawn, so its six events are inert: a handler
+that registers one is accepted silently and never runs.
 
 | Event | Desktop hook point | Result honored |
 |---|---|---|
@@ -519,9 +521,10 @@ are honored where the event type defines a result.
 | `session_info_changed` | Session rename through `setSessionName` | No |
 | `project_trust` | v1 note: not emitted; enablement per project is the trust decision | No |
 | `resources_discover` | v1 note: not emitted; skills and prompt discovery stay in Electron main | n/a |
-| `before_agent_start` | Before the first provider request of a turn | Yes, `systemPrompt` only: the code reads `result.systemPrompt` and discards returned messages. Message rewriting belongs to the `context` point below |
-| `context` | `prepareNextTurn` | Yes, replacement message list |
-| `before_provider_request`, `before_provider_headers`, `after_provider_response` | Provider call wrapper | Yes for request and headers |
+| `before_agent_start` | Withdrawn with slot 6 (`runtime.request.before`): a registered handler is accepted silently and never consulted | No |
+| `context` | Withdrawn with slot 6: a registered handler is accepted silently and never consulted | No |
+| `before_provider_request`, `before_provider_headers` | Withdrawn with slot 6: a registered handler is accepted silently and never consulted | No |
+| `after_provider_response` | Provider call wrapper | No |
 | `agent_start`, `agent_end`, `agent_settled` | Agent loop boundaries | No |
 | `turn_start`, `turn_end` | Turn boundaries | No |
 | `turn_closing` | `shouldStopAfterTurn` (runtime slot 7, issue #561; gated by `runtime.turn.closing` — spec 13 §2C) | Yes: `{ continue: true, message? }` keeps the run going, bounded per run |
@@ -529,7 +532,7 @@ are honored where the event type defines a result.
 | `tool_call` | `beforeToolCall` | Yes, block with reason. Modifying the call's arguments is not available and is permanently excluded (ADR 0295 rule 4) |
 | `tool_execution_start`, `tool_execution_update`, `tool_execution_end` | Tool execution stream | No |
 | `tool_result` | `afterToolCall` | Yes, replacement result |
-| `model_select`, `thinking_level_select` | v1 note: not emitted; a binding change retires the runtime | No |
+| `model_select`, `thinking_level_select` | Withdrawn with slot 6: a registered handler is accepted silently and never consulted | No |
 | `session_before_compact`, `session_compact`, `session_compact_failed` | Compaction pipeline | Yes for `session_before_compact` |
 | `input` | After Electron main persisted the message, before it is queued for the model (runtime slot 1, issue #561; gated by `runtime.send.before` — spec 13 §2C) | Yes: `{ action: "continue" \| "transform" \| "handled", text?, reason? }`; `transform` replaces what the model reads and is recorded at diff level (ADR 0295 rule 5) |
 | `session_before_switch` | Session switch: the session being left, announced before the new one is opened (runtime slot 11, informed-only — ADR 0295 rule 11) | No |
@@ -545,9 +548,10 @@ wired event that changes a turn; `session_start`, `session_shutdown` and
 `session_info_changed` have no slot. Every slot permission is registered, so the
 gate is strict for every plugin: `agent.extension` says where the code runs and
 never implies a grant, not even for the high-trust tier. An event mapped to a
-slot the desktop does not emit yet (`project_trust`, `resources_discover`,
-`model_select`, `thinking_level_select`) keeps the gate on the mapping, so no
-handler runs from a hook point that never fires. The lifecycle notices are
+slot the desktop does not emit yet (`project_trust`, `resources_discover`)
+keeps the gate on the mapping, so no handler runs from a hook point that never
+fires. The six slot-6 events are mapped to nothing at all: they are accepted at
+registration and then never consulted. The lifecycle notices are
 informed-only: `session_before_switch`, `session_before_fork` and
 `session_lifecycle` are emitted and never awaited, so a plugin cannot delay a
 switch, a fork or a delete (ADR 0295 rule 11).

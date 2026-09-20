@@ -396,7 +396,8 @@ main、渲染层或插件宿主进程中。
 ## 6. 事件映射
 
 事件从桌面运行时现有的 hook 点触发。凡事件类型定义了返回结果的，处理器结果
-均被采纳。
+均被采纳。槽位 6（`runtime.request.before`）已撤回，它的六个事件均为惰性：
+注册的处理器会被静默接受，永远不会运行。
 
 | 事件 | 桌面 hook 点 | 是否采纳结果 |
 |---|---|---|
@@ -404,9 +405,10 @@ main、渲染层或插件宿主进程中。
 | `session_info_changed` | 经 `setSessionName` 的会话改名 | 否 |
 | `project_trust` | v1 说明：不触发；按项目启用即信任决定 | 否 |
 | `resources_discover` | v1 说明：不触发；skills 与提示发现留在 Electron main | 不适用 |
-| `before_agent_start` | 回合内首个 provider 请求之前 | 是，但只采纳 `systemPrompt`：代码读取 `result.systemPrompt`，返回的消息会被丢弃。消息改写属于下方的 `context` 点 |
-| `context` | `prepareNextTurn` | 是，替换消息列表 |
-| `before_provider_request`、`before_provider_headers`、`after_provider_response` | provider 调用包装 | 请求与头部为是 |
+| `before_agent_start` | 随槽位 6（`runtime.request.before`）撤回：注册的处理器会被静默接受，永远不会被咨询 | 否 |
+| `context` | 随槽位 6 撤回：注册的处理器会被静默接受，永远不会被咨询 | 否 |
+| `before_provider_request`、`before_provider_headers` | 随槽位 6 撤回：注册的处理器会被静默接受，永远不会被咨询 | 否 |
+| `after_provider_response` | provider 调用包装 | 否 |
 | `agent_start`、`agent_end`、`agent_settled` | Agent 循环边界 | 否 |
 | `turn_start`、`turn_end` | 回合边界 | 否 |
 | `turn_closing` | `shouldStopAfterTurn`（运行时槽 7，issue #561；由 `runtime.turn.closing` 门禁 —— 规格 13 §2C） | 是：`{ continue: true, message? }` 让本回合继续，按运行次数上限约束 |
@@ -414,7 +416,7 @@ main、渲染层或插件宿主进程中。
 | `tool_call` | `beforeToolCall` | 是，可带理由阻止。修改该调用的参数不可用，且已被永久排除（ADR 0295 规则 4） |
 | `tool_execution_start`、`tool_execution_update`、`tool_execution_end` | 工具执行流 | 否 |
 | `tool_result` | `afterToolCall` | 是，替换结果 |
-| `model_select`、`thinking_level_select` | v1 说明：不触发；绑定变更会重建运行时 | 否 |
+| `model_select`、`thinking_level_select` | 随槽位 6 撤回：注册的处理器会被静默接受，永远不会被咨询 | 否 |
 | `session_before_compact`、`session_compact`、`session_compact_failed` | 压缩流水线 | `session_before_compact` 为是 |
 | `input` | Electron main 持久化消息之后、进入模型队列之前（运行时槽 1，issue #561；由 `runtime.send.before` 门禁 —— 规格 13 §2C） | 是：`{ action: "continue" \| "transform" \| "handled", text?, reason? }`；`transform` 替换模型读到的内容，并按差异级别记录（ADR 0295 规则 5） |
 | `session_before_switch` | 会话切换：被离开的会话，在新会话打开之前通告（运行时槽 11，仅告知 —— ADR 0295 规则 11） | 否 |
@@ -428,8 +430,8 @@ main、渲染层或插件宿主进程中。
 事件；`session_start`、`session_shutdown` 与 `session_info_changed` 没有槽位。所有槽位
 权限都已注册，因此门禁对所有插件都是严格的：`agent.extension` 只说明代码在哪里运行，
 绝不隐含授权，高信任层级也不例外。映射到桌面尚未触发的事件（`project_trust`、
-`resources_discover`、`model_select`、`thinking_level_select`）按映射保留门禁，
-因此不会从不触发的钩子点运行任何处理器。生命周期通告均为仅告知：
+`resources_discover`）按映射保留门禁，因此不会从不触发的钩子点运行任何处理器。
+槽位 6 的六个事件没有任何映射：注册会被接受，之后永远不会被咨询。生命周期通告均为仅告知：
 `session_before_switch`、`session_before_fork` 与 `session_lifecycle` 会被发出且从不等待，
 因此插件无法拖延切换、fork 或删除（ADR 0295 规则 11）。
 

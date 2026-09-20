@@ -994,11 +994,12 @@ CREATE INDEX idx_notifications_unread
 ### 4.15 plugin_rewrites — 插件改写的差分级审计（架构 v20）
 
 运行时插槽对"模型收到的内容"所做的每一次改写都按**差分级**记录 —— 改了哪些字符、哪些
-消息、哪些负载字段（ADR 0295 规则 5）。生产者是插槽 #1（`runtime.send.before`，发出的
-消息）与插槽 #6（`runtime.request.before`，系统提示词 / 消息列表 / 请求负载）。插槽 #1
-已实现：agent 运行时的发送钩子把两段文本交给宿主，`plugin.rewrites.record` 存入差异，
-transcript 在对应行标出（"由插件 X 改写"），展开可见改动片段。插槽 #6 尚未实现：存储与
-读取已先共用同一张表和同一组上限，因为 ADR 把审计当作改写能力的前提而不是后续工作。
+消息、哪些负载字段（ADR 0295 规则 5）。唯一的生产者是插槽 #1（`runtime.send.before`，
+发出的消息）：agent 运行时的发送钩子把两段文本交给宿主，`plugin.rewrites.record` 存入
+差异，transcript 在对应行标出（"由插件 X 改写"），展开可见改动片段。插槽 #6
+（`runtime.request.before`，系统提示词 / 消息列表 / 请求负载）在交付前已撤回（ADR
+0295），它的 `system_prompt`、`message_list`、`request_payload` 种类永远不会被写入；
+存储与读取先共用同一张表和同一组上限，因为 ADR 把审计当作改写能力的前提而不是后续工作。
 
 ```sql
 CREATE TABLE plugin_rewrites (
@@ -1054,7 +1055,7 @@ CREATE INDEX idx_plugin_rewrites_turn
 这一切都不是静默的：`truncated` 表明有上限动过这条记录，`dropped_edits` 表明缺了多少条目，
 因此被截断的记录绝不会被误认为完整记录。
 
-读取：单个回合的记录按最旧在前 —— 即改写在该回合中发生的顺序，也是插槽 #1 / #6 表面读取的
+读取：单个回合的记录按最旧在前 —— 即改写在该回合中发生的顺序，也是插槽 #1 改写表面读取的
 形状 —— 单个会话的记录按最新在前。两者都以 `created_at` 排序、以 `id` 作为确定性的并列
 次序，都接受可选的 kind 过滤，并把 limit 限制在 500。
 
@@ -1231,9 +1232,10 @@ outbox 排空。渲染器侧的停止绝不重写已有已开始回复的转录
   `pi.sqlite.v18.bak` 副本。
 - **架构 v20 是追加式的。** 它新增 `plugin_rewrites`，即"插件改动了模型收到内容"的差分级
   审计，连同两个读取索引（ADR 0295 规则 5）。没有任何已有行变化，也没有已存值被重写；
-  该表初始为空，因为它的生产者 —— 插槽 #1（`runtime.send.before`）与插槽 #6
-  （`runtime.request.before`）—— 尚未实现，审计面因此先于依赖它的能力落地。该步骤之前
-  保留 `pi.sqlite.v19.bak` 副本。
+  该步骤建出的表是空的，因为审计面先于依赖它的能力落地：插槽 #1（`runtime.send.before`）
+  是唯一写这张表的生产者，而插槽 #6（`runtime.request.before`）在交付前已撤回，它的
+  系统提示词 / 消息列表 / 请求负载种类永远不会被写入。该步骤之前保留 `pi.sqlite.v19.bak`
+  副本。
 - **架构 v21 是追加式的。** 它新增可空的 `audit_log.turn_id` 列及其部分索引
   `idx_audit_turn`，使单个回合的记录 —— 以及随其而来的 `turn.facts`（§4.16，
   ADR 0295 规则 8）—— 成为索引读取，而不必扫描已脱敏的有效负载。每一条已有行都保留

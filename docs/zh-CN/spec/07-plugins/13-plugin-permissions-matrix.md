@@ -51,9 +51,10 @@
 | `session.delete.own` | 高 | `pi.session.delete` | 安装时确认 | 只能回收或清除本插件导入的会话；有频率限制 |
 | `usage.read` | 中等 | `pi.usage.listTurns` | 安装时确认 | 已完成 turn 事实行的只读列举（每回合 token 计数与标识符，keyset 分页）；不含消息正文，无写路径 |
 | `agent.complete` | 高 | `pi.agent.complete` | 安装时确认 | 宿主代发一次性补全；消耗用户额度；`includeSessionContext` 还需要 `session.read` |
+| `agent.model.complete` | 高 | 在用户已配置的模型上运行插件 AI | 安装时确认 | 一次性插件补全（`pi.ai.complete`）；可选 `model` 限定在用户的 provider 目录之内；`system` 不会与会话提示词自动合并。既有的 `agent.complete` 仍然接受。 |
 | `speech.adapter.register` | 高 | `pi.speech.registerAdapter` / `unregisterAdapter` | 安装时确认 | 注册语音协议。handle 留在插件进程；HTTP 计划由宿主用绑定密钥代发且必须同 origin |
 | `renderer.extension` | 高 | 在宿主渲染器内以 ES 模块运行 `manifest.renderer`，把组件注册进宿主持有的槽位 | 显式确认；按层级，绝不逐槽位 | 模块在应用窗口内、宿主自己的 realm 中运行，没有进程隔离。一个权限覆盖全部组件槽位（规格 16 §2A、ADR 0291） |
-| `runtime.request.before` | 高 | 运行时槽位咨询：Before Request | 安装时确认 | 改写一次请求的内容：系统提示词、模型与思考等级、请求负载，以及消息列表（可删除 / 替换 / 重排）。每处改写都以 diff 级别记录，事后可查（ADR 0295 规则 5） |
+| `runtime.request.before` | — | 已撤回 | — | 不提供槽位 6；对模型读到的内容做静默改写不是插件能力面。 |
 | `runtime.send.before` | 高 | 运行时槽位咨询：Before Send | 安装时确认 | 用户按下发送之后、消息进入队列之前被咨询：可以读取它（含附件）、拦下它，或改写模型收到的内容；改写会在消息行上标注。该槽位挂在 `input` 事件上 |
 | `runtime.session.lifecycle` | 高 | 运行时槽位咨询：Session Lifecycle | 安装时确认 | 会话创建 / 切换 / 删除 / fork 与压缩时都会收到通知。销毁性动作只有知情权；它可以取消压缩，并收到即将被压缩掉的片段；会话切换或删除永远不会等待插件（ADR 0295 规则 11） |
 | `runtime.session.read` | 高 | 运行时槽位咨询：Session Read | 安装时确认 | 读取会话内容。读取不会逐次记录；安装审查与插件行就是授权面（ADR 0295 规则 7） |
@@ -124,15 +125,19 @@ ADR 0295 要建的每一个运行时槽位都已注册并受门禁。agent sidec
 `requestTurnAbort` 需要 `runtime.turn.abort`，插件工具的扩展结果需要
 `runtime.tool.extend`。
 
-门禁读的是权限表本身，而不是把它当过滤器：ADR 0295 落地的十二个 `runtime.*` 名字都在
-`PLUGIN_PERMISSIONS` 里，`@pi-desktop/shared` 的 `REGISTERED_SLOT_PERMISSIONS` 与它们
-一一对应，两份清单一旦漂移，桌面端守卫测试就会失败。`runtime.approval.before` 是记录
-明确不建的那个槽位：没有事件映射到它，也没有权限表持有它。修改工具调用的参数不是槽位，
+门禁读的是权限表本身，而不是把它当过滤器：随本次发布上线的十一个 `runtime.*` 名字都在
+`PLUGIN_PERMISSIONS` 里（十个槽位加上 `runtime.session.read`），`@pi-desktop/shared` 的
+`REGISTERED_SLOT_PERMISSIONS` 与它们一一对应，两份清单一旦漂移，桌面端守卫测试就会失败。
+槽位 6（`runtime.request.before`）已撤回，刻意不存在于这两份清单中；`runtime.approval.before`
+是记录明确不建的那个槽位：没有事件映射到它，也没有权限表持有它。修改工具调用的参数不是槽位，
 且已被永久排除（ADR 0295 规则 4）：`tool_call` 处理器只能带理由阻止，别的都不能做。
 
-有些已映射事件挂在桌面尚未触发的钩子点上（`project_trust`、`resources_discover`、
-`model_select`、`thinking_level_select`）。它们的权限按映射关系强制执行，因此钩子点一接线
-门禁就已就位；在那之前没有处理器会运行，因为事件根本不会触发。会话生命周期通告正好相反：
+有些已映射事件挂在桌面尚未触发的钩子点上（`project_trust`、`resources_discover`）。
+它们的权限按映射关系强制执行，因此钩子点一接线门禁就已就位；在那之前没有处理器会运行，
+因为事件根本不会触发。撤回的槽位 6 的六个事件（`before_agent_start`、`context`、
+`before_provider_request`、`before_provider_headers`、`model_select`、
+`thinking_level_select`）没有任何映射：注册的处理器会被静默接受，永远不会被咨询。
+会话生命周期通告正好相反：
 `session_before_switch`、`session_before_fork` 与 `session_lifecycle` 会触发，且为仅告知，
 因此调用方会忽略门禁本会接纳的结果（ADR 0295 规则 11）。
 
@@ -203,6 +208,7 @@ Agent，在 Plan 中不可见。主机返回 `PLUGIN_DISABLED_IN_PLAN`
 | `session.delete.own` | Trash or purge sessions imported by this plugin | 将此插件导入的会话移入回收站或清除 |
 | `usage.read` | Read usage statistics | 读取用量统计 |
 | `agent.complete` | Run a one-shot completion with your models | 用你的模型发起一次补全 |
+| `agent.model.complete` | Use your configured models for one-shot plugin AI | 使用你已配置的模型发起一次性插件 AI |
 | `speech.adapter.register` | Register a speech adapter | 注册语音适配器 |
 | `audio.capture.background` | Use the microphone in the background | 后台使用麦克风 |
 | `audio.playback.background` | Play audio in the background | 后台播放声音 |
@@ -214,7 +220,6 @@ Agent，在 Plan 中不可见。主机返回 `PLUGIN_DISABLED_IN_PLAN`
 | `runtime.turn.abort` | Stop the running turn | 停止正在运行的轮次 |
 | `runtime.turn.closing` | Act just before a turn ends | 在轮次结束前介入 |
 | `runtime.turn.facts` | Read structured facts about a turn | 读取本轮的结构化事实 |
-| `runtime.request.before` | Rewrite what is sent to the model | 改写发给模型的内容 |
 | `runtime.session.lifecycle` | Follow session and compaction events | 跟踪会话与压缩事件 |
 | `runtime.session.read` | Read a session's content | 读取会话内容 |
 | `runtime.tool.gate` | Block tool calls and replace tool results | 拦截工具调用并替换工具结果 |

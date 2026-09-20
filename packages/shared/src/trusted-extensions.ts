@@ -749,10 +749,10 @@ export type TrustedExtensionContinuationRequest = {
  * durable turn id, so this id is not a `turn.facts` key.
  *
  * ADR 0295 rule 9 asks for the continuation to be persisted as a visible row
- * naming the plugin, and for it to be unbounded. There is no quota here. The
- * visible-row half is not complete yet: host-core's `turn_queue` and `messages`
- * rows carry no plugin provenance column, so the queued turn is real and
- * visible but does not yet name the plugin.
+ * naming the plugin, and for it to be unbounded. There is no quota here, and
+ * the row is attributed: host-core stores the plugin id and the display label
+ * on the queue row and on the transcript row it becomes (schema v22,
+ * `plugin_provenance.rs`), so the queued turn is both visible and named.
  */
 export type TrustedExtensionContinuation = {
   queuedTurnId: string;

@@ -54,7 +54,15 @@ import {
   type TrustedExtensionUiResponse,
 } from "./types.js";
 
-/** Events the desktop runtime emits in v1 (spec §6). */
+/**
+ * Event names `pi.on` accepts in v1 (spec §6); a name outside this list and
+ * outside `NOT_EMITTED_EVENTS` is reported as `unsupported_api`. The six names
+ * withdrawn with slot 6 — `before_agent_start`, `context`,
+ * `before_provider_request`, `before_provider_headers`, `model_select`,
+ * `thinking_level_select` — must stay listed so a registration is accepted
+ * instead of rejected; the runner never consults their handlers
+ * (`isWithdrawnRuntimeEvent`).
+ */
 export const TRUSTED_EXTENSION_EVENTS = [
   "session_start",
   "session_shutdown",
@@ -891,9 +899,9 @@ export class TrustedExtensionRunner {
    * mechanism a user message uses. There is no numeric quota (ADR 0295 rule
    * 9): what replaces it is the visible row ADR 0293 asks for, which is why the
    * request carries the plugin's id and label. The queued row is real and
-   * visible today; it does not yet *name* the plugin, because host-core's queue
-   * and transcript rows carry no plugin provenance — a host gap this call
-   * reports rather than hides.
+   * visible today, and both it and the durable message row it becomes store
+   * that provenance (schema v22, host-core `plugin_provenance.rs`), so the row
+   * names the plugin that asked for it.
    */
   private async extensionContinueTurn(
     extension: LoadedExtension,

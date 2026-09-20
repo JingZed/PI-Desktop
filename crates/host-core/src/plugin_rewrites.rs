@@ -1,12 +1,13 @@
 //! Diff-level audit of what a plugin changed in what the model receives
 //! (ADR 0295 rule 5; 04-data-storage §4.15).
 //!
-//! Slot #1 (`runtime.send.before`) is the first producer: the agent runtime
-//! hands a rewrite it performed to the host, and `plugin.rewrites.record`
-//! stores it here — the one write boundary. Slot #6 (`runtime.request.before`)
-//! is not built yet, but the storage, the caps, and the reads are in place
-//! because the ADR makes the audit a prerequisite of the rewrite capability,
-//! not a follow-up.
+//! Slot #1 (`runtime.send.before`) is the producer: the agent runtime hands a
+//! rewrite it performed to the host, and `plugin.rewrites.record` stores it
+//! here — the one write boundary. Slot #6 (`runtime.request.before`) was
+//! withdrawn before shipping (ADR 0295), so its `system_prompt`, `message_list`,
+//! and `request_payload` kinds keep their shape but nothing writes them; the
+//! storage, the caps, and the reads are in place because the ADR makes the audit
+//! a prerequisite of the rewrite capability, not a follow-up.
 //!
 //! A record is a fact, like an `artifacts` touch: which characters, which
 //! messages, or which payload fields changed, who changed them, and in which
@@ -379,8 +380,8 @@ pub struct RewriteRecord {
 /// stored with the record as `truncated` / `dropped_edits`.
 ///
 /// Callers reach this through the host-core RPC writer `plugin.rewrites.record`,
-/// which slot #1's handler (`extensions.rewrites.record`) calls; slot #6 is not
-/// wired yet. Nothing else writes this table.
+/// which slot #1's handler (`extensions.rewrites.record`) calls; slot #6 was
+/// withdrawn, so it is never wired. Nothing else writes this table.
 pub fn record(
     db: &Database,
     session_id: &str,
@@ -442,7 +443,7 @@ pub fn list_for_session(
 }
 
 /// The records of one turn, oldest first — the order the rewrites happened in
-/// the turn, which is what slot #1 / #6 surfaces read (ADR 0295 rule 5).
+/// the turn, which is what slot #1's rewrite surface reads (ADR 0295 rule 5).
 ///
 /// A record written outside a turn has no `turn_id` and never appears here;
 /// the `id` tiebreak keeps the order stable within a millisecond.

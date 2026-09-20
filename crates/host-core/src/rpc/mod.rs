@@ -2932,8 +2932,8 @@ async fn handle_request(
 
         "plugin.rewrites.list" => {
             // The diff-level audit of what a plugin changed in what the model
-            // receives (ADR 0295 rule 5). Per turn is the shape the slot #1 /
-            // #6 surfaces read, so a `turnId` needs its `sessionId`.
+            // receives (ADR 0295 rule 5). Per turn is the shape slot #1's
+            // rewrite surface reads, so a `turnId` needs its `sessionId`.
             let session_id = params
                 .get("sessionId")
                 .and_then(|v| v.as_str())

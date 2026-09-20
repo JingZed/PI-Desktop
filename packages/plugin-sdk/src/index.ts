@@ -993,10 +993,12 @@ export type PluginTurnApi = {
    *
    * Risk: the continuation costs a full provider request the user did not type,
    * and there is no quota (rule 9), so asking for a turn where it adds nothing
-   * spends the user's money and attention. The queued turn is a real, visible
-   * row; it does not yet **name** the plugin — the host's queue and transcript
-   * rows carry no plugin provenance yet, which is a host gap, not something a
-   * plugin should work around.
+   * spends the user's money and attention.
+   *
+   * The queued turn is a real, visible row and it names the plugin that asked
+   * for it: `continueTurn` is the only extension-facing way to queue a turn and
+   * it always carries the plugin id and display label, which host-core stores
+   * on the queue row and on the transcript row it becomes (ADR 0293).
    */
   continueTurn(input: PluginTurnContinueInput): Promise<PluginTurnContinuation | undefined>;
 };
@@ -1062,19 +1064,16 @@ export type PluginInputResult = {
 
 /**
  * The `context` event's payload (ADR 0295 slot 6, permission
- * `runtime.request.before`).
+ * `runtime.request.before`) — **withdrawn.** The slot was dropped by product
+ * decision before shipping: silent rewrites of what the model reads are not
+ * offered. A registered handler is accepted silently and never consulted, so
+ * `pi.on("context", …)` is dead code.
  *
- * It fires before **every** provider request of a run — the first one of a
- * prompt included — and hands over the message list that request would carry.
- * This is the kernel's `transformContext` point, so it is the one place a
- * plugin may delete, replace, or reorder history for the model.
+ * The payload is kept because the published SDK exports the type. The
+ * plugin-level route to model-facing AI is `pi.ai.complete`, gated by
+ * `agent.model.complete`.
  *
- * ```ts
- * pi.on("context", (event) => {
- *   // Drop stale tool noise, keep everything else.
- *   return { messages: event.messages.filter((message) => !isStale(message)) };
- * });
- * ```
+ * @deprecated Withdrawn with ADR 0295 slot 6; the event never fires.
  */
 export type PluginContextEvent = {
   type: "context";
@@ -1083,21 +1082,11 @@ export type PluginContextEvent = {
 };
 
 /**
- * What a `context` handler answers. Returning `{ messages }` replaces the list
- * the model reads for this request only: the transcript and the run's own
- * context keep the messages you dropped, so the change is invisible in the
- * conversation and every answer that differs from what the handler received is
- * recorded at diff level (`plugin_rewrites`, kind `message_list`) — which is
- * what makes the rewrite answerable for afterwards (rule 5).
+ * What a `context` handler would answer. **Withdrawn with the `context` event**
+ * (ADR 0295 slot 6): no handler result is consulted, so this shape is kept only
+ * because the published SDK exports it.
  *
- * Handlers do not chain here: each one is handed the list the request would
- * have carried, and the last answer that is a list is the one that reaches the
- * model. Returning nothing (or `{}`) means "no opinion". A `messages` field
- * that is not a list is refused with a diagnostic instead of being ignored,
- * because the request cannot carry it.
- *
- * Cost: this runs before every provider request of a run, so keep the handler
- * cheap; walking a large transcript on each request is real work.
+ * @deprecated Withdrawn with ADR 0295 slot 6; no handler result is read.
  */
 export type PluginContextResult = {
   messages?: ReadonlyArray<unknown>;
@@ -1111,46 +1100,35 @@ export type PluginModelRef = {
 
 /**
  * The `model_select` event's payload (ADR 0295 slot 6, permission
- * `runtime.request.before`): asked before each follow-up provider request of a
- * run, with the model that request would use.
+ * `runtime.request.before`) — **withdrawn.** The slot was dropped by product
+ * decision before shipping: a handler is accepted silently and never
+ * consulted, so `pi.on("model_select", …)` is dead code.
  *
- * ```ts
- * pi.on("model_select", (event) => ({
- *   // Only if the session is already bound to the model this plugin wants.
- *   model: event.requestable.find((ref) => ref.id === "claude-sonnet-4-5"),
- * }));
- * ```
+ * The payload is kept because the published SDK exports the type. To change
+ * the session's binding, use `pi.setModel()` between turns (idle only, the host
+ * persists it) — that call is the supported route.
+ *
+ * @deprecated Withdrawn with ADR 0295 slot 6; the event never fires.
  */
 export type PluginModelSelectEvent = {
   type: "model_select";
   /** The model the next provider request would use without an answer here. */
   model: PluginModelRef;
   /**
-   * The models this run can actually put on the request. Ask for one of these.
-   *
-   * PI-Desktop binds a session to one host-resolved provider/model per run:
-   * Electron main owns provider resolution, credentials and the catalog, and it
-   * rebuilds the session runtime when the binding changes. The runtime
-   * therefore holds exactly one requestable model — the session's own binding,
-   * or the plugin agent the session is bound to — and a `model_select` answer
-   * naming any other model is **refused** with a diagnostic on the plugin row
-   * instead of being passed through to fail inside the provider lookup. A model
-   * the user has not configured for this session is exactly that case; to
-   * change the session's binding, use `pi.setModel()` between turns (idle only,
-   * the host persists it).
+   * The models the run could put on the request. Kept for compatibility with
+   * the exported type; the withdrawn event never asks for an answer, so
+   * nothing reads this.
    */
   requestable: ReadonlyArray<PluginModelRef>;
 };
 
 /**
- * What a `model_select` handler answers, or nothing for no opinion: the model
- * the next request in this run should use.
+ * What a `model_select` handler would answer. **Withdrawn with the
+ * `model_select` event** (ADR 0295 slot 6): no handler result is consulted, so
+ * the type is kept only because the published SDK exports it. `pi.setModel()`
+ * between turns is the supported route to change the session's binding.
  *
- * Both spellings `pi.setModel` uses are accepted: `{ provider, id }` (or the
- * same pair nested under `model`) and the `"provider/id"` text. An answer that
- * names a model outside {@link PluginModelSelectEvent.requestable} is refused
- * with a diagnostic naming it; an unreadable answer is refused the same way. A
- * route changes this run's requests only — the session binding is untouched.
+ * @deprecated Withdrawn with ADR 0295 slot 6; no handler result is read.
  */
 export type PluginModelSelectResult = {
   model: PluginModelRef | string;
@@ -1158,29 +1136,30 @@ export type PluginModelSelectResult = {
 
 /**
  * The `thinking_level_select` event's payload (ADR 0295 slot 6, permission
- * `runtime.request.before`): asked before each follow-up provider request of a
- * run, with the level that request would use.
+ * `runtime.request.before`) — **withdrawn.** The slot was dropped by product
+ * decision before shipping: a handler is accepted silently and never
+ * consulted, so `pi.on("thinking_level_select", …)` is dead code.
  *
- * `supported` is the ladder this model can actually request, so an answer
- * outside it is **refused** with a diagnostic rather than clamped — a clamp
- * would be a rewrite neither the plugin asked for nor the user can see. `"off"`
- * is a level like any other: it turns reasoning off for the route.
+ * The payload is kept because the published SDK exports the type. The
+ * session's thinking level is set through the pi extension API itself
+ * (`getThinkingLevel` / `setThinkingLevel`), which the host supports.
+ *
+ * @deprecated Withdrawn with ADR 0295 slot 6; the event never fires.
  */
 export type PluginThinkingLevelSelectEvent = {
   type: "thinking_level_select";
   /** The level the next provider request would use without an answer here. */
   level: string;
-  /** The levels this model supports; anything else is refused by name. */
+  /** The levels this model supports. */
   supported: ReadonlyArray<string>;
 };
 
 /**
- * What a `thinking_level_select` handler answers, or nothing for no opinion.
+ * What a `thinking_level_select` handler would answer. **Withdrawn with the
+ * `thinking_level_select` event** (ADR 0295 slot 6): no handler result is
+ * consulted, so the type is kept only because the published SDK exports it.
  *
- * An honoured level that differs from the current one is recorded at diff level
- * like every other slot-6 rewrite (`plugin_rewrites`, kind `request_payload`),
- * and it applies to the rest of this run: the session's own thinking level is
- * untouched.
+ * @deprecated Withdrawn with ADR 0295 slot 6; no handler result is read.
  */
 export type PluginThinkingLevelSelectResult = {
   level: string;

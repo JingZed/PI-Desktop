@@ -694,9 +694,12 @@ subscription; never put secrets in the payload.
 
 A plugin can ship code that runs inside the agent process itself: a module
 written against the pi CLI `ExtensionAPI`, the same contract pi extensions
-use. It registers tools, slash commands, and hooks on every turn, tool call,
-and provider request. Declare the modules and the `agent.extension`
-permission:
+use. It registers tools, slash commands, and hooks on every turn and tool call.
+Provider-request hooks (`before_agent_start`, `context`,
+`before_provider_request`, `before_provider_headers`, `model_select`,
+`thinking_level_select`) are accepted at registration but never consulted: slot
+6 (`runtime.request.before`) was withdrawn, so a handler for one of them is
+dead code. Declare the modules and the `agent.extension` permission:
 
 ```json
 {

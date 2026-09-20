@@ -111,9 +111,11 @@ patterns match literal `--force`, and the lease variant is the safe form. A
 - **Not a security control.** The three patterns are shallow and easy to evade
   (quoting, variables, another language). They demonstrate the slot, not a
   policy. A real guard belongs in the host's approval rules.
-- **Nothing from the other slots.** Before Send (1), Before Request (6), Turn
-  Closing (7), Turn Recap (8), Turn Continue (10), Session Lifecycle (11) and
-  Approval Before (12) are not used here; several are not reachable yet.
+- **Nothing from the other slots.** Before Send (1), Turn Closing (7), Turn
+  Recap (8), Turn Continue (10), Session Lifecycle (11) and Approval Before (12)
+  are not used here; Before Request (6) was withdrawn — `runtime.request.before`
+  is not offered and a handler for it is never consulted — and Approval Before
+  (12) is not built.
 
 ## Reference
 

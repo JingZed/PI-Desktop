@@ -1,7 +1,7 @@
 # Slots Demo
 
 A PI-Desktop example plugin for the trusted renderer host: it registers React
-components into host-owned slots and injects one namespaced stylesheet. It is the
+components into host-owned slots and injects one host-scoped stylesheet. It is the
 copy-me shape for `manifest.renderer` (spec `07-plugins/16-trusted-extensions.md`
 §2A, ADR 0291).
 
@@ -44,11 +44,14 @@ copy-me shape for `manifest.renderer` (spec `07-plugins/16-trusted-extensions.md
   shipped its own React copy would be refused at load.
 - **Lazy loading.** Nothing is fetched until one of the plugin's slots actually
   renders, and an unrendered slot costs nothing at startup.
-- **Injected, namespaced styles.** `pi.ui.injectStyle(css)` is the only way to
-  style plugin UI. Every selector here is `.acme-slots-demo__*`; a sheet whose
-  top-level selector is `html`, `body`, `:root`, or `*` is refused whole instead
-  of being silently narrowed. The host removes the sheet on unload, so the module
-  exports no `onUnload`.
+- **Injected, host-scoped styles.** `pi.ui.injectStyle(css)` is the only way to
+  style plugin UI. Every selector here is `.acme-slots-demo__*`, but scoping does
+  not depend on that naming: the host auto-scopes every selector under the
+  plugin's `[data-pi-plugin="<id>"]` container and rewrites `:root` to that
+  container. A sheet whose top-level selector is `html`, `body`, or `*`, or that
+  uses `@import`, is refused whole instead of being silently narrowed, and the
+  host reports `PLUGIN_STYLE_SCOPED` when it rewrote the source. The host removes
+  the sheet on unload, so the module exports no `onUnload`.
 
 ## Files
 

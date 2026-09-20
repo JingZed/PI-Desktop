@@ -1113,10 +1113,11 @@ Every rewrite a runtime slot performs on what the model receives is recorded at
 producer that exists: the agent runtime's send hook hands the two texts to the
 host, `plugin.rewrites.record` stores the diff, and the transcript marks the row
 ("rewritten by plugin X") with the changed span behind the expansion. Slot #6
-(`runtime.request.before`, system prompt / message list / request payload) is
-not built yet; it shares this table and these caps, which is why the storage and
-the reads landed first — the ADR makes the audit a prerequisite of the rewrite
-capability rather than a follow-up.
+(`runtime.request.before`, system prompt / message list / request payload) was
+withdrawn before shipping (ADR 0295), so its `system_prompt`, `message_list`,
+and `request_payload` kinds are never written; the storage and the reads landed
+first because the ADR makes the audit a prerequisite of the rewrite capability
+rather than a follow-up.
 
 ```sql
 CREATE TABLE plugin_rewrites (
@@ -1182,7 +1183,7 @@ None of it is silent: `truncated` says a cap touched the record and
 mistaken for a full one.
 
 Reads: one turn's records oldest first — the order the rewrites happened in the
-turn, which is what the slot #1 / #6 surfaces read — and one session's newest
+turn, which is what the slot #1 rewrite surface reads — and one session's newest
 first. Both order by `created_at` with `id` as the deterministic tiebreak, both
 accept an optional kind filter, and both clamp the limit to 500.
 
@@ -1439,10 +1440,11 @@ truncating at a guessed position.
 - **Schema v20 is additive.** It adds `plugin_rewrites`, the diff-level audit of
   what a plugin changed in what the model receives, with its two read indexes
   (ADR 0295 rule 5). No existing row changes and no stored value is rewritten;
-  the table starts empty because its producers — slot #1
-  (`runtime.send.before`) and slot #6 (`runtime.request.before`) — are not built
-  yet, so the audit surface lands ahead of the capability that depends on it. A
-  `pi.sqlite.v19.bak` copy precedes the step.
+  the table starts empty because the audit surface lands ahead of the capability
+  that depends on it: slot #1 (`runtime.send.before`) is the one producer that
+  writes this table, and slot #6 (`runtime.request.before`) was withdrawn before
+  shipping, so its kinds are never written. A `pi.sqlite.v19.bak` copy precedes
+  the step.
 - **Schema v21 is additive.** It adds the nullable `audit_log.turn_id` column and
   its partial index `idx_audit_turn`, so one turn's records — and with them
   `turn.facts` (§4.16, ADR 0295 rule 8) — are an indexed read rather than a scan

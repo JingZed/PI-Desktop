@@ -477,14 +477,15 @@ off | minimal | low | medium | high | xhigh | max
   不提升协议版本（ADR 0295 规则 8）。
 - `plugin.rewrites.list({ sessionId, turnId?, kind?, limit? }) -> { rewrites }` —
   插件对"模型收到内容"所做改动的差分级审计（ADR 0295 规则 5）。带 `turnId` 时按最旧在前
-  返回单个回合的记录 —— 即改写发生的顺序，也是插槽 #1 / #6 表面读取的形状 —— 不带时按
+  返回单个回合的记录 —— 即改写发生的顺序，也是插槽 #1 改写表面读取的形状 —— 不带时按
   最新在前返回会话记录，包括在回合之外写入的记录。`kind` 可过滤 `outgoing_message |
   system_prompt | message_list | request_payload`。每条记录带 `id`、`sessionId`、
   `turnId`（回合之外为 null）、`pluginId`、`kind`、`truncated`、`droppedEdits`、
   `createdAt`，以及 `diff`；各 kind 的形状、上限与截断标记见 04-data-storage §4.15。
   缺少 `sessionId`、未知的 `kind` 或非正的 `limit` 返回 `INVALID_PARAMS`；limit 被限制
-  在 500。增量 RPC；不提升协议版本。**目前没有生产者** —— 插槽 #1 与 #6 尚未实现，
-  在它们落地前该列表为空。
+  在 500。增量 RPC；不提升协议版本。唯一的生产者是插槽 #1（`runtime.send.before`）；
+  插槽 #6（`runtime.request.before`）已撤回，它的 `system_prompt`、`message_list`、
+  `request_payload` 种类永远不会被写入。
 - `turn.facts({ sessionId, turnId, limit? }) -> { facts }` — 单个回合的
   **权威结构化数字**，由主机从自己的表中汇总（ADR 0295 规则 8，插槽 #9
   `runtime.turn.facts`）。这里没有任何内容是从插件观察到的事件重建的，也不返回对话正文。

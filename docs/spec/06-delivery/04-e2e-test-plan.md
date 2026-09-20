@@ -11965,17 +11965,19 @@ plugin-form fixtures in an isolated temporary directory at runtime.
 #### E2E-242: Extension tools and hooks take effect in a turn
 
 - **Preconditions**: An enabled fixture extension that holds
-  `agent.extension` plus the slots its hooks need — `runtime.request.before`
-  for `before_agent_start`, `runtime.tool.gate` for `tool_call` and
-  `tool_result`, `runtime.turn.watch` for the turn events — registers tool
-  `fx_add`, handles `before_agent_start` by appending a marker to the system
-  prompt, `tool_call` by blocking `bash` with a reason, and `tool_result` by
-  replacing `fx_add` output.
+  `agent.extension` plus the slots its hooks need — `runtime.tool.gate` for
+  `tool_call` and `tool_result`, and `runtime.turn.watch` for the turn events —
+  registers tool `fx_add`, handles `tool_call` by blocking `bash` with a reason,
+  and `tool_result` by replacing `fx_add` output. It also registers handlers for
+  the withdrawn slot 6 (`before_agent_start`, `context`, `before_provider_*`),
+  which the host must never consult.
 - **Steps**: 1) Start a turn in Agent mode whose fixture model calls `fx_add`
   then `bash`. 2) Inspect the provider request. 3) Inspect the tool results.
   4) Switch to Plan mode and repeat. 5) Register a second extension declaring
   a tool named `read`.
-- **Expected**: The system prompt carries the marker; `fx_add` executes in the
+- **Expected**: The system prompt carries no slot-6 marker and no `x-e2e-ext`
+  header is sent, even though the fixture registers those handlers (slot 6
+  `runtime.request.before` is withdrawn); `fx_add` executes in the
   sidecar with no permission prompt and its result is the replaced value;
   `bash` is blocked with the extension's reason and the block is visible in
   the transcript; an audit line records extension id, tool name, and duration
@@ -11985,7 +11987,7 @@ plugin-form fixtures in an isolated temporary directory at runtime.
 - **Specs linked**: `07-plugins/16-trusted-extensions.md` §6, §7; ADR 0214
 - **Acceptance**: B (agent), Security, Quality
 - **Milestone**: Post-MVP (R7 v1)
-- **Status**: Partially automated (`pnpm test:e2e:trusted-extensions`); Agent-mode tool dispatch, ToolSearch deferral, hooks, blocking, and result replacement pass, while Plan-mode gating and core-tool collision remain additional validation.
+- **Status**: Partially automated (`pnpm test:e2e:trusted-extensions`); Agent-mode tool dispatch, ToolSearch deferral, live-hook handling, blocking, and result replacement pass, and the withdrawn slot-6 handlers are proved inert, while Plan-mode gating and core-tool collision remain additional validation.
 
 #### E2E-TRUSTED-EXTENSION-custom-agent-stream-and-binding: Plugin-owned agent streams and session binding
 

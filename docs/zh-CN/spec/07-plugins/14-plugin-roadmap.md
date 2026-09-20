@@ -95,7 +95,7 @@ Local plugins usable → developer-friendly → marketplace distribution → sig
   (9) 由 host-core 在架构 v21 上通过 `turn.facts` RPC 回答（04-data-storage §4.16）。
   面向插件的读取入口尚未实现，所以该槽位目前没有插件可调用的东西。
 - Turn Closing (7) 仍经 `shouldStopAfterTurn` 到达内核；此前已接线的钩子 —— Turn
-  Watch (2)、Tool Gate (4) 与 Before Request (6) 的请求类钩子 —— 行为保持不变；
+  Watch (2) 与 Tool Gate (4) —— 行为保持不变；
   桌面当前触发哪些钩子点，规格 13 §2C 按事件逐一说明。
 - 已交付：Before Send (1) —— 运行时的 `input` 钩子在 Electron main 持久化用户消息之后、
   进入队列之前触发，三种内核动作全部采纳；插件所做的每次改写都经 `plugin.rewrites.record`
@@ -103,7 +103,8 @@ Local plugins usable → developer-friendly → marketplace distribution → sig
   以及 Session Lifecycle (11) —— 创建、切换、删除与 fork 均以仅告知方式通告，压缩交接保留其取消。
 - 尚未交付：Turn Recap (8) 与 Turn Continue (10) —— 只有已注册的名字，背后没有钩子或调用；
   Approval Before (12) —— 未实现。
-- Before Request (6) 按 ADR 0295 的分期仍排除在本轮之外；槽位集合、逐槽位权限与实施
+- Before Request (6) 在交付前已撤回：它的六个事件永远不会被查询，权限也没有在任何地方
+  注册；槽位集合、逐槽位权限与实施
   顺序都由
   [ADR 0295](../../../adr/0295-runtime-slots-and-their-permissions.md) 固定。
 

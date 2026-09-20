@@ -2,6 +2,8 @@
 
 - Status: Accepted for implementation
 - Date: 2026-09-18
+- Amendment: slot 6 (`runtime.request.before`) was withdrawn by product
+  decision before shipping; see §1.
 - Related: issue #528 (sub-issue #561) ·
   [ADR 0291](0291-trusted-renderer-execution-host.md) ·
   [ADR 0292](0292-runtime-hooks-for-plugin-host-processes.md) ·
@@ -38,7 +40,8 @@ Alternatives), so everything below is a kernel-layer decision.
 This record fixes what each slot is, which permission it needs, what is
 deliberately not built, and the rules that hold across all of them. It does not
 order the work (see Phasing) and it does not restate the per-slot examples
-already in #561.
+already in #561; §1 records that slot 6 was decided there and then withdrawn
+before shipping.
 
 ## Decision
 
@@ -47,7 +50,8 @@ already in #561.
 Slot permissions use the three-segment form of D11: `runtime.<domain>.<item>`.
 They never reuse `agent.*` (already taken by `agent.extension`,
 `agent.tool.register`, `agent.prompt.inject`, `agent.complete`) or `ui.*` (taken
-by the fourteen UI slots). Eleven slots are built; the twelfth is not:
+by the fourteen UI slots). Ten slots are offered; slot 6 was withdrawn by
+product decision before shipping, and slot 12 was never built:
 
 | # | Permission | What it does | Slot shape decided here |
 |---|---|---|---|
@@ -56,13 +60,26 @@ by the fourteen UI slots). Eleven slots are built; the twelfth is not:
 | 3 | `runtime.turn.abort` | The plugin asks to stop the turn, and the plugin's own long-running work receives the cancellation signal | Both halves ship together: abort without a signal leaves plugin work running after the user stopped |
 | 4 | `runtime.tool.gate` | Block a tool call with a reason, replace a tool's *result*, request early termination of a batch | **Modifying arguments is permanently excluded** (rule 4). Asking the user is the plugin's job (rule 6) |
 | 5 | `runtime.tool.extend` | Plugin tools as first-class: introduce a tool at runtime, report their own spend, request early termination | A runtime-introduced tool is labelled as such in the UI |
-| 6 | `runtime.request.before` | Rewrite what is sent to the model: system prompt, model and thinking level, request payload, **message list** (delete / replace / reorder history) | All four; every rewrite is audited at diff level (rule 5) |
+| 6 | `runtime.request.before` — **withdrawn before shipping** (see the note below) | Rewrite what is sent to the model: system prompt, model and thinking level, request payload, **message list** (delete / replace / reorder history) | Decided here, then withdrawn by product decision: silent rewrites of what the model reads are not offered. Its six events are never consulted and the permission is registered nowhere |
 | 7 | `runtime.turn.closing` | Before a turn closes: let it close, or ask for another turn with an instruction | The continuation is persisted as a real, visible user row with plugin provenance (ADR 0293) |
 | 8 | `runtime.turn.recap` | A plugin reads session content | Whole-session reads need `runtime.session.read` as well (rule 7) |
 | 9 | `runtime.turn.facts` | Structured facts about a turn: tool calls and outcomes, tokens, spend, duration, files touched | The `artifacts` model is extended so "this turn" is answerable (rule 8) |
 | 10 | `runtime.turn.continue` | The plugin starts a new continuation after a turn ends | **No quota** (rule 9) |
 | 11 | `runtime.session.lifecycle` | Called on create / switch / delete / fork / before compaction | Informed-only on destructive actions; cancellation of compaction; and the segment about to be compacted is handed over (rule 7) |
 | 12 | `runtime.approval.before` | Called before an approval card appears | **Not built in this cycle.** Neither the kernel nor the harness has this hook; it needs a new extension point in host-core |
+
+**Slot 6 was withdrawn before shipping.** This record decided
+`runtime.request.before` and the six kernel events behind it, and the same
+implementation cycle then dropped the slot by product decision: a capability
+that silently changes what the model reads is not offered. `runtime.request.before`
+is absent from `PLUGIN_PERMISSIONS`, from `TRUSTED_EXTENSION_EVENT_PERMISSIONS`
+and `REGISTERED_SLOT_PERMISSIONS`, and from the runner's consultation; a handler
+that still registers one of the six events (`before_agent_start`, `context`,
+`before_provider_request`, `before_provider_headers`, `model_select`,
+`thinking_level_select`) is accepted silently and never runs. The UI-visible
+route for plugin AI on user-configured models is the plugin-level completion
+`pi.ai.complete` under `agent.model.complete`: the user reviews it at install,
+and it never rewrites the request.
 
 ### 2. Slot permissions are separate from tier permissions
 
@@ -76,7 +93,7 @@ This is not what the code does today: the closing hook fires for any extension
 loaded under `agent.extension` and no code consults `runtime.turn.closing`. That
 is a defect to fix while wiring the slots, not a design choice. It follows from
 D1 (one slot, one permission; the install page lists each) that a tier grant must
-not silently imply twelve slot grants.
+not silently imply a slot grant for every slot the record offers.
 
 ### 3. Ordinary plugins, not high-trust-only
 
@@ -107,16 +124,17 @@ argument rewriting does not exist, so no plugin author builds on it.
 
 ### 5. Rewrites are visible, and audited at diff level
 
-Every rewrite a slot performs — outgoing message (#1), system prompt, message
-list, or request payload (#6) — is recorded at **diff level**: which characters,
-which messages, which payload fields changed. In the product:
+Every rewrite a slot performs — the outgoing message (#1) is the only reachable
+producer today; the system-prompt, message-list and request-payload rewrites
+decided for slot 6 were withdrawn with it — is recorded at **diff level**: which
+characters, which messages, which payload fields changed. In the product:
 
 - a rewritten outgoing message is marked on its row ("rewritten by plugin X"),
   expandable to the original;
-- message-list and system-prompt rewrites are inspectable from the plugin row /
-  audit view;
-- large objects (a request payload) are recorded as a summary plus an expandable
-  body.
+- the kinds slot 6 would have written keep their shape — message-list and
+  system-prompt rewrites inspectable from the plugin row / audit view, a request
+  payload recorded as a summary plus an expandable body — and `plugin_rewrites`
+  defines every one of them, with no writer.
 
 The reason is blunt: this class of capability changes what the model sees without
 the user seeing it change. Without a diff-level record, a wrong answer has no
@@ -195,17 +213,18 @@ session switch or delete never waits on a plugin.
 
 ## Consequences
 
-- #561's twelve slots become eleven buildable capabilities plus one excluded
-  capability, each with a name, a permission, and rules that hold across them.
+- #561's twelve slots become ten offered capabilities, one withdrawn capability
+  (slot 6) and one excluded capability (slot 12), each with rules that hold
+  across the set and a permission where it ships.
 - Ordinary plugins get the runtime abilities that only high-trust plugins reached
   before. The install review becomes the consent surface for all of them, which
   is consistent with the plugin-center review model, and inconsistent with the
   current code silently implying twelve grants from one tier permission.
-- The twelve permission names are **reserved here, not registered yet**: each one
-  is added to the SDK, the desktop risk table, the devkit mirror, the eight
-  locales and the permission matrix when its slot is implemented. Registering
-  them early would ship names that do nothing and grow the existing gap of names
-  without display copy.
+- Permission names are **reserved here and registered as each slot ships**; slot
+  6's name is deliberately absent from the SDK, the desktop risk table, the
+  devkit mirror, the locales and the permission matrix. Registering a name early
+  would ship a name that does nothing and grow the existing gap of names without
+  display copy.
 - Argument rewriting is gone for good, and the docs must stop implying it exists.
 - Three pieces of work are now prerequisites rather than side quests: fixing the
   `artifacts` model, persisting continuations as visible rows (ADR 0293), and
@@ -247,8 +266,9 @@ shippable):
 2. **Events and lifecycle**: #1 before send, #11 session lifecycle — both need
    the `pi-coding-agent` emit surface widened (blacklist / never-emitted events),
    so one change unlocks two slots.
-3. **The highest-power rewrite**: #6 before request, gated on the diff-level
-   audit from rule 5 landing first.
+3. **Withdrawn before shipping**: #6 before request was dropped by product
+   decision (see §1). Rule 5's diff-level audit still shipped with slot #1, its
+   first producer.
 4. **Closing the loop**: #7 turn closing — wire the permission (rule 2) and
    complete ADR 0293's persistence, which the hook currently does not do.
 5. **Last, and only when the audit surface exists**: #4 tool gate (informed by

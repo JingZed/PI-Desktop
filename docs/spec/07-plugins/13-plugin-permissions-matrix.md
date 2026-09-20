@@ -133,20 +133,25 @@ the permission named. The same holds for the non-event calls named in
 `runtime.turn.abort`, and a plugin tool's extended result needs
 `runtime.tool.extend`.
 
-The gate's input is the registry, not a filter: the twelve `runtime.*` names
-ADR 0295 makes real are in `PLUGIN_PERMISSIONS`, and
-`REGISTERED_SLOT_PERMISSIONS` in `@pi-desktop/shared` mirrors them, with the
-desktop guard test failing when the two lists drift. `runtime.approval.before`
-is the one slot the record leaves unbuilt, so no event maps to it and no
-registry holds it. Modifying a tool call's arguments is not a slot and is
+The gate's input is the registry, not a filter: the eleven `runtime.*` names
+that ship are in `PLUGIN_PERMISSIONS` (ten slots plus `runtime.session.read`),
+and `REGISTERED_SLOT_PERMISSIONS` in `@pi-desktop/shared` mirrors them, with the
+desktop guard test failing when the two lists drift. Slot 6
+(`runtime.request.before`) was withdrawn and is deliberately absent from both
+lists; `runtime.approval.before` is the one slot the record leaves unbuilt, so
+no event maps to it and no registry holds it either.
+Modifying a tool call's arguments is not a slot and is
 permanently excluded (ADR 0295 rule 4): a `tool_call` handler can block with a
 reason, and nothing else.
 
 Some mapped events ride hook points the desktop does not emit yet
-(`project_trust`, `resources_discover`, `model_select`,
-`thinking_level_select`). Their permission is enforced on the mapping, so the
-gate is already in place the moment the hook point is wired; until then no
-handler runs, because no event fires. The session lifecycle notices are the
+(`project_trust`, `resources_discover`). Their permission is enforced on the
+mapping, so the gate is already in place the moment the hook point is wired;
+until then no handler runs, because no event fires. The six withdrawn slot-6
+events (`before_agent_start`, `context`, `before_provider_request`,
+`before_provider_headers`, `model_select`, `thinking_level_select`) are mapped
+nowhere: a registered handler is accepted silently and never consulted.
+The session lifecycle notices are the
 opposite case: `session_before_switch`, `session_before_fork` and
 `session_lifecycle` are emitted, and they are informed-only, so the result the
 gate would allow is ignored by the caller (ADR 0295 rule 11).
@@ -222,6 +227,7 @@ so "Modify the files it lists" is followed by the list.
 | `session.delete.own` | Trash or purge sessions imported by this plugin | 将此插件导入的会话移入回收站或清除 |
 | `usage.read` | Read usage statistics | 读取用量统计 |
 | `agent.complete` | Run a one-shot completion with your models | 用你的模型发起一次补全 |
+| `agent.model.complete` | Use your configured models for one-shot plugin AI | 使用你已配置的模型发起一次性插件 AI |
 | `speech.adapter.register` | Register a speech adapter | 注册语音适配器 |
 | `audio.capture.background` | Use the microphone in the background | 后台使用麦克风 |
 | `audio.playback.background` | Play audio in the background | 后台播放声音 |
@@ -233,7 +239,6 @@ so "Modify the files it lists" is followed by the list.
 | `runtime.turn.abort` | Stop the running turn | 停止正在运行的轮次 |
 | `runtime.turn.closing` | Act just before a turn ends | 在轮次结束前介入 |
 | `runtime.turn.facts` | Read structured facts about a turn | 读取本轮的结构化事实 |
-| `runtime.request.before` | Rewrite what is sent to the model | 改写发给模型的内容 |
 | `runtime.session.lifecycle` | Follow session and compaction events | 跟踪会话与压缩事件 |
 | `runtime.session.read` | Read a session's content | 读取会话内容 |
 | `runtime.tool.gate` | Block tool calls and replace tool results | 拦截工具调用并替换工具结果 |

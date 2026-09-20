@@ -689,7 +689,7 @@ activation-scope filtering (`CAPABILITY_INVALID` for an unknown scope).
 - `plugin.rewrites.list({ sessionId, turnId?, kind?, limit? }) -> { rewrites }` —
   the diff-level audit of what a plugin changed in what the model receives
   (ADR 0295 rule 5). With `turnId` it returns one turn's records oldest first —
-  the order the rewrites happened, which is what the slot #1 / #6 surfaces read
+  the order the rewrites happened, which is what slot #1's rewrite surface reads
   — and without it the session's records newest first, including any record
   written outside a turn. `kind` filters to `outgoing_message | system_prompt |
   message_list | request_payload`. Each record carries `id`, `sessionId`,
@@ -698,8 +698,9 @@ activation-scope filtering (`CAPABILITY_INVALID` for an unknown scope).
   truncation markers are specified in 04-data-storage §4.15. A missing
   `sessionId`, an unknown `kind`, or a non-positive `limit` returns
   `INVALID_PARAMS`; the limit is clamped to 500. Additive RPC; no protocol
-  version bump. **No producer exists yet** — slots #1 and #6 are not built, so
-  the list stays empty until they are.
+  version bump. Slot #1 (`runtime.send.before`) is the one producer; slot #6
+  (`runtime.request.before`) was withdrawn, so its `system_prompt`,
+  `message_list`, and `request_payload` kinds can never be written.
 - `turn.facts({ sessionId, turnId, limit? }) -> { facts }` — one turn's
   **authoritative structured numbers**, assembled by the host from its own
   tables (ADR 0295 rule 8, slot #9 `runtime.turn.facts`). Nothing here is

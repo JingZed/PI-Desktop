@@ -7042,22 +7042,23 @@ runner 会在运行时的隔离临时目录中生成六个插件形态 fixture�
 
 #### E2E-242：扩展工具与 hooks 在回合中生效
 
-- **前置条件**：一个已启用的夹具扩展，除 `agent.extension` 外还持有其 hook 所需的槽位
-  权限 —— `before_agent_start` 需要 `runtime.request.before`，`tool_call` 与
-  `tool_result` 需要 `runtime.tool.gate`，回合事件需要 `runtime.turn.watch`；它注册
-  工具 `fx_add`，在 `before_agent_start` 向系统提示追加标记，在 `tool_call` 以理由
-  阻止 `bash`，在 `tool_result` 替换 `fx_add` 的输出。
+- **前置条件**：一个已启用的夹具扩展，持有 `agent.extension` 以及其 hook 所需的槽位 ——
+  `tool_call` 与 `tool_result` 需要 `runtime.tool.gate`，回合事件需要
+  `runtime.turn.watch`；它注册工具 `fx_add`，在 `tool_call` 以理由阻止 `bash`，
+  在 `tool_result` 替换 `fx_add` 的输出。它还为已撤回的槽位 6
+  （`before_agent_start`、`context`、`before_provider_*`）注册处理器，而宿主绝不能咨询它们。
 - **步骤**：1）在 Agent 模式开始一个回合，夹具模型先调用 `fx_add` 再调用 `bash`。
   2）检查 provider 请求。3）检查工具结果。4）切换到 Plan 模式重复。5）注册第二个
   声明名为 `read` 的工具的扩展。
-- **预期**：系统提示带有标记；`fx_add` 在 sidecar 内执行，无权限提示，结果为替换
-  值；`bash` 以扩展的理由被阻止，且阻止在记录中可见；审计记录含扩展 id、工具名
-  和耗时，不含参数；Plan 模式下 `fx_add` 遵循非核心模式门控；`read` 冲突被拒绝并
-  记诊断，核心工具不变。
+- **预期**：系统提示不携带任何槽位 6 标记，也不会发出 `x-e2e-ext` 头，尽管夹具注册了
+  这些处理器（槽位 6 `runtime.request.before` 已撤回）；`fx_add` 在 sidecar 内执行，
+  无权限提示，结果为替换值；`bash` 以扩展的理由被阻止，且阻止在记录中可见；审计记录
+  含扩展 id、工具名和耗时，不含参数；Plan 模式下 `fx_add` 遵循非核心模式门控；`read`
+  冲突被拒绝并记诊断，核心工具不变。
 - **链接规格**：`07-plugins/16-trusted-extensions.md` §6、§7；ADR 0214
 - **验收**：B（agent）、安全、质量
 - **里程碑**：MVP 后（R7 v1）
-- **状态**：部分自动化（`pnpm test:e2e:trusted-extensions`）；Agent 模式工具调度、ToolSearch 延迟、hooks、阻止和结果替换已覆盖；Plan 模式门控与核心工具冲突仍需额外验证
+- **状态**：部分自动化（`pnpm test:e2e:trusted-extensions`）；Agent 模式工具调度、ToolSearch 延迟、实时 hook 处理、阻止和结果替换均通过，已撤回的槽位 6 处理器被证明为惰性；Plan 模式门控与核心工具冲突仍需额外验证
 
 #### E2E-243：扩展命令与 UI 提示经渲染层往返
 

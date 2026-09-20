@@ -46,7 +46,6 @@ import {
 import {
   DEFAULT_COMMAND_TIMEOUT_MS,
   OAUTH_AUTH_KIND,
-  THINKING_LEVELS,
   TRUSTED_EXTENSION_SESSION_LIFECYCLE_EVENT,
   type TrustedExtensionCommand,
   type TrustedExtensionCompactionSegment,
@@ -769,98 +768,6 @@ function turnAbortedError(message: string): Error {
   const error = new Error(message);
   error.name = "AbortError";
   return error;
-}
-
-/**
- * One slot-6 answer (`model_select` / `thinking_level_select`) with the plugin
- * that gave it, so a refusal can name its owner.
- */
-type SlotAnswer = {
-  extensionId: string;
-  extensionLabel: string;
-  value: unknown;
-};
-
-/** One model as this runtime names it: provider id plus model id. */
-type SlotModelRef = { provider: string; id: string };
-
-function slotModelRef(model: Model<Api>): SlotModelRef {
-  return { provider: model.provider, id: model.id };
-}
-
-/**
- * The request fields a slot-6 route rewrites, serialized for the audit row
- * (ADR 0295 rule 5). `before` and `after` are the full field set rather than a
- * summary: the host walks two of these to say which field changed, which is the
- * same division of labour slot 1 uses for its two texts.
- */
-function routedRequestState(model: Model<Api>, thinkingLevel: ThinkingLevel): string {
-  return safeJson({
-    model: { provider: model.provider, id: model.id },
-    thinkingLevel,
-  });
-}
-
-/**
- * What a `model_select` answer named.
- *
- * `none` is a handler with no opinion — including one that returns nothing, or
- * `{}`. `unreadable` is an answer that tried to name a model and could not be
- * read, which the runtime reports instead of ignoring. The accepted spellings
- * are the ones the kernel and `pi.setModel` use: `{ provider, id }`, the same
- * pair under `model`, and the `"provider/id"` text.
- */
-type SlotModelAnswer =
-  | { kind: "none" }
-  | { kind: "unreadable" }
-  | { kind: "model"; ref: SlotModelRef };
-
-function readSlotModelAnswer(value: unknown): SlotModelAnswer {
-  const source = isRecord(value) && "model" in value ? value.model : value;
-  if (source === undefined || source === null) return { kind: "none" };
-  if (typeof source === "string") {
-    const text = source.trim();
-    const slash = text.indexOf("/");
-    if (slash > 0 && slash < text.length - 1) {
-      return {
-        kind: "model",
-        ref: { provider: text.slice(0, slash).trim(), id: text.slice(slash + 1).trim() },
-      };
-    }
-    return { kind: "unreadable" };
-  }
-  if (
-    isRecord(source) &&
-    typeof source.provider === "string" &&
-    source.provider.trim() &&
-    typeof source.id === "string" &&
-    source.id.trim()
-  ) {
-    return {
-      kind: "model",
-      ref: { provider: source.provider.trim(), id: source.id.trim() },
-    };
-  }
-  return { kind: "unreadable" };
-}
-
-/**
- * What a `thinking_level_select` answer named: `none` for no opinion, and the
- * level text otherwise. The vocabulary check belongs to the caller, because
- * only it knows which levels this provider supports.
- */
-type SlotLevelAnswer =
-  | { kind: "none" }
-  | { kind: "unreadable" }
-  | { kind: "level"; level: string };
-
-function readSlotLevelAnswer(value: unknown): SlotLevelAnswer {
-  const source = isRecord(value) && "level" in value ? value.level : value;
-  if (source === undefined || source === null) return { kind: "none" };
-  if (typeof source === "string" && source.trim()) {
-    return { kind: "level", level: source.trim() };
-  }
-  return { kind: "unreadable" };
 }
 
 /**
@@ -1751,8 +1658,6 @@ export class DesktopAgentRuntime {
    * `resetRunRecoveryState`, so the ceiling is per run rather than per session.
    */
   private turnClosingContinuations = 0;
-  /** Headers an extension edited in `before_provider_headers` for the current turn. */
-  private extensionProviderHeaders?: Record<string, string>;
   /** Subagent definitions offered through the `Task` tool (ADR 0062). */
   private subagents: SubagentDefinition[];
   private subagentProviders: Record<string, RuntimeProviderConfig>;
@@ -2143,10 +2048,10 @@ Delegation rules:
           convertToLlm(messages),
           this.reasoningReplayIdentity(),
         ),
-      // Slot 6's context entry point (ADR 0295 slot 6). `transformContext` is
-      // the kernel's own hook before `convertToLlm`, so the message-list
-      // rewrite reaches every provider request — the first turn of a prompt
-      // included, which `prepareNextTurn` never sees.
+      // Slot 6 (`runtime.request.before`) is withdrawn. `transformContext` is
+      // the kernel's own hook before `convertToLlm`; it stays wired as the
+      // identity passthrough below, so no plugin can rewrite the message list
+      // the model reads.
       transformContext: (messages) => this.transformExtensionContext(messages),
       prepareNextTurnWithContext: (context, signal) =>
         this.prepareNextTurn(context, signal),
@@ -2409,27 +2314,14 @@ Delegation rules:
   }
 
   /**
-   * Slot 6's message-list entry point (ADR 0295 slot 6, permission
-   * `runtime.request.before`): the kernel's own `transformContext` hook, wired
-   * here so a plugin can rewrite the list the model reads before **every**
-   * provider request — the first one of a prompt included, which
-   * `prepareNextTurn` never sees.
-   *
-   * The rewrite reaches the request and nothing else: the transcript and the
-   * run's own context keep what the plugin dropped. That is exactly why the
-   * audit record below exists (rule 5) — the user's history does not show the
-   * change, so the record has to.
-   *
-   * Handlers do not chain here: each is handed the list the request would have
-   * carried, and the last answer that is a list is what reaches the model. Every
-   * handler whose answer differs produces its own diff-level record, in load
-   * order, with that incoming list as `before`. An answer that carries
-   * `messages` but not a list is refused with a diagnostic, never ignored.
+   * The kernel's own `transformContext` hook, wired when the agent is created.
+   * Slot 6 (`runtime.request.before`) is withdrawn, so this is the identity
+   * passthrough: no plugin rewrites the message list the model reads, and
+   * nothing about that list is recorded.
    */
   private async transformExtensionContext(
     messages: AgentMessage[],
   ): Promise<AgentMessage[]> {
-    // Slot 6 withdrawn: never apply plugin rewrites to the model request.
     return messages;
   }
 
@@ -6365,184 +6257,22 @@ Delegation rules:
   }
 
   /**
-   * Shape the next in-run assistant turn: compaction, then the slot-6
-   * consultation. pi 0.84.4+ calls this only after `shouldStopAfterTurn` and
-   * queued-message checks decide the loop will start another assistant turn,
-   * including between a tool batch and the follow-up model request. A new user
-   * prompt compacts separately in `prompt()` via `automaticCompactionNeeded`,
-   * because that first turn does not go through this hook.
+   * Shape the next in-run assistant turn: compaction only. pi 0.84.4+ calls
+   * this only after `shouldStopAfterTurn` and queued-message checks decide the
+   * loop will start another assistant turn, including between a tool batch and
+   * the follow-up model request. A new user prompt compacts separately in
+   * `prompt()` via `automaticCompactionNeeded`, because that first turn does
+   * not go through this hook.
    *
-   * The `context` event is **not** emitted here: the message-list rewrite rides
-   * the kernel's `transformContext` (see `transformExtensionContext`), which
-   * runs before every provider request instead of only between two turns.
+   * No plugin is consulted for the next request: slot 6
+   * (`runtime.request.before`) is withdrawn, so neither the message list nor
+   * the per-request model and thinking level can come from an extension.
    */
   private async prepareNextTurn(
     turn: PrepareNextTurnContext,
     signal?: AbortSignal,
   ): Promise<AgentLoopTurnUpdate> {
-    const update = await this.prepareNextTurnWithoutExtensions(turn, signal);
-    return this.extensionRequestRouting(update);
-  }
-
-  /**
-   * Slot 6's routing entry point (ADR 0295 slot 6, permission
-   * `runtime.request.before`): ask the plugins which model and thinking level
-   * the next provider request should use.
-   *
-   * These are the two fields `AgentLoopTurnUpdate` carries beside the context,
-   * and they are the two the desktop dropped: the kernel accepts
-   * `{ context, model, thinkingLevel }`, and only the context was returned. The
-   * kernel applies them to the rest of this run and writes nothing back into
-   * the session state (`Agent.prompt` seeds each run from `state.model` /
-   * `state.thinkingLevel`), so a route stays a per-run rewrite.
-   *
-   * An answer is honoured only when this runtime can actually issue the request
-   * it asks for, and one it cannot is refused with a diagnostic rather than
-   * passed through:
-   *
-   * - the model must be the one this session's runtime is bound to. Electron
-   *   main resolves provider, credentials and catalog for exactly one model per
-   *   runtime, and the pi-ai registry holds that one — any other model would
-   *   fail in the provider lookup. `model_select` names the requestable set in
-   *   its payload so a plugin never has to guess, and a model the user has not
-   *   configured for this session is refused by name.
-   * - the thinking level must be one this provider supports. An unsupported
-   *   level is refused rather than clamped: a clamp is a rewrite the plugin did
-   *   not ask for and the user cannot see.
-   *
-   * An honoured answer that changed something is recorded at diff level through
-   * the same sink slot 1 uses (rule 5).
-   */
-  private async extensionRequestRouting(
-    update: AgentLoopTurnUpdate,
-  ): Promise<AgentLoopTurnUpdate> {
-    const runner = this.extensionRunner;
-    if (!runner || this.disposed) return update;
-    const model = await this.extensionRoutedModel(runner);
-    const thinkingLevel = await this.extensionRoutedThinkingLevel(runner);
-    if (!model && !thinkingLevel) return update;
-    return {
-      ...update,
-      ...(model ? { model } : {}),
-      ...(thinkingLevel ? { thinkingLevel } : {}),
-    };
-  }
-
-  /**
-   * The model a `model_select` handler asked for, when this run can request it.
-   *
-   * The answer must name the model the session's runtime is bound to — the
-   * session's own binding, or the plugin agent it is bound to — and anything
-   * else is refused. A handler that names no model has no opinion, exactly like
-   * a handler that returns nothing.
-   */
-  private async extensionRoutedModel(
-    runner: TrustedExtensionRunner,
-  ): Promise<Model<Api> | undefined> {
-    if (!runner.hasHandlers("model_select")) return undefined;
-    const bound = slotModelRef(this.model);
-    const answer = await this.emitSlotConsultation(runner, "model_select", {
-      type: "model_select",
-      model: bound,
-      requestable: [bound],
-    });
-    if (!answer) return undefined;
-    const requested = readSlotModelAnswer(answer.value);
-    if (requested.kind === "none") return undefined;
-    if (requested.kind === "unreadable") {
-      runner.rejectSlotAnswer(
-        answer.extensionId,
-        "model_select",
-        'model_select was refused: name a model as { provider, id } or "provider/id"',
-      );
-      return undefined;
-    }
-    if (requested.ref.provider !== bound.provider || requested.ref.id !== bound.id) {
-      runner.rejectSlotAnswer(
-        answer.extensionId,
-        "model_select",
-        `model_select was refused: "${requested.ref.provider}/${requested.ref.id}" is not a model ` +
-          `this session can request; the runtime is bound to "${bound.provider}/${bound.id}"`,
-      );
-      return undefined;
-    }
-    return this.model;
-  }
-
-  /**
-   * The thinking level a `thinking_level_select` handler asked for, when this
-   * provider supports it. A level outside `supportedThinkingLevels` is refused
-   * with the supported set in the diagnostic; a level equal to the current one
-   * is honoured and changes nothing, so it records nothing.
-   */
-  private async extensionRoutedThinkingLevel(
-    runner: TrustedExtensionRunner,
-  ): Promise<ThinkingLevel | undefined> {
-    if (!runner.hasHandlers("thinking_level_select")) return undefined;
-    const current = this.thinkingLevel;
-    const supported = [...this.provider.supportedThinkingLevels];
-    const answer = await this.emitSlotConsultation(runner, "thinking_level_select", {
-      type: "thinking_level_select",
-      level: current,
-      supported,
-    });
-    if (!answer) return undefined;
-    const requested = readSlotLevelAnswer(answer.value);
-    if (requested.kind === "none") return undefined;
-    if (requested.kind === "unreadable") {
-      runner.rejectSlotAnswer(
-        answer.extensionId,
-        "thinking_level_select",
-        "thinking_level_select was refused: `level` must be a thinking level name",
-      );
-      return undefined;
-    }
-    // The vocabulary is fixed; the provider's ladder is what makes a level
-    // requestable here.
-    const level = THINKING_LEVELS.find((candidate) => candidate === requested.level);
-    if (!level || !supported.includes(level)) {
-      runner.rejectSlotAnswer(
-        answer.extensionId,
-        "thinking_level_select",
-        `thinking_level_select was refused: "${requested.level}" is not a level this model ` +
-          `supports (${supported.join(", ")})`,
-      );
-      return undefined;
-    }
-    if (level !== current) {
-      void this.publishRewrite({
-        sessionId: this.sessionId,
-        ...(this.turnId ? { turnId: this.turnId } : {}),
-        pluginId: answer.extensionId,
-        pluginLabel: answer.extensionLabel,
-        kind: "request_payload",
-        before: routedRequestState(this.model, current),
-        after: routedRequestState(this.model, level),
-      });
-    }
-    return level;
-  }
-
-  /**
-   * Emit one slot-6 consultation and keep the last answer with the plugin that
-   * gave it, so a refusal can name its owner. A consultation is not an event
-   * the user sees: it happens between two provider requests of one run.
-   */
-  private async emitSlotConsultation(
-    runner: TrustedExtensionRunner,
-    event: "model_select" | "thinking_level_select",
-    payload: Record<string, unknown>,
-  ): Promise<SlotAnswer | undefined> {
-    let answered: SlotAnswer | undefined;
-    await runner.emit(
-      event,
-      payload,
-      (_acc, value, extensionId, extensionLabel) => {
-        answered = { extensionId, extensionLabel, value };
-        return value;
-      },
-    );
-    return answered;
+    return this.prepareNextTurnWithoutExtensions(turn, signal);
   }
 
   private async prepareNextTurnWithoutExtensions(
@@ -8126,8 +7856,8 @@ Delegation rules:
       const outgoing = await this.extensionBeforeSend(modelInput, nextTurnId, userMessageId);
       if (outgoing.handled) throw pluginHandledPromptError(outgoing.handled);
       // A rewrite applies to the model's copy only: everything below (the
-      // pre-flight checkpoint, `before_agent_start`, the prompt itself) sees the
-      // text the plugin produced.
+      // pre-flight checkpoint and the prompt itself) sees the text the plugin
+      // produced.
       const queuedInput: string | RuntimePrompt =
         outgoing.text === undefined
           ? modelInput
@@ -8167,7 +7897,6 @@ Delegation rules:
           return { turnId: this.turnId };
         }
       }
-      await this.extensionBeforeAgentStart(queuedInput);
       if (typeof queuedInput === "string") {
         await this.agent.prompt(queuedInput);
       } else {
@@ -8203,33 +7932,6 @@ Delegation rules:
       throw Object.assign(new Error(diagnosticError.message), diagnosticError);
     }
     return { turnId: this.turnId };
-  }
-
-  /** `before_agent_start` hook: extensions may replace the system prompt for this turn. */
-  private async extensionBeforeAgentStart(input: string | RuntimePrompt): Promise<void> {
-    const runner = this.extensionRunner;
-    if (!runner) return;
-    this.extensionProviderHeaders = undefined;
-    if (runner.hasHandlers("before_provider_headers")) {
-      // Handlers edit the headers object in place, as they do in the pi CLI.
-      const headers: Record<string, string> = { ...(this.provider.headers ?? {}) };
-      await runner.emit("before_provider_headers", { type: "before_provider_headers", headers });
-      this.extensionProviderHeaders = headers;
-    }
-    if (!runner.hasHandlers("before_agent_start")) return;
-    const base = this.composeSystemPrompt();
-    const result = await runner.emit<{ systemPrompt?: string }>(
-      "before_agent_start",
-      {
-        type: "before_agent_start",
-        prompt: typeof input === "string" ? input : input.text,
-        systemPrompt: base,
-        systemPromptOptions: {},
-      },
-      (acc, next) => ({ ...(acc ?? {}), ...next }),
-    );
-    this.agent.state.systemPrompt =
-      typeof result?.systemPrompt === "string" ? result.systemPrompt : base;
   }
 
   /**
@@ -8399,9 +8101,9 @@ Delegation rules:
 
 
   /**
-   * `before_provider_request` rides pi-ai's `onPayload`, `after_provider_response`
-   * its `onResponse`, and the per-turn `before_provider_headers` result merges
-   * into the request headers (spec 16 §6).
+   * `after_provider_response` rides pi-ai's `onResponse` (spec 16 §6). Slot 6
+   * (`runtime.request.before`) is withdrawn, so neither a payload rewrite nor a
+   * per-turn header merge is wired here.
    */
   private withExtensionProviderHooks(
     options: SimpleStreamOptions,
@@ -8410,21 +8112,6 @@ Delegation rules:
     const runner = this.extensionRunner;
     if (!runner) return options;
     const next: SimpleStreamOptions = { ...options };
-    if (this.extensionProviderHeaders) {
-      next.headers = mergeProviderHeaders(options.headers, this.extensionProviderHeaders);
-    }
-    if (runner.hasHandlers("before_provider_request")) {
-      next.onPayload = async (payload, payloadModel) => {
-        const base = await options.onPayload?.(payload, payloadModel);
-        const current = base ?? payload;
-        const replaced = await runner.emit<unknown>(
-          "before_provider_request",
-          { type: "before_provider_request", payload: current },
-          (_acc, value) => value,
-        );
-        return replaced ?? base;
-      };
-    }
     if (runner.hasHandlers("after_provider_response")) {
       next.onResponse = async (response, responseModel) => {
         await options.onResponse?.(response, responseModel);

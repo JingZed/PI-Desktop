@@ -606,7 +606,11 @@ unsubscribe = await pi.bus.subscribe("example.build.*", async (message) => {
 
 插件可以携带直接在 agent 进程内运行的代码：一个面向 pi CLI `ExtensionAPI` 编写的
 模块，与 pi 扩展使用同一契约。它可以注册工具、斜杠命令，以及每个回合、每次工具调用
-和每次 provider 请求上的 hook。声明模块和 `agent.extension` 权限：
+上的 hook。Provider 请求类 hook（`before_agent_start`、`context`、
+`before_provider_request`、`before_provider_headers`、`model_select`、
+`thinking_level_select`）注册时会被接受，但永远不会被咨询：槽位 6
+（`runtime.request.before`）已撤回，为它注册的处理器只是死代码。声明模块和
+`agent.extension` 权限：
 
 ```json
 {

@@ -232,10 +232,11 @@ Honest gaps, all of them observed while writing this example:
 - **A candidate row cannot insert.** `completionSource` is a source of rows, not
   a way to accept them, and a `composerReference` chip cannot change the draft.
   Both positions say so instead of looking selectable.
-- **Nothing from the runtime slots this example skips.** Before Send (1), Before
-  Request (6), Turn Closing (7), Turn Recap (8), Turn Continue (10) and Tool
-  Extend (5) are not used here, and `examples/plugins/runtime-slots-demo` covers
-  the gate and abort questions from the other direction.
+- **Nothing from the runtime slots this example skips.** Before Send (1), Turn
+  Closing (7), Turn Recap (8), Turn Continue (10) and Tool Extend (5) are not
+  used here; Before Request (6) was withdrawn (`runtime.request.before` is not
+  offered), and `examples/plugins/runtime-slots-demo` covers the gate and abort
+  questions from the other direction.
 - **Not a security control.** The three gate patterns are shell-text-level and
   easy to evade (quoting, variables, another language).
 

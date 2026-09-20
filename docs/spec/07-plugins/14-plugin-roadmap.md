@@ -106,9 +106,9 @@ Local plugins usable → developer-friendly → marketplace distribution → sig
   (04-data-storage §4.16). A plugin-facing reader for those facts is not built
   yet, so the slot's grant has nothing a plugin can call.
 - Turn Closing (7) still reaches the kernel through `shouldStopAfterTurn`, and
-  the hooks that were already wired — Turn Watch (2), Tool Gate (4) and the
-  request hooks of Before Request (6) — keep the behaviour they had; spec 13 §2C
-  states per event which hook points the desktop emits today.
+  the hooks that were already wired — Turn Watch (2) and Tool Gate (4) — keep
+  the behaviour they had; spec 13 §2C states per event which hook points the
+  desktop emits today.
 - Shipped: Before Send (1) — the runtime's `input` hook fires after Electron main
   persisted the user's message and before it is queued, honours all three kernel
   actions, and every rewrite a plugin performs is stored at diff level through
@@ -118,8 +118,9 @@ Local plugins usable → developer-friendly → marketplace distribution → sig
   keeping its cancel.
 - Not shipped: Turn Recap (8) and Turn Continue (10) — a registered name with no
   hook or call behind it; Approval Before (12) — not built.
-- Before Request (6) stays out of this cycle in ADR 0295's phasing, and the slot
-  set, the per-slot permissions and the order of work are all fixed in
+- Before Request (6) was withdrawn before shipping: its six events are never
+  consulted and its permission is registered nowhere; the slot set, the
+  per-slot permissions and the order of work are all fixed in
   [ADR 0295](../../adr/0295-runtime-slots-and-their-permissions.md).
 
 ## 3. Mapping to product milestones
