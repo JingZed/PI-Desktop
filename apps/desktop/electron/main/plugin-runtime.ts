@@ -4142,6 +4142,27 @@ export class PluginRuntime {
     return context;
   }
 
+  /**
+   * Agent-extension / plugin-process AI complete (`agent.model.complete`).
+   * Credentials stay in this process; callers never receive API keys.
+   */
+  async invokeAgentModelComplete(
+    pluginId: string,
+    input: PluginCompleteInput & { permissions?: readonly string[] },
+  ): Promise<PluginCompleteResult> {
+    const loaded = this.loaded.get(pluginId);
+    if (loaded) return this.runAgentComplete(loaded, input);
+    // Manual/user extensions have no LoadedPlugin row: honor the grants the
+    // sidecar already gated on, using a synthetic permission set.
+    const synthetic = {
+      manifest: { id: pluginId || "extension", name: pluginId || "extension" },
+      permissions: new Set(
+        (input.permissions ?? []).filter((name): name is string => typeof name === "string"),
+      ),
+    } as LoadedPlugin;
+    return this.runAgentComplete(synthetic, input);
+  }
+
   private async runAgentComplete(
     loaded: LoadedPlugin,
     input: PluginCompleteInput,

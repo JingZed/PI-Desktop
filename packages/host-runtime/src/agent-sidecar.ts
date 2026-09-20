@@ -82,6 +82,9 @@ const HOST_PROXY_ALLOWED = new Set([
   "session.fork",
   "session.queuePush",
   "session.queuePrioritize",
+  // Plugin-level AI on user-configured models (agent.model.complete).
+  "agent.complete",
+  "ai.complete",
 ]);
 
 /** Host-side answers for the `extensions.*` proxy methods. */
@@ -93,6 +96,8 @@ export type TrustedExtensionSidecarBridge = {
   /** `continueTurn` / host-owned queue: the Host module drains it; host-core alone would only store it. */
   queuePush: (params: Record<string, unknown>) => Promise<unknown>;
   queuePrioritize: (params: Record<string, unknown>) => Promise<unknown>;
+  /** Plugin-level AI on user-configured models (`agent.complete` / `ai.complete`). */
+  aiComplete: (params: Record<string, unknown>) => Promise<unknown>;
   /**
    * Slot 3: a plugin asked to stop the current turn. The embedding host
    * cancels that session's plugin tool work, which the sidecar cannot reach.
@@ -503,7 +508,13 @@ export class AgentSidecar {
           );
           return;
         }
-        if (method.startsWith("extensions.") || method === "session.queuePush" || method === "session.queuePrioritize") {
+        if (
+          method.startsWith("extensions.") ||
+          method === "session.queuePush" ||
+          method === "session.queuePrioritize" ||
+          method === "agent.complete" ||
+          method === "ai.complete"
+        ) {
           const bridge = this.trustedExtensionBridge;
           if (!bridge) throw new Error("trusted extension bridge unavailable");
           let result: unknown = { ok: true };
@@ -513,6 +524,8 @@ export class AgentSidecar {
           else if (method === "extensions.turnAbort") await bridge.turnAbort(params);
           else if (method === "session.queuePush") result = await bridge.queuePush(params);
           else if (method === "session.queuePrioritize") result = await bridge.queuePrioritize(params);
+          else if (method === "agent.complete" || method === "ai.complete")
+            result = await bridge.aiComplete(params);
           else result = await bridge.requestUi(params);
           this.writeToChild(
             JSON.stringify({ jsonrpc: "2.0", id: msg.id, result }) + "\n",

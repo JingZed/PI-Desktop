@@ -2824,6 +2824,20 @@ Delegation rules:
           name,
         });
       },
+      aiComplete: async (input) => {
+        try {
+          return await runtime.host.call("ai.complete", {
+            sessionId: runtime.sessionId,
+            ...(input && typeof input === "object" ? input : {}),
+          });
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "PROVIDER_ERROR",
+            detail: error instanceof Error ? error.message : String(error),
+          };
+        }
+      },
       waitForIdle: () => runtime.agent.waitForIdle(),
       newSession: async () => {
         try {

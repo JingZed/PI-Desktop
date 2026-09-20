@@ -354,6 +354,24 @@ export function createSidecarRuntime({
         Array.isArray(params.reports) ? (params.reports as any[]) : [],
       ),
     requestUi: (params) => agentExtensions.requestUi(params as any),
+    aiComplete: async (params) => {
+      const pluginId = String(params.pluginId ?? "").trim() || "extension";
+      try {
+        return await plugins.invokeAgentModelComplete(pluginId, {
+          messages: (Array.isArray(params.messages) ? params.messages : []) as never,
+          system: typeof params.system === "string" ? params.system : undefined,
+          modelKey: typeof params.modelKey === "string" ? params.modelKey : undefined,
+          purpose: typeof params.purpose === "string" ? params.purpose : undefined,
+          permissions: Array.isArray(params.permissions) ? (params.permissions as string[]) : ["agent.model.complete"],
+        });
+      } catch (error) {
+        return {
+          ok: false,
+          code: (error as { code?: string })?.code || "PROVIDER_ERROR",
+          detail: error instanceof Error ? error.message : String(error),
+        };
+      }
+    },
     configureModel: async (params) => {
       if (!runtimeState.host) throw new Error("host unavailable");
       const sessionId = String(params.sessionId ?? "").trim();

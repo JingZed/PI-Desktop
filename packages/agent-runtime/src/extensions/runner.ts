@@ -283,6 +283,20 @@ export interface TrustedExtensionBridge {
   continueTurn(
     input: TrustedExtensionContinuationRequest,
   ): Promise<TrustedExtensionContinuation | undefined>;
+  /**
+   * Plugin-level AI on user-configured models (`agent.model.complete`).
+   * Credentials stay in the host; `system` is not merged with the session prompt.
+   */
+  aiComplete(input: {
+    messages: Array<{ role: string; content: string }>;
+    system?: string;
+    modelKey?: string;
+    purpose?: string;
+    maxTokens?: number;
+  }): Promise<
+    | { ok: true; text: string; modelKey: string; usage?: unknown }
+    | { ok: false; code: string; detail?: string }
+  >;
   requestUi(
     extension: TrustedExtensionSpec,
     request: TrustedExtensionUiRequest,
@@ -908,6 +922,44 @@ export class TrustedExtensionRunner {
   }
 
   /**
+   * Plugin-level completion on user-configured models. Permission
+   * `agent.model.complete` (or legacy `agent.complete` at the host). Not a
+   * renderer path: business AI belongs in the extension/plugin process.
+   */
+  private async extensionAiComplete(
+    extension: LoadedExtension,
+    input: unknown,
+  ): Promise<unknown> {
+    const perms = extension.spec.permissions ?? [];
+    const allowed =
+      perms.includes(PLUGIN_MODEL_COMPLETE_PERMISSION) || perms.includes("agent.complete");
+    if (!allowed) {
+      this.report(
+        extension.spec.id,
+        "permission_denied",
+        `ai.complete was refused: the plugin does not hold ${PLUGIN_MODEL_COMPLETE_PERMISSION}`,
+        "ai.complete",
+      );
+      return { ok: false, code: "PERMISSION_DENIED" };
+    }
+    const record = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
+    if (!Array.isArray(record.messages) || record.messages.length === 0) {
+      this.reportCallFailure(extension, "ai.complete", new Error("ai.complete needs messages"));
+      return { ok: false, code: "INVALID_INPUT" };
+    }
+    try {
+      return await this.bridge.aiComplete({
+        ...record,
+        pluginId: extension.spec.id,
+        permissions: extension.spec.permissions ?? [],
+      } as never);
+    } catch (error) {
+      this.reportCallFailure(extension, "ai.complete", error);
+      return { ok: false, code: "PROVIDER_ERROR", detail: errorMessage(error) };
+    }
+  }
+
+  /**
    * The slot permission that refuses this extension, or `undefined` when it
    * holds the permission and may proceed (ADR 0295 rule 2).
    *
@@ -1355,6 +1407,19 @@ export class TrustedExtensionRunner {
        */
       continueTurn: (input: string | { message?: string }) =>
         this.extensionContinueTurn(extension, input),
+      ai: {
+        complete: (input: unknown) => this.extensionAiComplete(extension, input),
+        completeStream: async (input: unknown, onDelta?: (text: string) => void) => {
+          const result = (await this.extensionAiComplete(extension, input)) as {
+            ok?: boolean;
+            text?: string;
+          };
+          if (typeof onDelta === "function" && result?.ok && typeof result.text === "string") {
+            onDelta(result.text);
+          }
+          return result;
+        },
+      },
       events: {
         on: () => () => {},
         emit: () => {},

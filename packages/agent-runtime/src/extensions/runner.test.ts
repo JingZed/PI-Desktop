@@ -72,6 +72,8 @@ type BridgeLog = {
   sessionRecaps: Array<{ limit: number }>;
   /** One entry per `continueTurn` call, plugin identity included. */
   continuations: TrustedExtensionContinuationRequest[];
+  /** One entry per `ai.complete` call. */
+  aiCompletes: unknown[];
 };
 
 /**
@@ -139,6 +141,7 @@ function fakeBridge(
     factsQueries: [],
     sessionRecaps: [],
     continuations: [],
+    aiCompletes: [],
   };
   const bridge: TrustedExtensionBridge = {
     sessionId: "s1",
@@ -178,6 +181,10 @@ function fakeBridge(
     continueTurn: async (input) => {
       log.continuations.push(input);
       return { queuedTurnId: slots.queuedTurnId ?? "queued-turn-1" };
+    },
+    aiComplete: async (input) => {
+      log.aiCompletes.push(input as never);
+      return { ok: true, text: "ok", modelKey: "p/m" };
     },
     requestUi: async (_ext, request) => {
       log.ui.push(request);

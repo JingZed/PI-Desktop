@@ -468,6 +468,8 @@ export const PLUGIN_TOOL_EXTEND_PERMISSION = "runtime.tool.extend";
  * `continueTurn` is slot 10: start another turn after one ends. It is the only
  * extension-facing way to queue that turn; there is no second call name, so a
  * queued continuation always carries plugin provenance (ADR 0293).
+ * `aiComplete` is plugin-level AI on user-configured models
+ * (`agent.model.complete`): not a turn slot, never a renderer action.
  */
 export const TRUSTED_EXTENSION_API_PERMISSIONS = {
   requestTurnAbort: "runtime.turn.abort",
@@ -475,6 +477,7 @@ export const TRUSTED_EXTENSION_API_PERMISSIONS = {
   turnFacts: "runtime.turn.facts",
   recap: "runtime.turn.recap",
   continueTurn: "runtime.turn.continue",
+  aiComplete: PLUGIN_MODEL_COMPLETE_PERMISSION,
 } as const satisfies Record<string, string>;
 
 /**
