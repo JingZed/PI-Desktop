@@ -13,7 +13,10 @@
  *
  * - `entry` / `entryExtra` — a seeded user message row carries the plugin's
  *   whole-message card and the badge below it, and both name the entry id the
- *   host handed over.
+ *   host handed over. The card is also read for the message the host handed it:
+ *   the user's own text has to stay readable in the transcript, drawn by the
+ *   plugin's card, with the card's own controls beside that text. That is the
+ *   regression check for a replace position that hid the row it replaced.
  * - `codeBlock` — a seeded assistant message contains a closed fence in
  *   `acme.plugin-showcase:kv`; the block is drawn as the plugin's rows.
  * - `toolCard` — a seeded tool row for the plugin's own forced tool name
@@ -43,12 +46,17 @@
  *   the `{ draft, sessionId }` a mounted position is given, the suite types into
  *   the composer, and the plugin's copy has to follow; then the fixture writes a
  *   whole draft through `composer.replaceDraft`, which only resolves once the
- *   mounted composer consumed it.
- * - `composer.readDraft` is asked for by the same fixture and its answer is
- *   reported, not asserted: host-core's `rendererActions` vocabulary has no
- *   `composer.readDraft` member, so a manifest that declares that action — as
- *   the SDK and spec 07-plugins/16 2A.7 say it may — is refused at load, and the
- *   implemented host action cannot be reached from a plugin.
+ *   mounted composer consumed it, and reads the result back through
+ *   `composer.readDraft`. Both names are in host-core's `rendererActions`
+ *   vocabulary and in the SDK's, so the read's snapshot is asserted, not merely
+ *   reported.
+ * - the docked console view — the manifest's `views[]` entry is listed by the
+ *   host's own work-panel launcher and opened through it, and the page it
+ *   renders is read over its own CDP target: the inventory the page publishes as
+ *   `data-pi-console-*` (ten slots, ten actions, eight data keys, eleven runtime
+ *   slots), the receipt the "omit the model key" control writes (code `ok`), the
+ *   one the unresolvable model key writes, and a runtime receipt
+ *   (`data-pi-console-surface="运行时"`) once the turn has run.
  * - the agent half — the tool gate refuses the dangerous shell call the model
  *   itself emitted: the call is in the transcript as a failed command row, and
  *   the plugin's reason reaches the model's next request and the user's own
@@ -84,6 +92,13 @@ const CODE_LANGUAGE = `${PLUGIN_ID}:kv`;
 /** The fenced source the seeded assistant message carries. */
 const FENCE = ["```" + CODE_LANGUAGE, "covered = 42", "disk! = 91% used", "```"].join("\n");
 const MOCK_MODEL = "showcase-e2e-model";
+/**
+ * The text of the seeded user message. It is the one string the entry slot's
+ * regression check reads back out of the plugin's own card: a replace position
+ * that stopped re-drawing the message it was handed would leave the user's own
+ * words unreadable, which is the defect this suite pins.
+ */
+const USER_MESSAGE_TEXT = "Showcase slot journey";
 /** The status line the plugin's own `tool_execution_end` handler writes. */
 const STATUS_TOOL_COUNT = /Plugin Showcase · turn \d+ · \d+ tool call\(s\) seen/;
 
@@ -280,6 +295,39 @@ function createModelStub() {
           ...(usage ? { usage } : {}),
         })}\n\n`,
       );
+    // The agent's own turn always carries tools; the plugin's own
+    // `pi.ai.complete` never does. That is the switch between the scripted turn
+    // below and a plain completion, so the console's AI controls get a real
+    // answer (streaming or not) instead of the turn's scripted tool call.
+    const looksLikeAgentTurn = Array.isArray(payload.tools) && payload.tools.length > 0;
+    if (!looksLikeAgentTurn) {
+      const reply = "Plugin showcase stub completion.";
+      if (payload.stream === true) {
+        res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store" });
+        write({ role: "assistant", content: reply }, null);
+        write({}, "stop", { prompt_tokens: 3, completion_tokens: 4, total_tokens: 7 });
+        res.end("data: [DONE]\n\n");
+        return;
+      }
+      res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+      res.end(
+        JSON.stringify({
+          id: `chatcmpl-${requests.length}`,
+          object: "chat.completion",
+          created: 1,
+          model: payload.model ?? MOCK_MODEL,
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: reply },
+              finish_reason: "stop",
+            },
+          ],
+          usage: { prompt_tokens: 3, completion_tokens: 4, total_tokens: 7 },
+        }),
+      );
+      return;
+    }
     res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store" });
     if (!sawRefusal) {
       write(
@@ -389,9 +437,15 @@ function RaceControl({ position, draft, sessionId, dispatch }) {
 
   const claimModal = () => {
     setClaim("asking");
-    const handle = hostApi ? hostApi.slots.register("modal", ModalProbe) : null;
-    // A replace slot takes one claim, so this is the answer the suite reads.
-    setClaim(handle ? "granted" : "refused");
+    try {
+      const handle = hostApi ? hostApi.slots.register("modal", ModalProbe) : null;
+      setClaim(handle ? "granted" : "refused");
+    } catch (error) {
+      // The host refuses a registration with a coded error rather than a null
+      // handle, so the code itself is the answer this fixture publishes: a
+      // replace position somebody else holds is PLUGIN_SLOT_DUPLICATE.
+      setClaim((error && error.code) || String(error));
+    }
   };
 
   const readDraft = () => {
@@ -642,6 +696,14 @@ async function runJourney() {
   const projectDir = join(runRoot, "project");
   mkdirSync(profileDir, { recursive: true });
   mkdirSync(projectDir, { recursive: true });
+  // The test-only auto consent marker lives in the data directory this run
+  // starts the app with (spec 07-plugins/04 §6.2.1). The benign `echo` call the
+  // model makes raises a real permission request; answering it consumes this
+  // marker and produces the same "allow once" decision a click does, instead of
+  // a native dialog no automated run can click. A run without the marker
+  // behaves exactly as before, and a packaged build ignores it.
+  mkdirSync(dataDir, { recursive: true });
+  writeFileSync(join(dataDir, "e2e-auto-consent"), `${PLUGIN_ID}\n`);
   // One workspace file, so the composer's own `@` completion has something to
   // attach and the `composerReference` position has a host chip to follow.
   writeFileSync(join(projectDir, "README.md"), "# Showcase e2e project\n");
@@ -657,6 +719,9 @@ async function runJourney() {
   const cdpPort = await freePort();
   let child = null;
   let client = null;
+  // The docked console view is a second page in the same app, so the console
+  // checks attach their own CDP client to it and close it with the first.
+  let consoleClient = null;
   const output = [];
   const capture = (chunk) => output.push(String(chunk));
   const describe = (error) =>
@@ -723,7 +788,7 @@ async function windowSnapshot(client) {
       await append({
         id: userMessageId,
         role: "user",
-        content: "Showcase slot journey",
+        content: USER_MESSAGE_TEXT,
         status: "complete",
         createdAt: new Date().toISOString(),
       });
@@ -973,6 +1038,55 @@ async function windowSnapshot(client) {
         (entryFacts.badge ?? "").includes(userMessageId) &&
         entryFacts.badgeCount >= 1,
       `${entryFacts.badgeCount} badge(s) below transcript rows, first: ${JSON.stringify(entryFacts.badge)}`,
+    );
+
+    // ── the entry card re-draws the message it took over ───────────────────
+    // The defect this pins: a replace position that announced "this
+    // registration replaced the host's own row" while hiding the row's content.
+    // The host hands the position the message the row was going to draw, so the
+    // plugin's own card has to draw that text — readable in the transcript the
+    // user actually sees — with its own controls beside it.
+    const replacedFacts = await run(`
+      const row = $('.message-row[data-message-id=${JSON.stringify(userMessageId)}]');
+      const card = row?.querySelector('[data-pi-showcase-slot="entry"]');
+      const textNode = card?.querySelector('[data-pi-showcase-entry-text]');
+      const controls = $$('[data-pi-plugin-slot="entry"] [data-pi-showcase-action], [data-pi-plugin-slot="entry"] [data-pi-showcase-release]');
+      const toast = card?.querySelector('[data-pi-showcase-action="ui.toast"]');
+      const release = card?.querySelector('[data-pi-showcase-release="entry"]');
+      const follows = (before, after) =>
+        Boolean(before && after) &&
+        (before.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+      return {
+        cardFound: Boolean(card),
+        container:
+          row?.querySelector('[data-pi-plugin="${PLUGIN_ID}"][data-pi-plugin-slot="entry"]')
+            ?.getAttribute('data-pi-plugin') ?? null,
+        text: text(textNode),
+        expected: ${JSON.stringify(USER_MESSAGE_TEXT)},
+        // The transcript the user reads, not the DOM: innerText leaves out what
+        // is hidden, so this is the "still readable" half of the check.
+        rendered: (transcriptText() ?? '').includes(${JSON.stringify(USER_MESSAGE_TEXT)}),
+        // The host's own bubble must not sit behind the card: the claim
+        // replaces the row rather than stacking a copy on top of it.
+        hostBubble: Boolean(row?.querySelector('.message-bubble')),
+        controlCount: controls.length,
+        toastLabel: text(toast),
+        releaseLabel: text(release),
+        controlsFollowText: follows(textNode, toast) && follows(textNode, release),
+        releaseTarget: release?.getAttribute('data-pi-showcase-release') ?? null,
+      };
+    `);
+    record(
+      "E2E-PLUGIN-showcase-entry-card-redraws-the-message",
+      replacedFacts.cardFound &&
+        replacedFacts.container === PLUGIN_ID &&
+        replacedFacts.text === replacedFacts.expected &&
+        replacedFacts.rendered &&
+        replacedFacts.controlsFollowText &&
+        replacedFacts.releaseTarget === "entry" &&
+        (replacedFacts.toastLabel ?? "").includes("entry slot") &&
+        (replacedFacts.releaseLabel ?? "").includes("Release this claim"),
+      `the transcript still reads ${JSON.stringify(replacedFacts.expected)} because the plugin's card draws it (card text: ${JSON.stringify(replacedFacts.text)}, readable in the transcript: ${replacedFacts.rendered}), with ${replacedFacts.controlCount} of the card's own control(s) beside it (toast: ${JSON.stringify(replacedFacts.toastLabel)}, release: ${JSON.stringify(replacedFacts.releaseLabel)}) — host bubble behind the card: ${replacedFacts.hostBubble}`,
     );
 
     // ── codeBlock ──────────────────────────────────────────────────────────
@@ -1496,6 +1610,8 @@ async function windowSnapshot(client) {
         () => {
           const value = $('[data-pi-fixture-trigger="claimModal"]')
             ?.getAttribute('data-pi-fixture-claim');
+          // 'asking' is the fixture's own transient state; anything else is the
+          // host's answer, so it is what the suite reads.
           return value && value !== 'asking' ? value : null;
         },
         ${RUNTIME_PROBE_TIMEOUT},
@@ -1528,9 +1644,10 @@ async function windowSnapshot(client) {
         claimFacts.before.blocking === 1 &&
         claimFacts.before.claimOwners.length === 1 &&
         claimFacts.before.claimOwners[0] === PLUGIN_ID &&
-        // The refusal as the second plugin observed it, not as the suite judges
-        // it: `register` answered null for the position the showcase holds.
-        claimFacts.answer === "refused" &&
+        // The refusal as the second plugin observed it, and as the host's own
+        // `pi.slots.register` reports it: the coded error names the reason
+        // (`PLUGIN_SLOT_DUPLICATE`, spec 07-plugins/16 2A.5), not "invalid".
+        claimFacts.answer === "PLUGIN_SLOT_DUPLICATE" &&
         // Only the showcase is ever an owner: the fixture never takes the
         // position and its own marker never renders. The click lands on the
         // composer, outside the modal, so the host also dismisses the
@@ -1541,7 +1658,7 @@ async function windowSnapshot(client) {
         claimFacts.after.fixtureModalMarkers === 0 &&
         claimFacts.after.layers <= claimFacts.before.layers &&
         claimFacts.closed,
-      `the showcase held the modal position (layers ${claimFacts.before.layers}, claim owner ${JSON.stringify(claimFacts.before.claimOwners)}) and the fixture's own registration answered ${JSON.stringify(claimFacts.answer)} (${JSON.stringify(claimFacts.after.claimLabel)}); afterwards the window still carries ${claimFacts.after.layers} blocking layer(s) with claim owner ${JSON.stringify(claimFacts.after.claimOwners)}, the fixture's modal marker appears ${claimFacts.after.fixtureModalMarkers} time(s), and its mounted slots are ${JSON.stringify(claimFacts.after.fixtureSlots)}`,
+      `the showcase held the modal position (layers ${claimFacts.before.layers}, claim owner ${JSON.stringify(claimFacts.before.claimOwners)}) and the fixture's own registration was answered with ${JSON.stringify(claimFacts.answer)} (${JSON.stringify(claimFacts.after.claimLabel)}); afterwards the window still carries ${claimFacts.after.layers} blocking layer(s) with claim owner ${JSON.stringify(claimFacts.after.claimOwners)}, the fixture's modal marker appears ${claimFacts.after.fixtureModalMarkers} time(s), and its mounted slots are ${JSON.stringify(claimFacts.after.fixtureSlots)}`,
     );
 
     // ── Resolve the permission so the turn can finish ──────────────────────
@@ -1656,14 +1773,277 @@ async function windowSnapshot(client) {
       `${JSON.stringify(resolved)}; one summary per run, and the status line is cleared with it: ${JSON.stringify(summarySeen.toasts.filter((toast) => toast.includes("turn summary")))}`,
     );
 
-    return {
-      turnAccepted: turn.accepted,
-      modelRequests: stub.requests.length,
-      toasts: summarySeen.toasts,
-    };
+    // ── the docked console view ────────────────────────────────────────────
+/**
+ * The helpers a probe inside the console page needs. A docked view is its own
+ * document — it shares no globals with the app window — so it carries its own
+ * small copy instead of reusing `PROBE_HELPERS`.
+ */
+const CONSOLE_HELPERS = `
+const $ = (selector) => document.querySelector(selector);
+const $$ = (selector) => Array.from(document.querySelectorAll(selector));
+const text = (node) => (node ? (node.textContent ?? '').trim() : null);
+const waitFor = async (predicate, timeoutMs) => {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const value = predicate();
+    if (value) return value;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return null;
+};
+`;
+
+    // The plugin's own page is declared as a work-panel view (`ui.view`) as
+    // well as a panel, and until now nothing in this suite opened it. It is
+    const dockView = await run(`
+      const click = (node) => node?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      const toggle = $('.app-work-panel-toggle');
+      if (toggle && toggle.getAttribute('aria-pressed') !== 'true') click(toggle);
+      // The panel reopens on the tab it had, and the destination rows only exist
+      // in a "new tab" surface: open that first, exactly like the "+" a user
+      // presses before picking a view.
+      const openedPanel = await waitFor(
+        () => $('.work-panel-new-tab') ?? null,
+        ${RUNTIME_PROBE_TIMEOUT},
+      );
+      click(openedPanel);
+      const listed = await waitFor(
+        () => {
+          const rows = $$('[data-work-panel-launcher-item]').map((node) =>
+            node.getAttribute('data-work-panel-launcher-item'),
+          );
+          return rows.includes('${PLUGIN_ID}/console') ? rows : null;
+        },
+        ${RUNTIME_PROBE_TIMEOUT},
+      );
+      const seenRows = $$('[data-work-panel-launcher-item]').map((node) =>
+        node.getAttribute('data-work-panel-launcher-item'),
+      );
+      // The host's own answer, so a missing row can be told apart from an
+      // empty list: this is the call the store behind the launcher makes.
+      const ipcViews = await window.piDesktop
+        .invoke(window.piDesktop.channels.invoke.pluginViews)
+        .catch((error) => [{ error: String(error?.message ?? error) }]);
+      const launcherRows = $$('.work-panel-launcher-row').map((node) => text(node));
+      const row = $('[data-work-panel-launcher-item="${PLUGIN_ID}/console"]');
+      click(row);
+      const tab = await waitFor(
+        () =>
+          $('.work-panel-tab-button[title="${PLUGIN_ID}/console"]') ??
+          [...$$('.work-panel-tab-button')].find((node) =>
+            (node.textContent ?? '').includes('Showcase Console'),
+          ) ??
+          null,
+        ${RUNTIME_PROBE_TIMEOUT},
+      );
+      return {
+        listed,
+        seenRows,
+        ipcViews,
+        launcherRows,
+        panelOpen: Boolean(openedPanel),
+        rowFound: Boolean(row),
+        rowLabel: text(row),
+        tabFound: Boolean(tab),
+        tabTitle: tab?.getAttribute('title') ?? null,
+      };
+    `);
+    const consoleTarget = await waitFor(
+      async () => {
+        const targets = await listTargets(cdpPort).catch(() => []);
+        return targets.find(
+          (candidate) =>
+            candidate.type === "page" &&
+            candidate.webSocketDebuggerUrl &&
+            candidate.url.includes("plugin-showcase/views/console.html"),
+        );
+      },
+      "the docked console view target",
+      60_000,
+    ).catch(async (error) => {
+      // A missing target is the interesting failure: print what the panel
+      // really showed and which pages the app advertised.
+      const targets = await listTargets(cdpPort).catch(() => []);
+      throw new Error(
+        `${error.message}; dock view: ${JSON.stringify(dockView)}; pages: ${JSON.stringify(
+          targets.map((candidate) => candidate.url),
+        )}`,
+      );
+    });
+    consoleClient = await CdpClient.connect(consoleTarget.webSocketDebuggerUrl);
+    await consoleClient.send("Runtime.enable");
+    const runConsole = async (body) =>
+      consoleClient.evaluate(`(async () => {${CONSOLE_HELPERS}${body}})()`);
+
+    const consoleFacts = await runConsole(`
+      const ready = await waitFor(
+        () => (document.body.dataset.piConsoleReady === '1' ? '1' : null),
+        ${RUNTIME_PROBE_TIMEOUT},
+      );
+      const inventory = $('[data-pi-console-inventory]');
+      return {
+        ready,
+        shape: document.documentElement.dataset.piPluginPanelShape ?? null,
+        bridge: document.body.dataset.piConsoleBridge ?? null,
+        slots: inventory?.getAttribute('data-pi-console-slots') ?? null,
+        actions: inventory?.getAttribute('data-pi-console-actions') ?? null,
+        data: inventory?.getAttribute('data-pi-console-data') ?? null,
+        runtimeSlots: inventory?.getAttribute('data-pi-console-permissions') ?? null,
+        groups: $$('[data-pi-console-group]').map((node) =>
+          node.getAttribute('data-pi-console-group'),
+        ),
+        slotItems: $$('[data-pi-console-group="slots"] [data-pi-console-item]').length,
+        actionItems: $$('[data-pi-console-group="actions"] [data-pi-console-item]').length,
+        dataItems: $$('[data-pi-console-group="data"] [data-pi-console-item]').length,
+        runtimeItems: $$('[data-pi-console-group="runtime"] [data-pi-console-item]').length,
+        version: text($('[data-pi-console-version]')),
+      };
+    `);
+    record(
+      "E2E-PLUGIN-showcase-console-view-inventory",
+      dockView.panelOpen &&
+        dockView.rowFound &&
+        dockView.tabFound &&
+        (dockView.listed ?? []).includes(`${PLUGIN_ID}/console`) &&
+        consoleFacts.ready === "1" &&
+        // A docked view publishes its placement itself; "view" is what keeps it
+        // distinct from the plugin's own panel window.
+        consoleFacts.shape === "view" &&
+        consoleFacts.bridge === "ok" &&
+        consoleFacts.slots === "10" &&
+        consoleFacts.actions === "10" &&
+        consoleFacts.data === "8" &&
+        consoleFacts.runtimeSlots === "11" &&
+        consoleFacts.slotItems === 10 &&
+        consoleFacts.actionItems === 10 &&
+        consoleFacts.dataItems === 8 &&
+        consoleFacts.runtimeItems === 11,
+      `the view is listed as ${JSON.stringify(dockView.listed)} (row ${JSON.stringify(dockView.rowLabel)}) and the page it renders publishes slots=${consoleFacts.slots}, actions=${consoleFacts.actions}, data=${consoleFacts.data}, runtime slots=${consoleFacts.runtimeSlots} with ${consoleFacts.slotItems}/${consoleFacts.actionItems}/${consoleFacts.dataItems}/${consoleFacts.runtimeItems} rendered rows, shape ${consoleFacts.shape}, bridge ${consoleFacts.bridge}, group order ${JSON.stringify(consoleFacts.groups)}`,
+    );
+
+    // The console's own buttons are real round trips into the plugin process,
+    // which is where the host answer is turned into a receipt line. The two AI
+    // controls that show the model-resolution order are the cheapest pair to
+    // drive: one omits the model key, the other names a key the host cannot
+    // resolve, and each writes the code the host really returned.
+    const consoleAi = await runConsole(`
+      const clickAction = (action) => {
+        const button = $('[data-pi-console-action="' + action + '"]');
+        button?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        return Boolean(button);
+      };
+      const receiptFor = (needle) =>
+        $$('[data-pi-console-receipt]').find((line) =>
+          (line.getAttribute('data-pi-console-action') ?? '').includes(needle),
+        ) ?? null;
+      const receiptOf = (line) =>
+        line
+          ? {
+              code: line.getAttribute('data-pi-console-code'),
+              action: line.getAttribute('data-pi-console-action'),
+              surface: line.getAttribute('data-pi-console-surface'),
+              detail: (line.getAttribute('data-pi-console-detail') ?? '').slice(0, 240),
+            }
+          : null;
+      const askedDefault = clickAction('ai.default');
+      const defaultReceipt = await waitFor(
+        () => receiptFor('省略 modelKey'),
+        ${RUNTIME_PROBE_TIMEOUT},
+      );
+      const askedUnknown = clickAction('ai.unknown');
+      const unknownReceipt = await waitFor(
+        () => receiptFor('不可解析的 modelKey'),
+        ${RUNTIME_PROBE_TIMEOUT},
+      );
+      return {
+        askedDefault,
+        askedUnknown,
+        default: receiptOf(defaultReceipt),
+        unknown: receiptOf(unknownReceipt),
+        requestCount: document.querySelectorAll('[data-pi-console-receipt]').length,
+      };
+    `);
+    record(
+      "E2E-PLUGIN-showcase-console-ai-receipts",
+      consoleAi.askedDefault &&
+        consoleAi.askedUnknown &&
+        // Omitting the model key resolves through the host's ready catalog.
+        consoleAi.default?.code === "ok" &&
+        // An explicit key the host cannot resolve does NOT answer NO_MODEL in
+        // this build: the host falls back to a usable provider/model, and the
+        // receipt the console shows is that answer, sentence included. The
+        // check pins the documented resolution order instead of the code the
+        // page's own copy used to guess.
+        consoleAi.unknown?.code === "ok" &&
+        (consoleAi.unknown?.detail ?? "").includes("fell back to a usable provider/model"),
+      `omitting the model key wrote ${JSON.stringify(consoleAi.default)} and the unresolvable key wrote ${JSON.stringify(consoleAi.unknown)} (${consoleAi.requestCount} receipt lines on the page)`,
+    );
+
+
+    // The runtime group's own button reads back what the plugin process really
+    // holds about the agent half: the host's `session:turnEnded` push for the
+    // turn this journey ran, and the plugin's own tool executions. A count on
+    // its own could be anything; this check requires a receipt line whose
+    // surface is 「运行时」.
+    const consoleRuntime = await runConsole(`
+      const clickAction = (action) => {
+        const button = $('[data-pi-console-action="' + action + '"]');
+        button?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        return Boolean(button);
+      };
+      // The turn this journey ran already left a runtime receipt on the page
+      // (the boot status read merges the plugin process's own list), so the log
+      // is cleared first: what is asserted below is what the button's own round
+      // trip wrote, not what a refresh had already merged.
+      const cleared = clickAction('log.clear');
+      const emptyLog = await waitFor(
+        () => ($('[data-pi-console-receipt]') ? null : true),
+        ${RUNTIME_PROBE_TIMEOUT},
+      );
+      const asked = clickAction('runtime.receipts');
+      const line = await waitFor(
+        () =>
+          [...$$('[data-pi-console-receipt]')].find(
+            (node) => node.getAttribute('data-pi-console-surface') === '运行时',
+          ) ?? null,
+        ${RUNTIME_PROBE_TIMEOUT},
+      );
+      const status = await waitFor(
+        () => {
+          const value = text($('[data-pi-console-status="runtime.tool.gate"]'));
+          return value && value.startsWith('回执') ? value : null;
+        },
+        ${RUNTIME_PROBE_TIMEOUT},
+      );
+      return {
+        cleared,
+        emptyLog,
+        asked,
+        runtimeLine: line
+          ? {
+              code: line.getAttribute('data-pi-console-code'),
+              action: line.getAttribute('data-pi-console-action'),
+              detail: (line.getAttribute('data-pi-console-detail') ?? '').slice(0, 240),
+            }
+          : null,
+        status,
+      };
+    `);
+    record(
+      "E2E-PLUGIN-showcase-console-runtime-receipts",
+      consoleRuntime.cleared &&
+        consoleRuntime.emptyLog &&
+        consoleRuntime.asked &&
+        consoleRuntime.runtimeLine?.code === "ok" &&
+        (consoleRuntime.runtimeLine?.action ?? "").includes("turnEnded") &&
+        (consoleRuntime.status ?? "").startsWith("回执"),
+      `after clearing the log (${consoleRuntime.cleared}/${consoleRuntime.emptyLog}) the runtime group's button read back ${JSON.stringify(consoleRuntime.runtimeLine)} and left ${JSON.stringify(consoleRuntime.status)} on the tool-gate row`,
+    );
   } catch (error) {
     throw new Error(`${describe(error)}\n--- window ---\n${await windowSnapshot(client)}`);
   } finally {
+    consoleClient?.close();
     client?.close();
     if (child) await killTree(child);
     await stub.close();
