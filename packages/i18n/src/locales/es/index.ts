@@ -1567,6 +1567,10 @@ sklm: {
     "capabilitiesTitle": "Capacidades",
     "rendererDiagnosticsTitle": "Diagnósticos del renderizador",
     "rendererDiagnosticsEmpty": "Sin diagnósticos de ranuras del renderizador.",
+    "rendererModuleTitle": "Módulo del renderizador",
+    "rendererModuleLoaded": "Cargado: sus ranuras están activas.",
+    "rendererModuleNotLoaded":
+      "Aún no cargado: se carga la primera vez que se dibuja una de sus ranuras.",
     "servicesTitle": "Servicios",
     "searchInstalled": "Buscar complementos instalados",
     "clearSearch": "Borrar búsqueda",

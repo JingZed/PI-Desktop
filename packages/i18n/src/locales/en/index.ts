@@ -1591,6 +1591,10 @@ importConfirm: "Imported extensions run inside the agent process with the same a
     capabilitiesTitle: "Capabilities",
     rendererDiagnosticsTitle: "Renderer diagnostics",
     rendererDiagnosticsEmpty: "No renderer slot diagnostics.",
+    rendererModuleTitle: "Renderer module",
+    rendererModuleLoaded: "Loaded — its slots are live.",
+    rendererModuleNotLoaded:
+      "Not loaded yet — it loads the first time one of its slots is drawn.",
     servicesTitle: "Services",
     searchInstalled: "Search installed plugins",
     clearSearch: "Clear search",

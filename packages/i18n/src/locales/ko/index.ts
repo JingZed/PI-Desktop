@@ -1585,6 +1585,10 @@ importConfirm: "가져온 확장은 에이전트 프로세스 안에서 에이�
     capabilitiesTitle: "기능",
     rendererDiagnosticsTitle: "렌더러 진단",
     rendererDiagnosticsEmpty: "렌더러 슬롯 진단이 없습니다.",
+    rendererModuleTitle: "렌더러 모듈",
+    rendererModuleLoaded: "로드됨 — 슬롯이 활성 상태입니다.",
+    rendererModuleNotLoaded:
+      "아직 로드되지 않음 — 슬롯이 처음 그려질 때 로드됩니다.",
     servicesTitle: "서비스",
     searchInstalled: "설치된 플러그인 검색",
     clearSearch: "검색 지우기",

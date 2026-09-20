@@ -1567,6 +1567,10 @@ sklm: {
     "capabilitiesTitle": "Capacités",
     "rendererDiagnosticsTitle": "Diagnostics du moteur de rendu",
     "rendererDiagnosticsEmpty": "Aucun diagnostic d'emplacement du moteur.",
+    "rendererModuleTitle": "Module du moteur de rendu",
+    "rendererModuleLoaded": "Chargé — ses emplacements sont actifs.",
+    "rendererModuleNotLoaded":
+      "Pas encore chargé — il se charge au premier affichage de l'un de ses emplacements.",
     "servicesTitle": "Services",
     "searchInstalled": "Rechercher les plugins installés",
     "clearSearch": "Effacer la recherche",

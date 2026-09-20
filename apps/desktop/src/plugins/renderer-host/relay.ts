@@ -118,9 +118,15 @@ export type RendererActionRefusalCode =
   | "PLUGIN_ACTION_UNROUTED"
   | "PLUGIN_ACTION_INVALID_PAYLOAD"
   | "PLUGIN_ACTION_DRAFT_UNCONSUMED"
-  // A handler may need the live UI to answer: `composer.readDraft` refuses
-  // `NO_SESSION` when no session is active, and `composer.replaceDraft` refuses
-  // `DRAFT_CONFLICT` when the caller's `expectedGeneration` is stale.
+  // A handler may need something the live UI holds. `ui.openModal` /
+  // `ui.closeModal` / `ui.openOverlay` / `ui.closeOverlay` refuse
+  // `PLUGIN_ACTION_LAYER_NOT_REGISTERED` when the calling plugin holds no
+  // registration for that layer position — a layer's appearance is its
+  // registration, so there is nothing for them to open or close.
+  | "PLUGIN_ACTION_LAYER_NOT_REGISTERED"
+  // `composer.readDraft` refuses `NO_SESSION` when no session is active, and
+  // `composer.replaceDraft` refuses `DRAFT_CONFLICT` when the caller's
+  // `expectedGeneration` is stale.
   | "NO_SESSION"
   | "DRAFT_CONFLICT";
 

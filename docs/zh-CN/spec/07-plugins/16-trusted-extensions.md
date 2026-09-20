@@ -124,6 +124,21 @@ realm 本身不是边界，全局桥句柄始终可达：`contextBridge` 把 `wi
 （先 claim 者占用）。后来的注册以 `PLUGIN_SLOT_DUPLICATE` 拒绝。叠加型槽位
 按注册顺序堆叠（D8）。`codeBlock` 仍按语言 claim。
 
+替换型位置会把所取代的宿主 surface 原本要显示的数据交给占用它的组件
+（ADR 0291）：`entry` 拿到宿主那一行原本会画的消息（`message.text`、
+`message.attachments`、时间戳、斜杠调用形式、是否仍在流式输出，以及该位置
+代替的宿主 `actions`）；`toolCard` 拿到它取代的工具调用（`tool.name`、
+`tool.args`、`tool.result`、`tool.status`、`tool.durationMs`）；`inlineConfirm`
+拿到宿主确认卡原本会显示的待决请求（`confirm.toolName`、`confirm.args`、
+`confirm.risk`、`confirm.reason`、`confirm.queued`）。占用即意味着用组件自己的
+形式重新渲染这些数据，并把组件自己的控件放在其**旁边**，而不是交出一张隐藏了
+所获内容的空卡。`modal` 与 `overlay` 是例外：它们是插件自己打开的层 —— 注册一个
+层就是让它出现，宿主在该位置没有自己的内容可交，因此只传 session。宿主的 Escape
+与插件自己的 `ui.closeModal` / `ui.closeOverlay` 会在这份注册仍然存在时把层收起，
+而 `ui.openModal` / `ui.openOverlay` 会让它重新出现（§2A.7）。这些 props 是纯增量的：按更早宿主
+编写的组件只是拿到的键更少；叠加型的 `entryExtra` 位置刻意保持只有身份的形状
+（`{ entry: { id, role, pluginId? }, sessionId }`）。
+
 选择拒绝 Shadow DOM 的原因：被 portal 的插件 UI 会逃出 shadow root
 （渲染层 18 个文件、41 处 `createPortal` 调用）。
 
@@ -179,8 +194,8 @@ realm 本身不是边界，全局桥句柄始终可达：`contextBridge` 把 `wi
 props 拿到它的宿主数据和一个方法 `dispatch(action, payload)`；没有任何东西是隐式的。
 宿主会拒绝插件没有声明的操作，而声明了、宿主却还没有处理器的操作会以带错误码的
 拒绝而不是解析为 `undefined` —— 每次拒绝同时也会作为诊断记在插件的行上。
-九个名字中有三个已实现；调用其余六个会以带错误码的 `PLUGIN_ACTION_UNROUTED`
-拒绝。
+十个名字中有八个已实现；调用其余两个（`composer.insertText`、`composer.attachPath`）
+会以带错误码的 `PLUGIN_ACTION_UNROUTED` 拒绝。
 
 - `plugin.call { method: string, args?: unknown }` 转发到调用插件自己的 headless
   入口，该入口通过 SDK 钩子 `onRendererCall(method, args)` 作答，答案原样返回给
@@ -192,6 +207,14 @@ props 拿到它的宿主数据和一个方法 `dispatch(action, payload)`；没�
 - `composer.replaceDraft { text: string }` 写入当前会话的整份草稿，并且只在某个已
   挂载的 composer 消费了这次写入后才 resolve；如果 500 ms 内没有任何 composer
   消费，写入会被清除，调用以 `PLUGIN_ACTION_DRAFT_UNCONSUMED` 拒绝。
+- `ui.openModal` / `ui.closeModal` / `ui.openOverlay` / `ui.closeOverlay`
+  收起或恢复调用插件自己的层位置。层的出现**就是**它的注册（§2A.5），所以这四个
+  都无法凭空造出一层：`open*` 让本插件已经注册的 `modal` 或 `overlay` 重新显示 ——
+  在此之前它被 `close*` 或宿主自己的 Escape 收起了 —— 无论哪种情况，被注册的组件
+  都原样绘制。插件 id 来自 dispatch 而非 payload，因此一次调用只能触达发起它的那个
+  插件自己的层；如果本插件没有任何对应注册，调用会以
+  `PLUGIN_ACTION_LAYER_NOT_REGISTERED` 拒绝，而不是静默地什么都不做。
+  payload 被忽略，返回值为 `{ ok: true, slot, visible }`。
 
 `rendererData` —— 模块声明读取的宿主数据。角色拆分如下：
 

@@ -99,9 +99,14 @@ const { forbiddenSelector, injectPluginStyle, removePluginStyles } = await impor
   "../src/plugins/renderer-slots/style-injection.ts"
 );
 const { rendererCandidates } = await import("../src/plugins/renderer-slots/candidates.ts");
-const { entryExtraSlotProps, transcriptEntryIdentity } = await import(
-  "../src/features/chat/transcript/model.ts"
-);
+const {
+  entryExtraSlotProps,
+  entrySlotProps,
+  inlineConfirmSlotProps,
+  toolCardSlotProps,
+  transcriptEntryIdentity,
+  transcriptEntryMessage,
+} = await import("../src/features/chat/transcript/model.ts");
 const {
   MAX_PLUGIN_CODE_BLOCK_SOURCE_LENGTH,
   RESERVED_LANGUAGES,
@@ -467,6 +472,207 @@ test("the host leaves pluginId unset until a producer can report itself", () => 
   const props = entryExtraSlotProps(identity, "session-1");
   assert.deepEqual(Object.keys(props).sort(), ["entry", "sessionId"]);
   assert.deepEqual(Object.keys(props.entry).sort(), ["id", "role"]);
+});
+
+/* ---------- a replace position is handed the data it stands in for ---------- */
+
+/**
+ * The replace positions (`entry`, `toolCard`, `inlineConfirm`) take over a host
+ * surface, so the host hands them what that surface was going to display. These
+ * cases go through `PluginSlot` itself — the mount, not only the builder — so a
+ * future change that thins the contract fails here rather than first in a real
+ * window.
+ */
+test("a component mounted for entry is handed the message the host's own row would draw", () => {
+  resetPluginSlots();
+  resetRendererPlugins();
+  resetRendererRelay();
+  const { PluginSlot } = loadSlotOutlet();
+  let received = null;
+  pluginSlots.register("acme.entry", "entry", (props) => {
+    received = props;
+    return null;
+  });
+
+  const message = transcriptEntryMessage(
+    {
+      content: "the user's own words",
+      attachments: [
+        {
+          ref: "src/a.ts",
+          name: "a.ts",
+          kind: "file",
+          mimeType: "text/plain",
+          size: 12,
+          // Sidecar-only hydrated bytes: display data leaves those behind.
+          data: "BASE64",
+        },
+      ],
+      createdAt: "2026-01-02T03:04:05.000Z",
+      command: "/fix the build",
+      status: "streaming",
+    },
+    ["copy", "edit", "delete"],
+  );
+  assert.deepEqual(message, {
+    text: "the user's own words",
+    attachments: [
+      { ref: "src/a.ts", name: "a.ts", kind: "file", mimeType: "text/plain", size: 12 },
+    ],
+    streaming: true,
+    createdAt: "2026-01-02T03:04:05.000Z",
+    command: "/fix the build",
+    actions: ["copy", "edit", "delete"],
+  });
+  assert.equal(Object.hasOwn(message.attachments[0], "data"), false);
+
+  const props = entrySlotProps(
+    transcriptEntryIdentity({ id: "entry-1", role: "user" }),
+    message,
+    "session-1",
+  );
+  assert.deepEqual(Object.keys(props).sort(), ["entry", "message", "sessionId"]);
+  assert.deepEqual(props.entry, { id: "entry-1", role: "user" });
+
+  renderToStaticMarkup(
+    React.createElement(PluginSlot, { slot: "entry", slotProps: props, candidates: [] }),
+  );
+  assert.equal(received.message.text, "the user's own words");
+  assert.equal(received.message.streaming, true);
+  assert.equal(received.message.createdAt, "2026-01-02T03:04:05.000Z");
+  assert.equal(received.message.command, "/fix the build");
+  assert.deepEqual(received.message.actions, ["copy", "edit", "delete"]);
+  assert.deepEqual(
+    received.message.attachments.map((attachment) => [attachment.name, attachment.kind]),
+    [["a.ts", "file"]],
+  );
+  assert.equal(received.entry.id, "entry-1");
+  assert.equal(received.sessionId, "session-1");
+  assert.equal(typeof received.dispatch, "function");
+
+  // An entry with no text and no attachments still carries the shape: a
+  // component never has to guess which keys exist.
+  const bare = transcriptEntryMessage({ content: "" }, []);
+  assert.deepEqual(bare, { text: "", attachments: [], streaming: false, actions: [] });
+});
+
+test("a component mounted for toolCard is handed the tool call it stands in for", () => {
+  resetPluginSlots();
+  resetRendererPlugins();
+  resetRendererRelay();
+  const { PluginSlot } = loadSlotOutlet();
+  let received = null;
+  pluginSlots.register("acme.tools", "toolCard", (props) => {
+    received = props;
+    return null;
+  });
+  const toolName = pluginSdk.pluginToolName("acme.tools", "note");
+
+  const props = toolCardSlotProps(
+    {
+      id: "tool-1",
+      role: "tool",
+      toolName,
+      toolArgs: { text: "hello" },
+      toolResult: { ok: true, content: { text: "hello" } },
+      toolStatus: "success",
+      toolDurationMs: 120,
+    },
+    "session-1",
+    "acme.tools",
+  );
+  assert.equal(props.entry.pluginId, "acme.tools");
+  assert.deepEqual(props.tool, {
+    name: toolName,
+    args: { text: "hello" },
+    result: { ok: true, content: { text: "hello" } },
+    status: "success",
+    durationMs: 120,
+  });
+
+  renderToStaticMarkup(
+    React.createElement(PluginSlot, { slot: "toolCard", slotProps: props, candidates: [] }),
+  );
+  assert.equal(received.tool.name, toolName);
+  assert.deepEqual(received.tool.args, { text: "hello" });
+  assert.deepEqual(received.tool.result, { ok: true, content: { text: "hello" } });
+  assert.equal(received.tool.status, "success");
+  assert.equal(received.entry.pluginId, "acme.tools");
+
+  // A call that is still running has no result and no duration: the keys are
+  // absent rather than `undefined`, so a component can branch on presence.
+  const running = toolCardSlotProps(
+    { id: "tool-2", role: "tool", toolName, toolArgs: {}, toolStatus: "running" },
+    "session-1",
+    "acme.tools",
+  );
+  assert.equal(Object.hasOwn(running.tool, "result"), false);
+  assert.equal(Object.hasOwn(running.tool, "durationMs"), false);
+  assert.equal(running.tool.status, "running");
+  assert.equal(running.tool.name, toolName);
+});
+
+test("a component mounted for inlineConfirm is handed the confirmation the host's card would show", () => {
+  resetPluginSlots();
+  resetRendererPlugins();
+  resetRendererRelay();
+  const { PluginSlot } = loadSlotOutlet();
+  let received = null;
+  pluginSlots.register("acme.confirm", "inlineConfirm", (props) => {
+    received = props;
+    return null;
+  });
+
+  const props = inlineConfirmSlotProps(
+    {
+      sessionId: "session-1",
+      requestId: "req-1",
+      toolName: "Bash",
+      argsPreview: { command: "rm -rf /" },
+      risk: "high",
+      reason: "the host asks before this command runs",
+      agentName: "   ",
+    },
+    2,
+  );
+  assert.equal(props.sessionId, "session-1");
+  assert.deepEqual(props.confirm, {
+    requestId: "req-1",
+    toolName: "Bash",
+    args: { command: "rm -rf /" },
+    risk: "high",
+    reason: "the host asks before this command runs",
+    queued: 2,
+  });
+  // A blank producer is omitted rather than blanked, exactly like
+  // `entry.pluginId` (D14).
+  assert.equal(Object.hasOwn(props.confirm, "agentName"), false);
+
+  // A delegate names itself, an unknown risk reads as the host's own worst
+  // case rather than a value outside the contract, and the queue never counts
+  // below zero.
+  const delegated = inlineConfirmSlotProps(
+    {
+      sessionId: "session-2",
+      requestId: "req-2",
+      toolName: "Task",
+      argsPreview: null,
+      risk: "critical",
+      reason: "a delegate asked",
+      agentName: "researcher",
+    },
+    -1,
+  );
+  assert.equal(delegated.confirm.agentName, "researcher");
+  assert.equal(delegated.confirm.risk, "high");
+  assert.equal(delegated.confirm.queued, 0);
+
+  renderToStaticMarkup(
+    React.createElement(PluginSlot, { slot: "inlineConfirm", slotProps: props, candidates: [] }),
+  );
+  assert.equal(received.confirm.toolName, "Bash");
+  assert.deepEqual(received.confirm.args, { command: "rm -rf /" });
+  assert.equal(received.sessionId, "session-1");
 });
 
 test("a codeBlock registration without a language is refused with PLUGIN_SLOT_LANGUAGE_MISSING", () => {
@@ -898,9 +1104,33 @@ test("installing the host actions routes the implemented names and leaves the re
     () => dispatchFromPlugin("acme.one", "composer.readDraft", {}),
     (error) => error.code === "NO_SESSION" && error.action === "composer.readDraft",
   );
-  for (const action of PLUGIN_RENDERER_ACTIONS.filter(
-    (name) => ![...implemented, "composer.readDraft"].includes(name),
-  )) {
+  // The four layer actions are implemented as well. This plugin registered no
+  // layer, so the handler is what answers — with a code of its own, which is
+  // what "routed" means here.
+  const layerActions = [
+    "ui.openModal",
+    "ui.closeModal",
+    "ui.openOverlay",
+    "ui.closeOverlay",
+  ];
+  for (const action of layerActions) {
+    await assert.rejects(
+      () => dispatchFromPlugin("acme.one", action, {}),
+      (error) =>
+        error.code === "PLUGIN_ACTION_LAYER_NOT_REGISTERED" && error.action === action,
+      `${action} must reach its handler, not the unrouted refusal`,
+    );
+  }
+  // Exactly these two names have no handler, and the cases above cover the rest
+  // of the vocabulary — a new name here would not be silently untested.
+  const unrouted = ["composer.insertText", "composer.attachPath"];
+  const routed = [...implemented, ...layerActions, "composer.readDraft"];
+  assert.deepEqual(
+    PLUGIN_RENDERER_ACTIONS.filter((name) => !routed.includes(name) && !unrouted.includes(name)),
+    [],
+    "the routed and unrouted cases must cover the whole vocabulary",
+  );
+  for (const action of unrouted) {
     await assert.rejects(
       () => dispatchFromPlugin("acme.one", action, {}),
       (error) => error.code === "PLUGIN_ACTION_UNROUTED" && error.action === action,
@@ -1383,6 +1613,46 @@ test("composer.readDraft answers the documented snapshot and the generation a wr
 });
 
 test("readDraft falls back to an unconsumed prefill, which replaceDraft's own snapshot ignores", async () => {
+
+test("a refused registration hands the plugin the reason, not a generic code", () => {
+  resetPluginSlots();
+  resetRendererPlugins();
+  const api = loader.buildRendererApi("acme.late", "1.0.0");
+  const owner = () => null;
+  pluginSlots.register("acme.owner", "entry", owner);
+
+  // A replace position somebody else holds: the code the plugin catches is the
+  // registry's own reason (spec 07-plugins/16 2A.5), and the detail names the
+  // claim owner. A plugin that probes for a position has to be able to tell
+  // this refusal from an unusable component.
+  assert.throws(
+    () => api.slots.register("entry", () => null),
+    (error) =>
+      error.code === "PLUGIN_SLOT_DUPLICATE" && /already claimed by acme\.owner/.test(error.detail),
+  );
+  assert.equal(pluginSlots.list("entry").length, 1);
+
+  // A component the registry cannot use keeps its own code: the refusal code is
+  // read from the report, not invented by the loader.
+  assert.throws(
+    () => api.slots.register("entryExtra", "not a component"),
+    (error) => error.code === "PLUGIN_SLOT_INVALID_COMPONENT",
+  );
+  // The API is per plugin: the owner's own position is untouched by both.
+  assert.equal(pluginSlots.countFor("acme.late"), 0);
+  assert.equal(pluginSlots.countFor("acme.owner"), 1);
+});
+
+test("a registration the registry accepts is the handle the plugin can withdraw", () => {
+  resetPluginSlots();
+  resetRendererPlugins();
+  const api = loader.buildRendererApi("acme.view", "1.0.0");
+  const handle = api.slots.register("entryExtra", () => null);
+  assert.equal(handle.slot, "entryExtra");
+  assert.equal(pluginSlots.list("entryExtra").length, 1);
+  handle.remove();
+  assert.equal(pluginSlots.list("entryExtra").length, 0);
+});
   await installed(["composer.readDraft", "composer.replaceDraft"]);
   // A prefill the composer has not consumed yet: the draft memory is empty, so
   // the read answers from the store's pending write.

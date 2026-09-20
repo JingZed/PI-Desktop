@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { register } from "node:module";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { IPC } from "@pi-desktop/shared";
 
@@ -11,7 +14,12 @@ import { IPC } from "@pi-desktop/shared";
 register(new URL("./helpers/ts-import-hooks.mjs", import.meta.url));
 const { registerAgentIpc } = await import("../electron/main/ipc/agent-ipc.ts");
 const {
+  ALLOW_ONCE_BUTTON_INDEX,
+  AUTO_CONSENT_MARKER_FILE,
   MAX_ARGS_PREVIEW,
+  autoConsentDecision,
+  autoConsentMarkerPath,
+  createToolPermissionConsentService,
   toolPermissionConsentAnswerFromResponse,
   toolPermissionConsentDialogOptions,
 } = await import("../electron/main/tool-permission-consent.ts");
@@ -173,4 +181,106 @@ test("the native prompt names the tool and dismisses as a denial", () => {
   assert.equal(toolPermissionConsentAnswerFromResponse(1), "allow-once");
   assert.equal(toolPermissionConsentAnswerFromResponse(2), "allow-session");
   assert.equal(toolPermissionConsentAnswerFromResponse(7), "deny");
+});
+
+/* ---------- the test-only auto consent switch ---------- */
+
+/** The service under test, with fakes only where the app has real edges. */
+function consentService(dataDir, { isPackaged, logged = [] } = {}) {
+  const asked = { packaged: 0 };
+  return {
+    logged,
+    asked,
+    confirm: createToolPermissionConsentService({
+      getWindow: () => null,
+      getLocale: () => "en",
+      dataDir,
+      isPackaged: () => {
+        asked.packaged += 1;
+        return isPackaged;
+      },
+      logAutoConsent: (fields) => logged.push(fields),
+    }),
+  };
+}
+
+test("the switch answers with the index a click on Allow once produces", () => {
+  const options = toolPermissionConsentDialogOptions({ toolName: "Bash" }, "en");
+  // The switch has no answer of its own: its index is the dialog's own button,
+  // so it can grant exactly what one click grants — no more.
+  assert.equal(options.buttons[ALLOW_ONCE_BUTTON_INDEX], "Allow once");
+  assert.equal(
+    autoConsentDecision({ packaged: false, markerPresent: true }),
+    toolPermissionConsentAnswerFromResponse(ALLOW_ONCE_BUTTON_INDEX),
+  );
+  assert.equal(autoConsentDecision({ packaged: false, markerPresent: true }), "allow-once");
+  // Without the opt-in, or in a packaged build, there is no answer at all.
+  assert.equal(autoConsentDecision({ packaged: false, markerPresent: false }), null);
+  assert.equal(autoConsentDecision({ packaged: true, markerPresent: true }), null);
+  assert.equal(autoConsentDecision({ packaged: true, markerPresent: false }), null);
+});
+
+test("the opt-in marker lives inside the run's own data directory", () => {
+  assert.equal(AUTO_CONSENT_MARKER_FILE, "e2e-auto-consent");
+  assert.equal(
+    autoConsentMarkerPath(join("C:", "run-data")),
+    join("C:", "run-data", "e2e-auto-consent"),
+  );
+});
+
+test("an unpackaged run that opted in answers allow-once and logs the answer", async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), "pi-consent-optin-"));
+  try {
+    writeFileSync(autoConsentMarkerPath(dataDir), "");
+    const { confirm, logged, asked } = consentService(dataDir, { isPackaged: false });
+
+    assert.equal(await confirm({ toolName: "Bash", risk: "high" }), "allow-once");
+    assert.equal(asked.packaged, 1, "the packaged guard is consulted, not skipped");
+    // Exactly one trace per auto-answer, naming the tool it approved.
+    assert.deepEqual(logged, [
+      {
+        toolName: "Bash",
+        decision: "allow-once",
+        marker: autoConsentMarkerPath(dataDir),
+      },
+    ]);
+  } finally {
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("a packaged build ignores the switch even when its marker is present", async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), "pi-consent-packaged-"));
+  try {
+    writeFileSync(autoConsentMarkerPath(dataDir), "");
+    const { confirm, logged } = consentService(dataDir, { isPackaged: true });
+
+    // Ignored means the request goes to the native prompt, where the user is the
+    // one who answers. A headless run has no Electron dialog, and that failure is
+    // the proof that the marker did not answer for them: a resolved
+    // "allow-once" here would be the bug this case exists for.
+    const resolved = await confirm({ toolName: "Bash", risk: "high" }).then(
+      (decision) => decision,
+      () => "rejected",
+    );
+    assert.equal(resolved, "rejected", "a packaged build must not auto-approve");
+    assert.deepEqual(logged, []);
+  } finally {
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("with no marker at all the switch is off and nothing is logged", async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), "pi-consent-off-"));
+  try {
+    const { confirm, logged } = consentService(dataDir, { isPackaged: false });
+    const resolved = await confirm({ toolName: "Bash", risk: "high" }).then(
+      (decision) => decision,
+      () => "rejected",
+    );
+    assert.equal(resolved, "rejected", "a run without the marker still asks the user");
+    assert.deepEqual(logged, []);
+  } finally {
+    rmSync(dataDir, { recursive: true, force: true });
+  }
 });

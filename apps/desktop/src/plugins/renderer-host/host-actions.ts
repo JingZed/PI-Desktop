@@ -4,7 +4,7 @@
  * this module is what it routes to, and it is installed once at app start from
  * `src/main.tsx` next to the other renderer-side installs.
  *
- * Four of the ten vocabulary names are implemented here:
+ * Eight of the ten vocabulary names are implemented here:
  *
  * - `plugin.call { method, args? }` forwards to the plugin's own headless entry
  *   through `api.pluginRendererCall`, which re-checks the manifest in the main
@@ -14,9 +14,14 @@
  * - `composer.replaceDraft { text, expectedGeneration?, fileReferences? }`
  *   writes the draft through the one external path a mounted composer consumes,
  *   and answers with the previous snapshot and the new generation.
+ * - `ui.openModal` / `ui.closeModal` / `ui.openOverlay` / `ui.closeOverlay`
+ *   withdraw or restore the calling plugin's own layer position. A layer's
+ *   appearance is its registration, so these four act on the layer the plugin
+ *   already registered; a call with no such registration is a coded refusal.
  *
- * The other six names have no handler, so the relay refuses them as
- * `PLUGIN_ACTION_UNROUTED` instead of resolving `undefined`.
+ * The remaining two (`composer.insertText`, `composer.attachPath`) have no
+ * handler, so the relay refuses them as `PLUGIN_ACTION_UNROUTED` instead of
+ * resolving `undefined`.
  *
  * Every failure is a coded error and exactly one diagnostic on the plugin's
  * row. A payload refused here is reported here; a rejection that came back from
@@ -28,8 +33,12 @@
 import { api } from "../../lib/api";
 import type { ComposerDraftFileReference } from "../../lib/composer-smart-stop";
 import { useAppStore } from "../../stores/app-store";
-import { pluginSlots, type PluginSlotDiagnostic } from "../renderer-slots/registry";
-import { refuseRendererAction, registerHostRendererAction } from "./relay";
+import { pluginSlots, type PluginLayerSlot, type PluginSlotDiagnostic } from "../renderer-slots/registry";
+import {
+  refuseRendererAction,
+  registerHostRendererAction,
+  type RendererHostActionHandler,
+} from "./relay";
 
 /**
  * How long a `composer.replaceDraft` write waits for a mounted composer to
@@ -121,6 +130,40 @@ async function showHostToast(payload: unknown, pluginId: string): Promise<void> 
     );
   }
   useAppStore.getState().showToast(message, variant === undefined ? undefined : { variant });
+}
+
+/**
+ * `ui.openModal` / `ui.closeModal` / `ui.openOverlay` / `ui.closeOverlay`:
+ * withdraws or restores the calling plugin's own layer position.
+ *
+ * A layer's appearance *is* its registration (`PluginLayerHost`), so none of
+ * these can create one: `open` restores the layer this plugin already
+ * registered, `close` withdraws it, and the plugin's own component stays
+ * registered either way. The payload is ignored — what a layer shows is the
+ * component the plugin registered, and the host has nothing else to put in it.
+ *
+ * The plugin id comes from the dispatch, never from the payload, so a plugin
+ * can only ever reach its own layer. A call with no registration of its own
+ * behind it is refused with `PLUGIN_ACTION_LAYER_NOT_REGISTERED` rather than
+ * quietly doing nothing: the relay's contract is that a plugin learns why
+ * nothing happened. Asking for the state a layer already has is a success.
+ */
+function setLayerWithdrawnForCaller(
+  action: "ui.openModal" | "ui.closeModal" | "ui.openOverlay" | "ui.closeOverlay",
+  slot: PluginLayerSlot,
+  withdrawn: boolean,
+): RendererHostActionHandler {
+  return (_payload, pluginId) => {
+    if (!pluginSlots.setLayerWithdrawn(pluginId, slot, withdrawn)) {
+      throw refuseRendererAction(
+        pluginId,
+        action,
+        "PLUGIN_ACTION_LAYER_NOT_REGISTERED",
+        `${action} found no "${slot}" layer registered by this plugin`,
+      );
+    }
+    return { ok: true, slot, visible: !withdrawn };
+  };
 }
 
 /** Draft snapshot for renderer plugins (data transfer only — not AI). */
@@ -270,13 +313,30 @@ function prefillConsumed(deadlineMs: number): Promise<boolean> {
 }
 
 /**
- * Registers the three implemented actions. Called once from the app entry;
- * Registers the four implemented actions. Called once from the app entry;
- * half wired.
+ * Registers the eight implemented actions (`plugin.call`, `ui.toast`,
+ * `composer.readDraft`, `composer.replaceDraft`, and the four layer actions).
+ * Called once from the app entry; calling it again registers the same
+ * functions, so the relay is never left half wired.
  */
 export function installRendererHostActions(): void {
   registerHostRendererAction("plugin.call", forwardRendererCall);
   registerHostRendererAction("ui.toast", showHostToast);
   registerHostRendererAction("composer.readDraft", readComposerDraft);
   registerHostRendererAction("composer.replaceDraft", replaceComposerDraft);
+  registerHostRendererAction(
+    "ui.openModal",
+    setLayerWithdrawnForCaller("ui.openModal", "modal", false),
+  );
+  registerHostRendererAction(
+    "ui.closeModal",
+    setLayerWithdrawnForCaller("ui.closeModal", "modal", true),
+  );
+  registerHostRendererAction(
+    "ui.openOverlay",
+    setLayerWithdrawnForCaller("ui.openOverlay", "overlay", false),
+  );
+  registerHostRendererAction(
+    "ui.closeOverlay",
+    setLayerWithdrawnForCaller("ui.closeOverlay", "overlay", true),
+  );
 }

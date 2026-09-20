@@ -282,6 +282,30 @@ persisted, and a rate-brake prompt is offered no session option at all. A host
 with no consent service refuses — a host that cannot ask must never assume yes.
 Both the denial and the grant are audited.
 
+### 6.2.1 Test-only auto consent for an automated run
+
+An automated run cannot click a native dialog, so a suite that already owns a
+temp data directory opts in by creating one marker file inside it:
+`<dataDir>/e2e-auto-consent`, where `<dataDir>` is the directory the run was
+started against (`PI_DESKTOP_DATA_DIR`, `AUTO_CONSENT_MARKER_FILE` in
+`apps/desktop/electron/main/tool-permission-consent.ts`).
+
+While that marker exists **and** the build is not packaged, the tool-permission
+confirmation (spec 03-runtime/01-ipc-protocol §10) answers the request itself as
+**Allow once**. It does so by producing the decision that the "Allow once"
+button index maps to, through the same mapping and the same downstream
+permission flow a click goes through: the switch bypasses neither the prompt
+vocabulary nor the grant. It can therefore grant nothing a single click could
+not grant, and every auto-answer writes one audit line naming the tool it
+approved.
+
+Two properties keep the affordance away from a real user:
+
+- It is ignored when `app.isPackaged` is true, even with the marker present: a
+  shipped build has no auto-consent path in it at all.
+- A run without the marker performs one file existence check and then shows the
+  native prompt exactly as before.
+
 ### 6.3 The user-selected root
 
 `pi.fs.requestDirectory()` opens the native directory picker; inside the returned

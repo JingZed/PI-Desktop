@@ -90,14 +90,17 @@ export function rendererEntryUrl(pluginId: string, entry: string): string {
 }
 
 /**
- * The object a plugin's `onLoad` receives. It is the whole host *API* surface —
- * there is no `pi` global — and it carries only the plugin's own identity, the
- * slots it may fill, the styles it may inject and the functions the host may
- * call, which is what keeps the API per-plugin. It is a contract, not a
- * boundary: the module shares this realm (ADR 0291), so it can also reach
- * `window.piDesktop`.
+ * The `pi` object one plugin's renderer module is handed.
+ *
+ * Exported as a test seam: the module import around it needs a real
+ * `plugin-renderer://` URL, so what the API answers — including the code it
+ * refuses a registration with — is pinned here instead.
+ *
+ * It is the whole host API a plugin gets, built per plugin, which is what keeps
+ * the API per-plugin. It is a contract, not a boundary: the module shares this
+ * realm (ADR 0291), so it can also reach `window.piDesktop`.
  */
-function buildApi(pluginId: string, version: string): PiRendererApi {
+export function buildRendererApi(pluginId: string, version: string): PiRendererApi {
   const styles = new Set<PiRendererStyleHandle>();
   return {
     plugin: { id: pluginId, version },
@@ -109,10 +112,17 @@ function buildApi(pluginId: string, version: string): PiRendererApi {
       ): ReturnType<PiRendererApi["slots"]["register"]> {
         const handle = pluginSlots.register(pluginId, slot, component, options);
         if (!handle) {
-          // `register` already reported why; returning a no-op handle would
-          // only invite the plugin to think it succeeded.
-          throw Object.assign(new Error("PLUGIN_SLOT_INVALID_COMPONENT"), {
-            code: "PLUGIN_SLOT_INVALID_COMPONENT",
+          // `register` already reported why, and that report is the answer the
+          // caller gets: a plugin can tell a replace position somebody else
+          // holds (`PLUGIN_SLOT_DUPLICATE`, spec 07-plugins/16 2A.5) from a
+          // component the registry could not use. Returning a no-op handle
+          // would only invite the plugin to think it succeeded.
+          const refusals = pluginSlots.listDiagnostics(pluginId);
+          const refusal = refusals[refusals.length - 1];
+          const code = refusal?.code ?? "PLUGIN_SLOT_INVALID_COMPONENT";
+          throw Object.assign(new Error(code), {
+            code,
+            ...(refusal?.detail === undefined ? {} : { detail: refusal.detail }),
           });
         }
         return {
@@ -225,7 +235,7 @@ async function load(pluginId: string, options: RendererPluginLoadOptions): Promi
     return;
   }
   try {
-    await module.onLoad(buildApi(pluginId, options.version ?? ""));
+    await module.onLoad(buildRendererApi(pluginId, options.version ?? ""));
   } catch (error) {
     pluginSlots.report({
       pluginId,
@@ -235,6 +245,10 @@ async function load(pluginId: string, options: RendererPluginLoadOptions): Promi
     return;
   }
   modules.set(pluginId, module);
+  // The plugins page reads "loaded yet?" from this map, so the row has to
+  // re-render when the answer changes: a module that registers nothing would
+  // otherwise leave the row saying it was never loaded.
+  pluginSlots.notifyRendererStateChanged();
 }
 
 /**
@@ -247,6 +261,8 @@ export async function disposeRendererPlugin(pluginId: string): Promise<void> {
   modules.delete(pluginId);
   attempts.delete(pluginId);
   declaredActions.delete(pluginId);
+  // A row that read "loaded" has to be able to read "not loaded yet" again.
+  if (module) pluginSlots.notifyRendererStateChanged();
   // The functions a plugin registered go with it (D10): a stale render can
   // never reach into a module that is gone.
   removeRendererFunctions(pluginId);

@@ -155,6 +155,27 @@ one registration (first claim wins). A later registration is refused with
 `PLUGIN_SLOT_DUPLICATE`. Additive slots stack in registration order (D8).
 `codeBlock` keeps language claims.
 
+A replace position hands the claiming component the data the host surface it
+takes over was going to display (ADR 0291): `entry` is handed the message the
+host's own row would have drawn — `message.text`, `message.attachments`, the
+timestamp, the typed slash form, whether the text is still arriving, and the
+host `actions` the position stands in for; `toolCard` is handed the tool call it
+replaces (`tool.name`, `tool.args`, `tool.result`, `tool.status`,
+`tool.durationMs`); `inlineConfirm` is handed the pending request the host's own
+confirmation card would have shown (`confirm.toolName`, `confirm.args`,
+`confirm.risk`, `confirm.reason`, `confirm.queued`). The claim is a re-render of
+that data in the component's own form, with the component's own controls beside
+it — never a blank stand-in that hides the content the position was handed.
+`modal` and `overlay` are layers a plugin opens itself — by registering one, so
+the host has no content of its own to hand over there and passes the session
+only. Registering the layer is what makes it appear; the host's Escape and the
+plugin's own `ui.closeModal` / `ui.closeOverlay` withdraw it while that
+registration stands, and `ui.openModal` / `ui.openOverlay` show it again
+(§2A.7). The props are
+additive: a component written against an earlier host receives fewer keys, and
+the additive `entryExtra` position deliberately keeps the identity-only shape
+(`{ entry: { id, role, pluginId? }, sessionId }`).
+
 Shadow DOM was rejected because portaled plugin UI would escape a shadow root
 (41 `createPortal` call sites across 18 renderer files).
 
@@ -221,8 +242,9 @@ renderer host (ADR 0294). A mounted slot component is handed its host data and
 one method, `dispatch(action, payload)`, as props; nothing is ambient. The host
 refuses an action the plugin did not declare, and a declared action it has no
 handler for is refused as a coded error rather than resolving `undefined` — and
-every refusal is also recorded as a diagnostic on the plugin's row. Three of the
-nine names are implemented; a call to one of the other six rejects with a coded
+every refusal is also recorded as a diagnostic on the plugin's row. Eight of
+the ten names are implemented; a call to either of the remaining two
+(`composer.insertText`, `composer.attachPath`) rejects with a coded
 `PLUGIN_ACTION_UNROUTED` refusal.
 
 - `plugin.call { method: string, args?: unknown }` is forwarded to the calling
@@ -241,6 +263,16 @@ nine names are implemented; a call to one of the other six rejects with a coded
 - `composer.readDraft {}` returns a snapshot of the active session's composer
   draft `{ sessionId, generation, text, fileReferences }` for the calling
   plugin; with no active session it refuses with a coded error.
+- `ui.openModal` / `ui.closeModal` / `ui.openOverlay` / `ui.closeOverlay`
+  withdraw or restore the calling plugin's own layer position. A layer's
+  appearance *is* its registration (§2A.5), so none of the four can create a
+  layer: `open*` shows the `modal` or `overlay` registration this plugin already
+  holds again after `close*` — or the host's own Escape — withdrew it, and the
+  registered component is drawn unchanged either way. The plugin id comes from
+  the dispatch, never from the payload, so a call can only reach the layer of the
+  plugin that made it; one with no registration of its own behind it is refused
+  with `PLUGIN_ACTION_LAYER_NOT_REGISTERED` rather than quietly doing nothing.
+  The payload is ignored, and the answer is `{ ok: true, slot, visible }`.
 
 `rendererData` — host data the module declares it reads. Roles are split:
 

@@ -10,6 +10,14 @@
  * rule this file exists for: no orphan layer is left on screen, and any layer
  * that is on screen can be left with Escape.
  *
+ * Appearance is not the same thing as registration, though: a layer can be
+ * *withdrawn* while its registration stands. That one piece of state lives in
+ * the slot registry (`pluginSlots.isLayerWithdrawn`), because the plugin's own
+ * `ui.closeModal` / `ui.openModal` (`ui.closeOverlay` / `ui.openOverlay`) acts
+ * on the same state Escape does. The component is never removed, so restoring
+ * the layer shows the same registration again, and a call can only ever reach
+ * the layer of the plugin that made it.
+ *
  * The two positions differ in one thing only, and it is the host's decision
  * rather than the plugin's: a `modal` is blocking and takes the host's own
  * `.overlay` scrim, while an `overlay` is a transient layer that leaves the rest
@@ -17,49 +25,48 @@
  * portaled while no plugin fills it, so a window with no renderer plugin keeps
  * today's DOM exactly.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { portalOverlay } from "../../components/ui";
 import { useAppStore } from "../../stores/app-store";
 import { PluginSlot, useSlotRegistrations } from "./SlotOutlet";
+import { pluginSlots, type PluginLayerSlot } from "./registry";
 import { useRendererCandidates } from "./use-renderer-candidates";
 
-type LayerSlot = "modal" | "overlay";
-
-function PluginLayer({ slot, blocking }: { slot: LayerSlot; blocking: boolean }) {
+function PluginLayer({ slot, blocking }: { slot: PluginLayerSlot; blocking: boolean }) {
   const registrations = useSlotRegistrations(slot);
   const candidates = useRendererCandidates();
   const sessionId = useAppStore((state) => state.activeSessionId);
-  // One host dismissal per plugin. It is the *host's* way out of a layer a
-  // plugin drew, so it is deliberately not part of the plugin interface: the
-  // plugin's own state is untouched, and a fresh registration — the same plugin
-  // registering again — gives it the position back.
-  const [dismissed, setDismissed] = useState<ReadonlySet<string>>(() => new Set());
   const slotProps = useMemo(
     () => (sessionId ? { sessionId } : {}),
     [sessionId],
   );
 
-  useEffect(() => {
-    setDismissed((current) => (current.size === 0 ? current : new Set()));
-  }, [registrations]);
-
+  // A registration the host withdrew is still a registration: the plugin's
+  // component is not removed, and it comes back the moment the layer is
+  // restored — by the plugin's own `ui.openModal` / `ui.openOverlay`, or by
+  // registering the layer again.
   const shown = useMemo(
-    () => registrations.filter((registration) => !dismissed.has(registration.pluginId)),
-    [dismissed, registrations],
+    () =>
+      registrations.filter(
+        (registration) => !pluginSlots.isLayerWithdrawn(registration.pluginId, slot),
+      ),
+    [registrations, slot],
   );
 
   useEffect(() => {
     if (!shown.length) return;
     // Escape is the host's close affordance for a plugin layer. The key is
     // neither captured nor prevented: the host's own dialogs keep handling it
-    // exactly as before, and this only drops the layer it owns.
+    // exactly as before, and this only withdraws the layers this host drew.
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
-      setDismissed(new Set(shown.map((registration) => registration.pluginId)));
+      for (const registration of shown) {
+        pluginSlots.setLayerWithdrawn(registration.pluginId, slot, true);
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [shown]);
+  }, [shown, slot]);
 
   if (!shown.length) return null;
 

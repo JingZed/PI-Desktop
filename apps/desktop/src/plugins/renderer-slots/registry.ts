@@ -20,6 +20,29 @@ import {
 } from "./code-blocks";
 
 /**
+ * The layer positions: `modal` and `overlay` (spec 07-plugins/16 §2A.5).
+ *
+ * A layer has no place in the host's own tree, so a registration *is* the
+ * claim: a plugin says its dialog or overlay is up by registering one. That
+ * registration is also the only thing a layer action can act on, which is why
+ * the host keeps the one piece of state the registration itself does not carry
+ * — whether the layer is currently withdrawn. The host withdraws a layer on
+ * Escape; the plugin withdraws or restores its own with `ui.closeModal` /
+ * `ui.openModal` (and `ui.closeOverlay` / `ui.openOverlay`). The component
+ * stays registered throughout, so restoring the layer shows the same one again.
+ *
+ * Withdrawal is per plugin and never crosses plugins: one plugin can neither
+ * open nor close another plugin's layer.
+ */
+export const PLUGIN_LAYER_SLOTS = ["modal", "overlay"] as const;
+
+export type PluginLayerSlot = (typeof PLUGIN_LAYER_SLOTS)[number];
+
+export function isPluginLayerSlot(slot: PluginRendererSlot): slot is PluginLayerSlot {
+  return (PLUGIN_LAYER_SLOTS as readonly string[]).includes(slot);
+}
+
+/**
  * A component a plugin handed over. The SDK types this as returning `unknown`
  * so the plugin-facing contract carries no React dependency; the host is the
  * side that knows it is rendering React, and casts here.
@@ -43,6 +66,12 @@ export type PluginSlotRegistration = {
 export type PluginSlotDiagnostic = {
   pluginId: string;
   slot?: PluginRendererSlot;
+  /**
+   * A refused dispatch carries its own code. A layer position
+   * (`PLUGIN_LAYER_SLOTS`) whose action names a registration the plugin does
+   * not hold is reported as `PLUGIN_ACTION_LAYER_NOT_REGISTERED`, and a
+   * `composer.readDraft` with no active session as `NO_SESSION`.
+   */
   code:
     | "PLUGIN_SLOT_NOT_DECLARED"
     | "PLUGIN_SLOT_INVALID_COMPONENT"
@@ -58,6 +87,7 @@ export type PluginSlotDiagnostic = {
     | "PLUGIN_ACTION_UNROUTED"
     | "PLUGIN_ACTION_INVALID_PAYLOAD"
     | "PLUGIN_ACTION_DRAFT_UNCONSUMED"
+    | "PLUGIN_ACTION_LAYER_NOT_REGISTERED"
     | "NO_SESSION"
     | "DRAFT_CONFLICT"
     | "PLUGIN_CALL_INVALID"
@@ -91,6 +121,15 @@ class PluginSlotRegistry {
   private readonly registrations = new Map<string, PluginSlotRegistration[]>();
 
   private readonly diagnostics: PluginSlotDiagnostic[] = [];
+
+  /**
+   * Keyed by `(pluginId, slot)`: layer positions whose appearance the host has
+   * withdrawn while the registration stands (`PLUGIN_LAYER_SLOTS`). A fresh
+   * registration for that key clears it, so a plugin registering its layer
+   * again — or dismissing and re-opening it through its own actions — always
+   * ends up with a layer that is on screen.
+   */
+  private readonly withdrawnLayers = new Set<string>();
 
   private readonly listeners = new Set<() => void>();
 
@@ -148,6 +187,9 @@ class PluginSlotRegistry {
     };
     list.push(entry);
     this.registrations.set(key, list);
+    // A new claim on a layer position is a layer on screen: the withdrawal
+    // belonged to the registration this one replaces.
+    if (isPluginLayerSlot(slot)) this.withdrawnLayers.delete(key);
     this.changed();
     return {
       remove: () => {
@@ -156,6 +198,8 @@ class PluginSlotRegistry {
         const next = current.filter((candidate) => candidate !== entry);
         if (next.length) this.registrations.set(key, next);
         else this.registrations.delete(key);
+        // With nothing left to withdraw, the state goes with the registration.
+        if (!next.length) this.withdrawnLayers.delete(key);
         this.changed();
       },
     };
@@ -171,6 +215,47 @@ class PluginSlotRegistry {
     return out;
   }
 
+  /**
+   * Announces that renderer state a plugin owns changed outside this
+   * registry — the loader reports a module becoming live, or being disposed —
+   * so a surface that reads both re-renders. Nothing here is added or removed:
+   * the version is the same signal subscribers already compare, and the plugins
+   * page reads it beside `isRendererPluginLoaded` for exactly this reason.
+   */
+  notifyRendererStateChanged(): void {
+    this.changed();
+  }
+
+  /** True while this plugin holds a live registration for that layer position. */
+  hasLayer(pluginId: string, slot: PluginLayerSlot): boolean {
+    return (this.registrations.get(keyFor(pluginId, slot))?.length ?? 0) > 0;
+  }
+
+  /** True while the host has withdrawn this plugin's own layer position. */
+  isLayerWithdrawn(pluginId: string, slot: PluginLayerSlot): boolean {
+    return this.withdrawnLayers.has(keyFor(pluginId, slot));
+  }
+
+  /**
+   * Withdraws or restores one plugin's own layer position, keyed by the plugin
+   * that asked: the state is per plugin, so no caller can reach another
+   * plugin's layer.
+   *
+   * Answers `false` when the plugin holds no registration there — a layer this
+   * plugin never registered cannot be opened or closed, and the caller refuses
+   * the action with `PLUGIN_ACTION_LAYER_NOT_REGISTERED` rather than pretending.
+   * Asking for the state a layer already has is a no-op.
+   */
+  setLayerWithdrawn(pluginId: string, slot: PluginLayerSlot, withdrawn: boolean): boolean {
+    if (!this.hasLayer(pluginId, slot)) return false;
+    const key = keyFor(pluginId, slot);
+    if (this.withdrawnLayers.has(key) === withdrawn) return true;
+    if (withdrawn) this.withdrawnLayers.add(key);
+    else this.withdrawnLayers.delete(key);
+    this.changed();
+    return true;
+  }
+
   /** Everything a plugin owns, dropped on unload / disable / uninstall (D10). */
   unregisterPlugin(pluginId: string): void {
     let touched = false;
@@ -179,6 +264,13 @@ class PluginSlotRegistry {
       if (!key.startsWith(prefix)) continue;
       this.registrations.delete(key);
       touched = touched || list.length > 0;
+    }
+    // A withdrawn layer belongs to the plugin that owns it, so it goes with
+    // everything else that plugin held.
+    for (const key of [...this.withdrawnLayers]) {
+      if (!key.startsWith(prefix)) continue;
+      this.withdrawnLayers.delete(key);
+      touched = true;
     }
     if (touched) this.changed();
   }
@@ -224,6 +316,7 @@ class PluginSlotRegistry {
   reset(): void {
     this.registrations.clear();
     this.diagnostics.length = 0;
+    this.withdrawnLayers.clear();
     this.changed();
   }
 }

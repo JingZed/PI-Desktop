@@ -1585,6 +1585,10 @@ importConfirm: "İçe aktarılan uzantılar ajan sürecinde, ajanın kendi araç
     capabilitiesTitle: "Yetenekler",
     rendererDiagnosticsTitle: "Renderer tanıları",
     rendererDiagnosticsEmpty: "Renderer yuvası tanısı yok.",
+    rendererModuleTitle: "Renderer modülü",
+    rendererModuleLoaded: "Yüklendi — yuvaları etkin.",
+    rendererModuleNotLoaded:
+      "Henüz yüklenmedi — yuvalarından biri ilk kez çizildiğinde yüklenir.",
     servicesTitle: "Servisler",
     searchInstalled: "Kurulu eklentilerde ara",
     clearSearch: "Aramayı temizle",

@@ -351,10 +351,40 @@ test("Escape is the host's way out of a plugin layer, and it leaves the host's o
   assert.match(source, /window\.addEventListener\("keydown", onKeyDown\)/);
   assert.match(source, /event\.key !== "Escape"/);
   assert.doesNotMatch(source, /preventDefault|stopPropagation|capture: true/);
-  // The dismissal is host state keyed by the plugin that owns the layer, and a
-  // fresh registration gives the position back.
-  assert.match(source, /dismissed\.has\(registration\.pluginId\)/);
-  assert.match(source, /setDismissed\(\(current\) => \(current\.size === 0 \? current : new Set\(\)\)\)/);
+  // The withdrawal is host state keyed by the plugin that owns the layer, held
+  // by the slot registry so the plugin's own layer actions write the same state
+  // this effect does.
+  assert.match(source, /pluginSlots\.isLayerWithdrawn\(registration\.pluginId, slot\)/);
+  assert.match(source, /pluginSlots\.setLayerWithdrawn\(registration\.pluginId, slot, true\)/);
+});
+
+test("a withdrawn layer leaves the screen while its registration stays", () => {
+  reset();
+  pluginSlots.register("acme.notes", "overlay", textComponent("acme-overlay"));
+  assert.match(render(createElement(PluginLayerHost)), /acme-overlay/);
+
+  // This is what Escape does, and what the plugin's own `ui.closeOverlay` does:
+  // the host withdraws the layer. The registration is untouched — which is why
+  // restoring the layer needs nothing from the plugin but `ui.openOverlay`.
+  assert.equal(pluginSlots.setLayerWithdrawn("acme.notes", "overlay", true), true);
+  assert.equal(render(createElement(PluginLayerHost)), "");
+  assert.equal(
+    pluginSlots.list("overlay").length,
+    1,
+    "withdrawing a layer is not withdrawing its registration",
+  );
+
+  assert.equal(pluginSlots.setLayerWithdrawn("acme.notes", "overlay", false), true);
+  assert.match(render(createElement(PluginLayerHost)), /acme-overlay/);
+
+  // Only the plugin that owns a layer can withdraw it: another plugin's request
+  // for that position answers false and changes nothing.
+  pluginSlots.register("acme.other", "overlay", textComponent("acme-other-overlay"));
+  assert.equal(pluginSlots.setLayerWithdrawn("acme.other", "modal", true), false);
+  assert.equal(pluginSlots.isLayerWithdrawn("acme.notes", "overlay"), false);
+  const both = render(createElement(PluginLayerHost));
+  assert.match(both, /acme-overlay/);
+  assert.match(both, /acme-other-overlay/);
 });
 
 test("a plugin that is unloaded takes its modal and its overlay with it (D10)", () => {

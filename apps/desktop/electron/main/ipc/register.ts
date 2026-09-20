@@ -330,6 +330,16 @@ export function registerIpcHandlers(dependencies: RegisterIpcDependencies) {
   const confirmToolPermission = createToolPermissionConsentService({
     getWindow: getMainWindow,
     getLocale: () => getUpdaterLocale(),
+    dataDir,
+    // Read lazily: this module keeps its dialog import dynamic so it can be
+    // imported headlessly, and a normal run never consults this.
+    isPackaged: async () => (await import("electron")).app.isPackaged,
+    // The test-only switch's trace: an automated run that auto-approved a tool
+    // still says so, with the tool it approved.
+    logAutoConsent: ({ toolName, decision, marker }) =>
+      logger.app("permission", "warn", "test-only auto consent answered tool permission", {
+        data: { toolName, decision, marker },
+      }),
   });
   registerAgentIpc({
     registrar,

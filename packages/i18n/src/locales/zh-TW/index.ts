@@ -1568,6 +1568,10 @@ sklm: {
     capabilitiesTitle: "能力",
     rendererDiagnosticsTitle: "渲染診斷",
     rendererDiagnosticsEmpty: "暫無渲染槽位診斷。",
+    rendererModuleTitle: "渲染器模組",
+    rendererModuleLoaded: "已載入 —— 其槽位已生效。",
+    rendererModuleNotLoaded:
+      "尚未載入 —— 它的某個槽位第一次繪製時才會載入。",
     servicesTitle: "服務",
     searchInstalled: "搜尋已安裝外掛",
     clearSearch: "清除搜尋",

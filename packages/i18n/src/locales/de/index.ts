@@ -1567,6 +1567,10 @@ sklm: {
     "capabilitiesTitle": "Funktionen",
     "rendererDiagnosticsTitle": "Renderer-Diagnosen",
     "rendererDiagnosticsEmpty": "Keine Renderer-Slot-Diagnosen.",
+    "rendererModuleTitle": "Renderer-Modul",
+    "rendererModuleLoaded": "Geladen – seine Slots sind aktiv.",
+    "rendererModuleNotLoaded":
+      "Noch nicht geladen – es lädt, sobald einer seiner Slots gezeichnet wird.",
     "servicesTitle": "Dienste",
     "searchInstalled": "Installierte Plugins durchsuchen",
     "clearSearch": "Suche löschen",

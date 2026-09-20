@@ -72,7 +72,15 @@ export type PluginRendererSlot = (typeof PLUGIN_RENDERER_SLOTS)[number];
  *   silently ignoring the declaration.
  */
 export const PLUGIN_RENDERER_DATA = [
-  /** The transcript entry the component is mounted for. */
+  /**
+   * The transcript entry a component is mounted for. In a replace position
+   * (`entry`) this is the entry *with its display data*: `id`, `role`,
+   * `pluginId?`, and the message the host's own row would have drawn — its
+   * `text`, `attachments`, `createdAt`, `command`, `streaming` state and the
+   * host `actions` the position stands in for. The additive `entryExtra`
+   * position keeps the identity-only shape, so a component may feature-detect
+   * the wider one.
+   */
   "entry",
   /** Facts about the session that entry belongs to. */
   "session",
@@ -179,8 +187,8 @@ export type PluginRendererSlotDiagnosticCode =
  * host-owned, so a plugin declares intent instead of inventing verbs, and the
  * declaration is what an install review reads.
  *
- * Three are implemented in this release and say so below. Every other name is
- * declarable but has no host handler yet: calling one rejects with a coded
+ * Eight are implemented in this release and say so below. The remaining two are
+ * declarable but have no host handler yet: calling one rejects with a coded
  * `PLUGIN_ACTION_UNROUTED` refusal rather than resolving `undefined`.
  */
 export const PLUGIN_RENDERER_ACTIONS = [
@@ -221,23 +229,43 @@ export const PLUGIN_RENDERER_ACTIONS = [
    */
   "composer.attachPath",
   /**
-   * Opens an in-window overlay layer. Not implemented yet: calling it rejects
-   * with a coded `PLUGIN_ACTION_UNROUTED` refusal.
+   * Restores this plugin's own in-window overlay layer. A layer's appearance is
+   * its registration, so this makes the `overlay` component this plugin already
+   * registered visible again after `ui.closeOverlay` — or the host's own Escape
+   * — withdrew it; it never creates a layer, and it cannot reach another
+   * plugin's. No payload (the layer draws the registered component). Resolves
+   * with `{ ok: true, slot: "overlay", visible: true }`. Refused with a coded
+   * `PLUGIN_ACTION_LAYER_NOT_REGISTERED` when this plugin holds no `overlay`
+   * registration of its own.
    */
   "ui.openOverlay",
   /**
-   * Closes the overlay this plugin opened. Not implemented yet: calling it
-   * rejects with a coded `PLUGIN_ACTION_UNROUTED` refusal.
+   * Withdraws this plugin's own in-window overlay layer. The component stays
+   * registered: `ui.openOverlay` shows the same one again, and so does
+   * registering the `overlay` slot once more. No payload. Resolves with
+   * `{ ok: true, slot: "overlay", visible: false }`, and is a success when the
+   * layer is already withdrawn; refused with
+   * `PLUGIN_ACTION_LAYER_NOT_REGISTERED` when this plugin holds no `overlay`
+   * registration of its own.
    */
   "ui.closeOverlay",
   /**
-   * Opens an app-level modal. Not implemented yet: calling it rejects with a
-   * coded `PLUGIN_ACTION_UNROUTED` refusal.
+   * Restores this plugin's own app-level modal layer, exactly as
+   * `ui.openOverlay` restores its overlay: the `modal` component this plugin
+   * registered becomes visible again after `ui.closeModal` — or the host's own
+   * Escape — withdrew it. No payload. Resolves with
+   * `{ ok: true, slot: "modal", visible: true }`; refused with
+   * `PLUGIN_ACTION_LAYER_NOT_REGISTERED` when this plugin holds no `modal`
+   * registration of its own.
    */
   "ui.openModal",
   /**
-   * Closes the modal this plugin opened. Not implemented yet: calling it
-   * rejects with a coded `PLUGIN_ACTION_UNROUTED` refusal.
+   * Withdraws this plugin's own app-level modal layer, leaving the component
+   * that draws it registered. No payload. Resolves with
+   * `{ ok: true, slot: "modal", visible: false }`, and is a success when the
+   * layer is already withdrawn; refused with
+   * `PLUGIN_ACTION_LAYER_NOT_REGISTERED` when this plugin holds no `modal`
+   * registration of its own.
    */
   "ui.closeModal",
   /**
@@ -338,6 +366,13 @@ export type PiRendererApi = {
      * data as props plus a `dispatch` prop (`PiRendererDispatch`) bound to this
      * plugin. The same function object is handed over on every render, so it is
      * safe to list as a `useEffect` dependency.
+     *
+     * A registration the host refuses throws a coded error naming the reason —
+     * `PLUGIN_SLOT_DUPLICATE` when another plugin already holds that replace
+     * position, `PLUGIN_SLOT_INVALID_COMPONENT` for a component that is not a
+     * function, and the `codeBlock` language codes for a bad claim — rather
+     * than answering with a handle nobody can withdraw. The same refusal is
+     * recorded as a diagnostic on the plugin's own row.
      */
     register<Props>(
       slot: PluginRendererSlot,
@@ -605,20 +640,156 @@ export type PiRendererCodeBlockProps = {
   theme: "light" | "dark";
 };
 
+/** The identity of one transcript entry, as every transcript position hands it over. */
+export type PiRendererEntryIdentity = {
+  id: string;
+  role: "user" | "assistant" | "system";
+  /** Set when the host attributes this entry to a plugin (D14). */
+  pluginId?: string;
+};
+
 /**
  * What the host hands an `entryExtra` renderer: the entry it is appended to, so
  * a plugin can decide for itself whether it has anything to add. The entry id is
  * the identity the transcript is keyed by, which is also what lets a failed
  * component be reported against the row the user is looking at.
+ *
+ * This additive position is handed the entry's identity only. The `entry`
+ * replace position hands over the same identity plus the message the host's own
+ * row would have drawn (`PiRendererEntryProps`), because that is the data the
+ * position it takes over was going to display.
  */
 export type PiRendererEntryExtraProps = {
-  entry: {
-    id: string;
-    role: "user" | "assistant" | "system";
-    /** Set when the host attributes this entry to a plugin (D14). */
-    pluginId?: string;
-  };
+  entry: PiRendererEntryIdentity;
   sessionId: string;
+};
+
+/**
+ * One attachment of a transcript entry, as a replace position reads it.
+ * Display data, deliberately not the host's own attachment record: the
+ * sidecar-only hydrated image bytes (`data`) never leave the host.
+ */
+export type PiRendererEntryAttachment = {
+  /** Workspace-relative path, or an absolute session-scratch path. */
+  ref: string;
+  /** Display name, the way the host's own chip writes it. */
+  name: string;
+  kind: "file" | "image";
+  mimeType?: string;
+  size?: number;
+};
+
+/**
+ * The host's own row actions a replace position stands in for.
+ *
+ * Facts, not callables: a replace component is handed the list so its card can
+ * say which of the host's controls it covers, and it cannot trigger one — the
+ * row's copy, edit, delete and revision controls stay host-owned.
+ */
+export type PiRendererEntryAction = "copy" | "edit" | "delete" | "revisions";
+
+/**
+ * The message a transcript entry carries, as the `entry` replace position is
+ * handed it: what the host's own row would have drawn for that entry.
+ */
+export type PiRendererEntryMessage = {
+  /** The entry's text, exactly as the host's own row draws it. */
+  text: string;
+  /** Files and images the entry carries, in the host's own order. */
+  attachments: PiRendererEntryAttachment[];
+  /** True while the host is still receiving this entry's text. */
+  streaming: boolean;
+  /** ISO-8601 creation time of the entry, when the host holds one. */
+  createdAt?: string;
+  /** The typed slash invocation, when the entry came from one (D123). */
+  command?: string;
+  /** The host's own row actions this position stands in for. */
+  actions: PiRendererEntryAction[];
+};
+
+/**
+ * What the host hands an `entry` renderer: the entry's identity plus the
+ * message the host's own row would have drawn for it.
+ *
+ * Taking the position over and re-rendering this data in the component's own
+ * form — with the component's own controls *beside* it — is what the slot is
+ * for (ADR 0291). A card that hides the text it was handed is concealing the
+ * position's data rather than presenting it. The additive `entryExtra`
+ * position keeps the identity-only shape (`PiRendererEntryExtraProps`), so a
+ * component may feature-detect the wider one.
+ */
+export type PiRendererEntryProps = {
+  entry: PiRendererEntryIdentity;
+  message: PiRendererEntryMessage;
+  sessionId: string;
+};
+
+/**
+ * The tool call a `toolCard` position stands in for: the row the host would
+ * have built its own detail blocks from.
+ */
+export type PiRendererToolCall = {
+  /**
+   * The tool's own name as the transcript holds it; a plugin's tool keeps the
+   * host's forced prefix (D015).
+   */
+  name: string;
+  /** The call's arguments, exactly as the transcript holds them. */
+  args: unknown;
+  /** The call's result; absent while the call is still running. */
+  result?: unknown;
+  status?: "running" | "success" | "error" | "denied";
+  /** The host's own measured duration for the call, when it has one. */
+  durationMs?: number;
+};
+
+/**
+ * What the host hands a `toolCard` renderer: the row's identity — with
+ * `entry.pluginId` set to the tool's owner (D14) — plus the tool call whose
+ * card body the component draws. The mount offers the position only to the
+ * owner, and the component re-renders the call's name, arguments and result in
+ * its own form rather than hiding them.
+ */
+export type PiRendererToolCardProps = {
+  entry: PiRendererEntryIdentity;
+  tool: PiRendererToolCall;
+  sessionId: string;
+};
+
+/**
+ * The confirmation the host's own inline card would have shown: the pending
+ * permission request the position is asking about.
+ */
+export type PiRendererInlineConfirmRequest = {
+  requestId: string;
+  /** The tool the request is about. */
+  toolName: string;
+  /** The call's arguments, as the request carries its preview of them. */
+  args: unknown;
+  risk: "low" | "medium" | "high";
+  /** The host's own sentence explaining why it is asking. */
+  reason: string;
+  /** Further requests waiting behind this one in the same session. */
+  queued: number;
+  /** The subagent that asked, when the call came from a delegate (ADR 0062). */
+  agentName?: string;
+};
+
+/**
+ * What the host hands an `inlineConfirm` renderer: the confirmation the
+ * position stands in for.
+ *
+ * The position exists only while a permission request is pending, and the
+ * host's own card is not drawn while a plugin holds it — so the claim is a
+ * re-render of the request, never a blank card. Deciding the request stays
+ * host-owned: there is no action for allow or deny, and removing the
+ * registration is how the host's own card comes back.
+ */
+export type PiRendererInlineConfirmProps = {
+  /** The session the confirmation belongs to. */
+  sessionId?: string;
+  /** The pending confirmation, when the host has one to hand over. */
+  confirm?: PiRendererInlineConfirmRequest;
 };
 
 /**
