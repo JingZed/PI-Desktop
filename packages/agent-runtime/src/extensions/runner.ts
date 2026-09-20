@@ -250,10 +250,6 @@ export interface TrustedExtensionBridge {
   setActiveTools(names: string[]): void;
   getSessionName(): string | undefined;
   setSessionName(name: string): void | Promise<void>;
-  sendUserMessage(
-    content: string | unknown[],
-    options?: { deliverAs?: "steer" | "followUp" },
-  ): void | Promise<void>;
   waitForIdle(): Promise<void>;
   newSession(): Promise<{ cancelled: boolean }>;
   fork(entryId: string): Promise<{ cancelled: boolean }>;
@@ -895,24 +891,6 @@ export class TrustedExtensionRunner {
   }
 
   /**
-   * Slot 10's second entry point: queue a message the plugin wants sent.
-   *
-   * `sendUserMessage` reaches the same host-owned queue a continuation does
-   * (`session.queuePush`), so it starts a real turn exactly as `continueTurn`
-   * does and needs the same grant, `runtime.turn.continue`. A plugin without
-   * it is refused with a `permission_denied` diagnostic and nothing is queued —
-   * a refusal is never a quiet message the user never sees.
-   */
-  private extensionSendUserMessage(
-    extension: LoadedExtension,
-    content: string | unknown[],
-    options?: { deliverAs?: "steer" | "followUp" },
-  ): void | Promise<void> {
-    if (this.refuseApi(extension, "sendUserMessage", "sendUserMessage")) return;
-    return this.bridge.sendUserMessage(content, options);
-  }
-
-  /**
    * The slot permission that refuses this extension, or `undefined` when it
    * holds the permission and may proceed (ADR 0295 rule 2).
    *
@@ -1131,10 +1109,6 @@ export class TrustedExtensionRunner {
       fork: (entryId: string) => bridge.fork(entryId),
       navigateTree: this.inert(extension, "navigateTree", Promise.resolve({ cancelled: true })),
       switchSession: this.inert(extension, "switchSession", Promise.resolve({ cancelled: true })),
-      sendUserMessage: (
-        content: string | unknown[],
-        options?: { deliverAs?: "steer" | "followUp" },
-      ) => this.extensionSendUserMessage(extension, content, options),
     };
   }
 
@@ -1364,8 +1338,6 @@ export class TrustedExtensionRunner {
        */
       continueTurn: (input: string | { message?: string }) =>
         this.extensionContinueTurn(extension, input),
-      sendUserMessage: (content: string | unknown[], options?: { deliverAs?: "steer" | "followUp" }) =>
-        this.extensionSendUserMessage(extension, content, options),
       events: {
         on: () => () => {},
         emit: () => {},

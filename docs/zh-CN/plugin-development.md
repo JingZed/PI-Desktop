@@ -654,7 +654,7 @@ export default function (pi) {
 - **有些调用背后没有事件。** 每个调用各自对应一个槽位权限：`pi.requestTurnAbort()`
   需要 `runtime.turn.abort`，`pi.turnFacts()` 需要 `runtime.turn.facts`，`pi.recap()`
   需要 `runtime.turn.recap`（`scope: "session"` 还需要 `runtime.session.read`），
-  `pi.continueTurn()` 与 `pi.sendUserMessage()` 需要 `runtime.turn.continue`；工具结果里
+  `pi.continueTurn()` 需要 `runtime.turn.continue`；工具结果里
   带 `usage`、`addedToolNames` 或 `terminate` 需要 `runtime.tool.extend`。这些名字同样要
   声明：插件无权发起的调用会被拒绝（`requestTurnAbort` 返回 `false`，其余返回
   `undefined`），并报出同一条 `permission_denied` 诊断，而不是静默地什么都不做。

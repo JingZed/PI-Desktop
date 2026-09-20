@@ -81,7 +81,7 @@ export default function (pi: any) {
 write("bad.ts", `throw new Error("bad extension refuses to load");\n`);
 write("queue.ts", `export default function (pi: any) {
   pi.registerCommand("queue", { description: "Queues a follow-up prompt", async handler() {
-    await pi.sendUserMessage("please add 20 and 22 (queued)");
+    await pi.continueTurn("please add 20 and 22 (queued)");
   } });
 }
 `);
@@ -147,6 +147,7 @@ export default function (pi: any) {
  */
 const SLOT_PERMISSIONS = {
   fx: ["runtime.request.before", "runtime.tool.gate", "runtime.turn.watch"],
+  queue: ["runtime.turn.continue"],
 };
 
 /** Wrap one fixture module in a plugin directory holding `agent.extension`. */

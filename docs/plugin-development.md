@@ -747,8 +747,8 @@ What to know before you use it:
 - **Some calls have no event behind them.** Each one names its own slot:
   `pi.requestTurnAbort()` needs `runtime.turn.abort`, `pi.turnFacts()` needs
   `runtime.turn.facts`, `pi.recap()` needs `runtime.turn.recap` (and
-  `runtime.session.read` as well for `scope: "session"`), `pi.continueTurn()` and
-  `pi.sendUserMessage()` need `runtime.turn.continue`, and a tool result that
+  `runtime.session.read` as well for `scope: "session"`), `pi.continueTurn()` needs
+  `runtime.turn.continue`, and a tool result that
   carries `usage`, `addedToolNames`, or `terminate` needs `runtime.tool.extend`.
   Declare those names too: a call the plugin may not make is refused (`false`
   from `requestTurnAbort`, `undefined` from the others) and reported as the same

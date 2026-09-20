@@ -2869,26 +2869,6 @@ Delegation rules:
           name,
         });
       },
-      sendUserMessage: async (content, options) => {
-        const text = Array.isArray(content)
-          ? content
-              .map((part) => (isRecord(part) && typeof part.text === "string" ? part.text : ""))
-              .join("")
-          : String(content);
-        // Host-owned queue (D386): Electron main routes this to the Agent
-        // Host module, which drains it at the next turn boundary, or right
-        // away when the session is idle. `steer` moves it to the head.
-        const pushed = await runtime.host.call<{ id?: string }>("session.queuePush", {
-          sessionId: runtime.sessionId,
-          idempotencyKey: randomUUID(),
-          content: text,
-        });
-        if (options?.deliverAs === "steer" && pushed?.id) {
-          await runtime.host
-            .call("session.queuePrioritize", { sessionId: runtime.sessionId, id: pushed.id })
-            .catch(() => undefined);
-        }
-      },
       waitForIdle: () => runtime.agent.waitForIdle(),
       newSession: async () => {
         try {

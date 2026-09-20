@@ -166,7 +166,7 @@ const hooksAfterAbort = readFileSync(join(root, "hooks.log"), "utf8");
 // trail it when the MCP session is busy, so it is reported but not asserted.
 check("abort dismissed the open prompt and the command finished", /greet undefined blue true args=aborted exec=exec-ok/.test(hooksAfterAbort), JSON.stringify(abortResult) + " " + hooksAfterAbort.split("\n").filter((l) => l.includes("args=aborted")).join(" | "));
 
-// 7) sendUserMessage goes through the Host-owned queue (D386) and runs a turn
+// 7) continueTurn goes through the Host-owned queue (slot 10) and runs a turn
 const queued = await invoke("extensions/commands/run", { sessionId, name: "queue", args: "" });
 check("queue command ran", queued?.ok === true, JSON.stringify(queued));
 let queuedSeen = false;

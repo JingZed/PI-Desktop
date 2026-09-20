@@ -36,7 +36,7 @@ const bridge = {
   getAbortSignal: () => undefined, abort: () => {},
   hasPendingMessages: () => false, getContextUsage: () => undefined, compact: () => {},
   getSystemPrompt: () => "", getActiveTools: () => [], getAllTools: () => [], setActiveTools: () => {},
-  getSessionName: () => undefined, setSessionName: () => {}, sendUserMessage: () => {},
+  getSessionName: () => undefined, setSessionName: () => {},
   waitForIdle: async () => {}, newSession: async () => ({ cancelled: false }), fork: async () => ({ cancelled: false }),
   requestUi: async (_e: unknown, r: { kind: string }) => ({ kind: r.kind }), publishCommands: () => {}, publishDiagnostics: () => {},
 };

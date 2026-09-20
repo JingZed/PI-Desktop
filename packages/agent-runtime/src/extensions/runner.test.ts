@@ -64,7 +64,6 @@ type BridgeLog = {
   diagnostics: TrustedExtensionDiagnostic[][];
   ui: TrustedExtensionUiRequest[];
   sessionName?: string;
-  userMessages: unknown[];
   /** Turn aborts the extension asked for through `requestTurnAbort`. */
   aborts: number;
   /** One entry per `turnFacts` call: what the plugin asked for. */
@@ -136,7 +135,6 @@ function fakeBridge(
     commands: [],
     diagnostics: [],
     ui: [],
-    userMessages: [],
     aborts: 0,
     factsQueries: [],
     sessionRecaps: [],
@@ -164,9 +162,6 @@ function fakeBridge(
     getSessionName: () => log.sessionName,
     setSessionName: (name) => {
       log.sessionName = name;
-    },
-    sendUserMessage: (content) => {
-      log.userMessages.push(content);
     },
     waitForIdle: async () => {},
     newSession: async () => ({ cancelled: false }),
@@ -404,14 +399,11 @@ export default function (pi: any) {
     const color = await ctx.ui.select("Color", ["red", "blue"]);
     const ok = await ctx.ui.confirm("Sure?", "really");
     pi.setSessionName(name + "/" + color + "/" + ok + "/" + args);
-    ctx.sendUserMessage("follow up");
+    await pi.continueTurn("follow up");
     const r = await pi.exec("node", ["-e", "process.stdout.write('out')"]);
     (globalThis as any).__exec = r;
   } });
 }`,
-      // Slot 10's second entry point: `ctx.sendUserMessage` reaches the same
-      // host-owned queue a continuation does, so this fixture is given the
-      // grant the gate requires (ADR 0295 rule 2, D386).
       ["agent.extension", "runtime.turn.continue"],
     );
     const { bridge, log } = fakeBridge({
@@ -424,7 +416,13 @@ export default function (pi: any) {
     expect(await runner.runCommand("greet", "now")).toBe(true);
     expect(await runner.runCommand("missing", "")).toBe(false);
     expect(log.sessionName).toBe("Ann/blue/true/now");
-    expect(log.userMessages).toEqual(["follow up"]);
+    expect(log.continuations).toEqual([
+      expect.objectContaining({
+        message: "follow up",
+        pluginId: ext.id,
+        pluginLabel: ext.label,
+      }),
+    ]);
     expect((globalThis as { __exec?: { stdout: string; code: number } }).__exec).toMatchObject({ stdout: "out", code: 0 });
   });
 
@@ -631,16 +629,13 @@ export default function (pi: any) {
     expect(TRUSTED_EXTENSION_API_PERMISSIONS.turnFacts).toBe("runtime.turn.facts");
     expect(TRUSTED_EXTENSION_API_PERMISSIONS.recap).toBe("runtime.turn.recap");
     expect(TRUSTED_EXTENSION_API_PERMISSIONS.continueTurn).toBe("runtime.turn.continue");
-    // Slot 10 has two call names and one permission: `sendUserMessage` reaches
-    // the same host-owned queue a continuation does, so it is gated on the
-    // same grant rather than on a second name (D1).
-    expect(TRUSTED_EXTENSION_API_PERMISSIONS.sendUserMessage).toBe("runtime.turn.continue");
     expect(trustedExtensionApiPermission("requestTurnAbort")).toBe("runtime.turn.abort");
     expect(trustedExtensionApiPermission("toolResult")).toBe("runtime.tool.extend");
     expect(trustedExtensionApiPermission("turnFacts")).toBe("runtime.turn.facts");
     expect(trustedExtensionApiPermission("recap")).toBe("runtime.turn.recap");
     expect(trustedExtensionApiPermission("continueTurn")).toBe("runtime.turn.continue");
-    expect(trustedExtensionApiPermission("sendUserMessage")).toBe("runtime.turn.continue");
+    // Removed call names stay unmapped: slot 10 has one entry point.
+    expect(trustedExtensionApiPermission("sendUserMessage")).toBeUndefined();
     expect(trustedExtensionApiPermission("not_a_call")).toBeUndefined();
     expect(trustedExtensionApiPermission("constructor")).toBeUndefined();
     // The scope, not the call, decides whether a second right is needed: a
@@ -1225,43 +1220,14 @@ export default function (pi: any) {
     ]);
   });
 
-  it("refuses sendUserMessage without runtime.turn.continue and queues nothing", async () => {
-    // Slot 10's second entry point takes the same host-owned queue a
-    // continuation does, so the same grant gates it: a refused plugin queues
-    // nothing, and the refusal is a diagnostic naming the call (rule 2).
+  it("does not expose sendUserMessage on the extension API", async () => {
+    // Removed without a compatibility alias (review B4): the only slot-10 call
+    // left is `continueTurn`, which always carries plugin provenance.
     const ext = spec(
-      "send-refused",
+      "send-removed",
       `export default function (pi: any) {
   pi.on("session_start", async () => {
-    (globalThis as any).__sent = await pi.sendUserMessage("do not queue this");
-  });
-}`,
-      ["agent.extension"],
-    );
-    const { bridge, log } = fakeBridge();
-    const runner = new TrustedExtensionRunner({ specs: [ext], bridge });
-    await runner.load();
-
-    delete (globalThis as { __sent?: unknown }).__sent;
-    expect(log.userMessages).toEqual([]);
-    expect(runner.getDiagnostics()).toEqual([
-      {
-        extensionId: ext.id,
-        kind: "permission_denied",
-        message:
-          "sendUserMessage was refused: the plugin does not hold runtime.turn.continue",
-        member: "sendUserMessage",
-        count: 1,
-      },
-    ]);
-  });
-
-  it("queues a message through the host once the plugin holds runtime.turn.continue", async () => {
-    const ext = spec(
-      "send-granted",
-      `export default function (pi: any) {
-  pi.on("session_start", async () => {
-    await pi.sendUserMessage("keep going");
+    (globalThis as any).__sent = typeof pi.sendUserMessage;
   });
 }`,
       ["agent.extension", "runtime.turn.continue"],
@@ -1270,36 +1236,8 @@ export default function (pi: any) {
     const runner = new TrustedExtensionRunner({ specs: [ext], bridge });
     await runner.load();
 
-    expect(log.userMessages).toEqual(["keep going"]);
-    expect(runner.getDiagnostics()).toEqual([]);
-  });
-
-  it("refuses a command context's sendUserMessage under the same gate", async () => {
-    // The command context carries the same member, so it is the same refusal:
-    // a plugin cannot reach the queue through `/command` without the grant.
-    const ext = spec(
-      "cmd-send-refused",
-      `export default function (pi: any) {
-  pi.registerCommand("relay", { description: "send", handler(_args: string, ctx: any) {
-    ctx.sendUserMessage("relayed");
-  } });
-}`,
-      ["agent.extension"],
-    );
-    const { bridge, log } = fakeBridge();
-    const runner = new TrustedExtensionRunner({ specs: [ext], bridge });
-    await runner.load();
-
-    expect(await runner.runCommand("relay", "")).toBe(true);
-    expect(log.userMessages).toEqual([]);
-    expect(runner.getDiagnostics()).toEqual([
-      expect.objectContaining({
-        kind: "permission_denied",
-        member: "sendUserMessage",
-        message:
-          "sendUserMessage was refused: the plugin does not hold runtime.turn.continue",
-      }),
-    ]);
+    expect((globalThis as { __sent?: unknown }).__sent).toBe("undefined");
+    expect(log.continuations).toEqual([]);
   });
 });
 

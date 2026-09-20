@@ -31,7 +31,7 @@ What the automated run proves:
 - slash commands in the composer menu and global search, a command with
   `ui.input` / `ui.select` / `ui.confirm` answered through the broker,
   `exec`, `setSessionName`, abort dismissing an open prompt, and
-  `sendUserMessage` through the Host-owned queue (E2E-243);
+  `continueTurn` through the Host-owned queue (E2E-243);
 - a throwing module and unsupported terminal-UI imports degrading to
   diagnostics while the remaining extensions continue to run (E2E-244).
 

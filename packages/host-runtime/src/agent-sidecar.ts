@@ -90,7 +90,7 @@ export type TrustedExtensionSidecarBridge = {
   publishDiagnostics: (params: Record<string, unknown>) => void;
   requestUi: (params: Record<string, unknown>) => Promise<unknown>;
   configureModel: (params: Record<string, unknown>) => Promise<unknown>;
-  /** `sendUserMessage`: the Host-owned queue drains it (D386); host-core alone would only store it. */
+  /** `continueTurn` / host-owned queue: the Host module drains it; host-core alone would only store it. */
   queuePush: (params: Record<string, unknown>) => Promise<unknown>;
   queuePrioritize: (params: Record<string, unknown>) => Promise<unknown>;
   /**

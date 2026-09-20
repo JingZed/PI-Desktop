@@ -446,11 +446,9 @@ export const PLUGIN_TOOL_EXTEND_PERMISSION = "runtime.tool.extend";
  * needs {@link TRUSTED_EXTENSION_SESSION_READ_PERMISSION} (rule 7), which is a
  * property of the requested scope rather than of the call — see
  * {@link trustedExtensionApiScopePermission}.
- * `continueTurn` is slot 10: start another turn after one ends.
- * `sendUserMessage` is slot 10 too, under the same name: it queues through the
- * same host-owned queue (`session.queuePush`) a desktop send and a continuation
- * both use, so it starts a turn exactly as `continueTurn` does. One capability
- * keeps one permission (D1); the map simply lets two call names resolve to it.
+ * `continueTurn` is slot 10: start another turn after one ends. It is the only
+ * extension-facing way to queue that turn; there is no second call name, so a
+ * queued continuation always carries plugin provenance (ADR 0293).
  */
 export const TRUSTED_EXTENSION_API_PERMISSIONS = {
   requestTurnAbort: "runtime.turn.abort",
@@ -458,7 +456,6 @@ export const TRUSTED_EXTENSION_API_PERMISSIONS = {
   turnFacts: "runtime.turn.facts",
   recap: "runtime.turn.recap",
   continueTurn: "runtime.turn.continue",
-  sendUserMessage: "runtime.turn.continue",
 } as const satisfies Record<string, string>;
 
 /**

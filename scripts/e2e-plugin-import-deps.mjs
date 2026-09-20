@@ -76,7 +76,6 @@ function runnerBridge(cwd, publications) {
     setActiveTools: () => {},
     getSessionName: () => undefined,
     setSessionName: () => {},
-    sendUserMessage: () => {},
     waitForIdle: async () => {},
     newSession: async () => ({ cancelled: false }),
     fork: async () => ({ cancelled: false }),
