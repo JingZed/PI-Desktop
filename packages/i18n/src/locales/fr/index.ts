@@ -1760,6 +1760,7 @@ sklm: {
       "agent.tool.register": "Ajouter des outils pour l'agent",
       "agent.prompt.inject": "Ajuster les instructions de l'agent",
       "agent.complete": "Exécuter une complétion unique avec vos modèles",
+      "agent.model.complete": "IA plugin avec vos modeles configures",
       "agent.extension": "Exécuter du code dans l'agent",
       "renderer.extension": "Exécuter l'interface du plugin dans la fenêtre de l'application",
       "runtime.send.before": "Inspecter un message avant son envoi",
@@ -1767,7 +1768,7 @@ sklm: {
       "runtime.turn.abort": "Arrêter le tour en cours",
       "runtime.turn.closing": "Agir juste avant la fin d'un tour",
       "runtime.turn.facts": "Lire les faits structurés d'un tour",
-      "runtime.request.before": "Réécrire ce qui est envoyé au modèle",
+
       "runtime.session.lifecycle": "Suivre les événements de session et de compactage",
       "runtime.session.read": "Lire le contenu d'une session",
       "runtime.tool.gate": "Bloquer des appels d'outil et remplacer les résultats",
@@ -1810,6 +1811,8 @@ sklm: {
       "agent.tool.register": "Permet à l'IA d'appeler des outils supplémentaires fournis par ce plugin.",
       "agent.prompt.inject": "Peut modifier les instructions envoyées à l'agent IA.",
       "agent.complete": "Peut dépenser votre quota de modèle pour une réalisation unique. Le plugin ne reçoit jamais vos clés API.",
+      "agent.model.complete":
+        "Peut consommer du quota IA plugin avec vos modeles configures. Le plugin ne recoit jamais vos cles API. Le system prompt de session n'est pas fusionne sauf si le plugin passe system.",
       "agent.extension": "Exécute des modules ExtensionAPI dans le processus de l'agent avec le même accès que ses propres outils. N'activez que du code auquel vous faites confiance.",
       "renderer.extension":
         "Ce plugin fournit du code qui s'exécute dans la fenêtre de l'application elle-même. Il partage le processus de l'application, peut dessiner n'importe où dans l'interface, et un plantage peut emporter l'interface avec lui. Installez-le uniquement si vous faites confiance à l'auteur du plugin.",
@@ -1823,8 +1826,7 @@ sklm: {
         "Le plugin est consulté pendant qu'un tour est encore en cours et peut demander à l'agent de continuer. Cela consomme plus de tokens sans nouveau message de votre part.",
       "runtime.turn.facts":
         "Le plugin peut lire les faits structurés d'un tour : appels d'outil et résultats, tokens, dépense, durée, fichiers touchés. Le texte de la conversation n'est pas inclus.",
-      "runtime.request.before":
-        "Avant chaque requête, le plugin peut modifier le prompt système, le modèle et le niveau de réflexion, la charge utile de la requête et la liste des messages conservée par l'agent. Chaque modification est enregistrée au niveau du diff pour être consultée ensuite.",
+
       "runtime.session.lifecycle":
         "Le plugin est averti lorsqu'une session est créée, changée, supprimée ou dupliquée, et avant un compactage. Il peut annuler un compactage et reçoit l'extrait de conversation que celui-ci remplacerait ; il ne peut pas bloquer les autres actions.",
       "runtime.session.read":

@@ -321,6 +321,17 @@ function buildApi() {
       },
       complete: (input) => call("agent.complete", [input ?? {}]),
     },
+    ai: {
+      /** Plugin-level completion on user-configured models (`agent.model.complete`). */
+      complete: (input) => call("ai.complete", [input ?? {}]),
+      completeStream: async (input, onDelta) => {
+        const result = await call("ai.complete", [input ?? {}]);
+        if (typeof onDelta === "function" && result && typeof result.text === "string") {
+          onDelta(result.text);
+        }
+        return result;
+      },
+    },
     models: {
       list: () => call("models.list"),
     },

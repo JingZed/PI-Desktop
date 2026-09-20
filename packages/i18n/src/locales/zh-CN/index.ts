@@ -1760,6 +1760,7 @@ sklm: {
       "agent.tool.register": "为智能体添加工具",
       "agent.prompt.inject": "调整智能体指令",
       "agent.complete": "用你的模型发起一次补全",
+      "agent.model.complete": "使用你已配置的模型发起一次性插件 AI",
       "agent.extension": "在 agent 内运行代码",
       "renderer.extension": "在应用窗口内运行插件界面",
       "runtime.send.before": "在消息发送前检查",
@@ -1767,7 +1768,7 @@ sklm: {
       "runtime.turn.abort": "停止正在运行的轮次",
       "runtime.turn.closing": "在轮次结束前介入",
       "runtime.turn.facts": "读取本轮的结构化事实",
-      "runtime.request.before": "改写发给模型的内容",
+
       "runtime.session.lifecycle": "跟踪会话与压缩事件",
       "runtime.session.read": "读取会话内容",
       "runtime.tool.gate": "拦截工具调用并替换工具结果",
@@ -1811,6 +1812,8 @@ sklm: {
       "agent.tool.register": "允许 AI 调用此插件提供的额外工具。",
       "agent.prompt.inject": "可能修改发送给智能体的指令。",
       "agent.complete": "会消耗你的模型额度发起一次补全。插件拿不到 API 密钥。",
+      "agent.model.complete":
+        "可使用你已配置的模型发起一次性插件 AI 请求并消耗额度。插件拿不到你的 API Key。除非插件自己传入 system，否则不会合并会话系统提示词。",
       "agent.extension": "在 agent 进程内运行 ExtensionAPI 模块，拥有与 agent 自身工具相同的权限。只启用你信任的代码。",
       "renderer.extension":
         "此插件提供的代码会在应用自身窗口内运行：它与应用共用同一进程，可在界面任意位置绘制，崩溃可能连带界面一起退出。只在你信任插件作者时才安装。",
@@ -1823,8 +1826,7 @@ sklm: {
         "轮次仍在运行时插件会被征询，并可以要求智能体继续做下去。这会在你没有新消息的情况下消耗更多额度。",
       "runtime.turn.facts":
         "插件可以读取本轮的结构化事实：工具调用与结果、token、花费、耗时、改动的文件。不包含对话正文。",
-      "runtime.request.before":
-        "每次请求前，插件可以修改系统提示词、模型与思考等级、请求负载，以及 agent 保留的消息列表。每处改动都会以 diff 级别记录，事后可以查看。",
+
       "runtime.session.lifecycle":
         "会话创建、切换、删除、fork 时会通知插件，压缩前也会通知。插件可以取消压缩，并收到压缩即将替换掉的对话片段；其他操作它无法否决。",
       "runtime.session.read":

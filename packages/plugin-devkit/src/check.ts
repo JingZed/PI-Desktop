@@ -35,7 +35,7 @@ export const HIGH_RISK_PERMISSIONS = [
   "agent.complete",
   "agent.extension",
   "renderer.extension",
-  "runtime.request.before",
+  "agent.model.complete",
   "runtime.send.before",
   "runtime.session.lifecycle",
   "runtime.session.read",

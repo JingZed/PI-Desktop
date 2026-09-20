@@ -120,20 +120,63 @@ async function showHostToast(payload: unknown, pluginId: string): Promise<void> 
   useAppStore.getState().showToast(message, variant === undefined ? undefined : { variant });
 }
 
+/** Draft snapshot for renderer plugins (data transfer only — not AI). */
+export type ComposerDraftSnapshot = {
+  sessionId: string;
+  generation: number;
+  text: string;
+  fileReferences: ReadonlyArray<{ id: string; path?: string; name?: string }>;
+};
+
+type ReplaceDraftOk = {
+  ok: true;
+  generation: number;
+  previous: ComposerDraftSnapshot;
+};
+
+/** Per-session draft generation + last known text for undo/conflict (module-local). */
+const draftMemory = new Map<
+  string,
+  { generation: number; text: string; fileReferences: ComposerDraftSnapshot["fileReferences"] }
+>();
+
+/**
+ * `composer.readDraft`: snapshot of the active session draft for the calling
+ * plugin. Data-transfer only; business logic stays in the plugin process.
+ */
+async function readComposerDraft(_payload: unknown, pluginId: string): Promise<ComposerDraftSnapshot> {
+  const state = useAppStore.getState();
+  const sessionId = state.activeSessionId;
+  if (!sessionId) {
+    throw refuseRendererAction(
+      pluginId,
+      "composer.readDraft",
+      "NO_SESSION",
+      "composer.readDraft found no active session",
+    );
+  }
+  const mem = draftMemory.get(sessionId);
+  const prefill = state.composerPrefill?.sessionId === sessionId ? state.composerPrefill : null;
+  return {
+    sessionId,
+    generation: mem?.generation ?? 0,
+    text: mem?.text ?? prefill?.text ?? "",
+    fileReferences: mem?.fileReferences ?? prefill?.fileReferences ?? [],
+  };
+}
+
 /**
  * `composer.replaceDraft`: replaces the active session's draft text.
  *
- * The live draft is React state inside `useComposerDraft`; the one external
- * write a mounted composer consumes is the store's `composerPrefill`, which the
- * composer applies verbatim and then clears. This writes that prefill for the
- * active session and resolves only once the composer has cleared it. A request
- * no composer consumes — no session open, or a surface with no composer mounted
- * — is cleared again and refused rather than reported as written.
- *
- * `fileReferences: []` is part of the write: the action replaces the *whole*
- * draft, so the resulting draft is exactly the payload text and no references.
+ * Returns the previous snapshot plus the new generation so the plugin can
+ * implement undo itself (host does not own enhance/undo business UI).
+ * `expectedGeneration` is an optimistic lock: mismatch → DRAFT_CONFLICT.
+ * `fileReferences: "preserve"` keeps existing refs; `[]` clears them.
  */
-async function replaceComposerDraft(payload: unknown, pluginId: string): Promise<void> {
+async function replaceComposerDraft(
+  payload: unknown,
+  pluginId: string,
+): Promise<ReplaceDraftOk> {
   const record = payloadRecord(payload);
   const text = record?.text;
   if (typeof text !== "string") {
@@ -153,8 +196,38 @@ async function replaceComposerDraft(payload: unknown, pluginId: string): Promise
       "composer.replaceDraft found no active session to write into",
     );
   }
-  useAppStore.setState({ composerPrefill: { sessionId, text, fileReferences: [] } });
-  if (await prefillConsumed(DRAFT_PREFILL_DEADLINE_MS)) return;
+  const mem = draftMemory.get(sessionId);
+  const generation = mem?.generation ?? 0;
+  const previous: ComposerDraftSnapshot = {
+    sessionId,
+    generation,
+    text: mem?.text ?? "",
+    fileReferences: mem?.fileReferences ?? [],
+  };
+  const expected = record?.expectedGeneration;
+  if (expected !== undefined && Number(expected) !== generation) {
+    throw refuseRendererAction(
+      pluginId,
+      "composer.replaceDraft",
+      "DRAFT_CONFLICT",
+      "composer.replaceDraft expectedGeneration does not match the live draft",
+    );
+  }
+  const refsInput = record?.fileReferences;
+  const fileReferences =
+    refsInput === "preserve"
+      ? [...previous.fileReferences]
+      : Array.isArray(refsInput)
+        ? refsInput.filter((item): item is { id: string; path?: string; name?: string } =>
+            Boolean(item && typeof item === "object" && typeof (item as { id?: unknown }).id === "string"),
+          )
+        : [];
+  const nextGeneration = generation + 1;
+  draftMemory.set(sessionId, { generation: nextGeneration, text, fileReferences });
+  useAppStore.setState({ composerPrefill: { sessionId, text, fileReferences } });
+  if (await prefillConsumed(DRAFT_PREFILL_DEADLINE_MS)) {
+    return { ok: true, generation: nextGeneration, previous };
+  }
   useAppStore.getState().clearComposerPrefill();
   throw refuseRendererAction(
     pluginId,
@@ -193,5 +266,6 @@ function prefillConsumed(deadlineMs: number): Promise<boolean> {
 export function installRendererHostActions(): void {
   registerHostRendererAction("plugin.call", forwardRendererCall);
   registerHostRendererAction("ui.toast", showHostToast);
+  registerHostRendererAction("composer.readDraft", readComposerDraft);
   registerHostRendererAction("composer.replaceDraft", replaceComposerDraft);
 }

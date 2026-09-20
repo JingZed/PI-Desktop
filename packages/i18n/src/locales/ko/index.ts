@@ -1779,6 +1779,7 @@ importConfirm: "가져온 확장은 에이전트 프로세스 안에서 에이�
       "agent.tool.register": "에이전트 도구 추가",
       "agent.prompt.inject": "에이전트 지침 조정",
       "agent.complete": "모델로 일회성 완성 실행",
+      "agent.model.complete": "구성된 모델로 일회성 플러그인 AI 실행",
       "agent.extension": "에이전트 안에서 코드 실행",
       "renderer.extension": "앱 창 안에서 플러그인 UI 실행",
       "runtime.send.before": "메시지를 보내기 전에 검사",
@@ -1786,7 +1787,7 @@ importConfirm: "가져온 확장은 에이전트 프로세스 안에서 에이�
       "runtime.turn.abort": "실행 중인 턴 중지",
       "runtime.turn.closing": "턴이 끝나기 직전에 개입",
       "runtime.turn.facts": "턴의 구조화된 사실 읽기",
-      "runtime.request.before": "모델로 보내는 내용 재작성",
+
       "runtime.session.lifecycle": "세션 및 압축 이벤트 추적",
       "runtime.session.read": "세션 내용 읽기",
       "runtime.tool.gate": "도구 호출 차단 및 도구 결과 교체",
@@ -1835,7 +1836,10 @@ importConfirm: "가져온 확장은 에이전트 프로세스 안에서 에이�
       "agent.tool.register": "AI가 이 플러그인이 제공하는 추가 도구를 호출할 수 있습니다.",
       "agent.prompt.inject": "AI 에이전트에 전송되는 지침을 변경할 수 있습니다.",
       "agent.complete":
+
         "모델 할당량을 사용해 일회성 완성을 실행할 수 있습니다. 플러그인은 API 키를 받지 않습니다.",
+      "agent.model.complete":
+        "구성된 모델로 일회성 플러그인 AI 요청에 사용할 수 있습니다. 플러그인은 API 키를 받지 않습니다. 플러그인이 system을 전달하지 않는 한 세션 시스템 프롬프트는 병합되지 않습니다.",
       "agent.extension": "ExtensionAPI 모듈을 에이전트 프로세스 안에서 에이전트 자체 도구와 같은 권한으로 실행합니다. 신뢰하는 코드만 켜세요.",
       "renderer.extension":
         "이 플러그인은 앱 자체 창 안에서 실행되는 코드를 포함합니다. 앱 프로세스를 공유하고 인터페이스 어디든 그릴 수 있으며, 충돌하면 인터페이스까지 함께 종료될 수 있습니다. 플러그인 작성자를 신뢰할 때만 설치하세요.",
@@ -1849,8 +1853,7 @@ importConfirm: "가져온 확장은 에이전트 프로세스 안에서 에이�
         "턴이 아직 실행 중일 때 플러그인에 확인하며, 에이전트에게 계속 진행하도록 요청할 수 있습니다. 새 메시지 없이 토큰을 더 소비합니다.",
       "runtime.turn.facts":
         "플러그인은 턴에 대한 구조화된 사실을 읽을 수 있습니다: 도구 호출과 결과, 토큰, 비용, 소요 시간, 변경된 파일. 대화 본문은 포함하지 않습니다.",
-      "runtime.request.before":
-        "매 요청 전에 플러그인은 시스템 프롬프트, 모델과 사고 수준, 요청 페이로드, 에이전트가 유지하는 메시지 목록을 바꿀 수 있습니다. 모든 변경은 diff 수준으로 기록되어 나중에 확인할 수 있습니다.",
+
       "runtime.session.lifecycle":
         "세션이 생성, 전환, 삭제, 포크될 때와 압축 전에 플러그인에 알립니다. 플러그인은 압축을 취소할 수 있고 압축이 교체하려는 대화 구간을 받습니다. 다른 작업은 거부할 수 없습니다.",
       "runtime.session.read":

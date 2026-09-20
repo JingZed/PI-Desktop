@@ -2429,53 +2429,8 @@ Delegation rules:
   private async transformExtensionContext(
     messages: AgentMessage[],
   ): Promise<AgentMessage[]> {
-    const runner = this.extensionRunner;
-    if (!runner?.hasHandlers("context")) return messages;
-    const rewrites: Array<{ pluginId: string; pluginLabel: string; after: string }> = [];
-    // Serialized at most once, and only when a handler actually answers with a
-    // list: the common case is no handler at all.
-    let before: string | undefined;
-    let accepted: AgentMessage[] | undefined;
-    await runner.emit<{ messages?: unknown }>(
-      "context",
-      { type: "context", messages },
-      (_acc, next, extensionId, extensionLabel) => {
-        if (!Array.isArray(next?.messages)) {
-          // A handler with no opinion returns nothing; one that answers with a
-          // `messages` field that is not a list is refused, because the request
-          // cannot carry the answer and silence would hide that.
-          if (isRecord(next) && "messages" in next) {
-            runner.rejectSlotAnswer(
-              extensionId,
-              "context",
-              "context was refused: `messages` must be a list of messages",
-            );
-          }
-          return next;
-        }
-        before ??= safeJson(messages);
-        const after = safeJson(next.messages);
-        if (after !== before) {
-          rewrites.push({ pluginId: extensionId, pluginLabel: extensionLabel, after });
-        }
-        accepted = next.messages as AgentMessage[];
-        return next;
-      },
-    );
-    for (const rewrite of rewrites) {
-      // The record never gates the request: a sink that cannot take it is
-      // reported by `publishRewrite`, exactly as slot 1 reports one.
-      void this.publishRewrite({
-        sessionId: this.sessionId,
-        ...(this.turnId ? { turnId: this.turnId } : {}),
-        pluginId: rewrite.pluginId,
-        pluginLabel: rewrite.pluginLabel,
-        kind: "message_list",
-        before: before ?? safeJson(messages),
-        after: rewrite.after,
-      });
-    }
-    return accepted ?? messages;
+    // Slot 6 withdrawn: never apply plugin rewrites to the model request.
+    return messages;
   }
 
   /**

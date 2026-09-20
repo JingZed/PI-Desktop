@@ -521,6 +521,8 @@ const HOST_API_ALLOWLIST = new Set([
   "session.delete",
   "usage.listTurns",
   "agent.complete",
+  "agent.model.complete",
+  "ai.complete",
   "keyboard.registerGlobalShortcut",
   "keyboard.unregisterGlobalShortcut",
   "keyboard.listGlobalShortcuts",
@@ -2906,9 +2908,10 @@ export class PluginRuntime {
         }
         return this.services.usage.listTurns(loaded.manifest.id, input);
       }
-      case "agent.complete": {
+      case "agent.complete":
+      case "agent.model.complete":
+      case "ai.complete":
         return this.runAgentComplete(loaded, (args[0] ?? {}) as PluginCompleteInput);
-      }
       default: {
         if (!HOST_API_ALLOWLIST.has(api)) {
           this.services.audit?.({
@@ -4143,9 +4146,37 @@ export class PluginRuntime {
     loaded: LoadedPlugin,
     input: PluginCompleteInput,
   ): Promise<PluginCompleteResult> {
-    this.assertPermission(loaded, "agent.complete");
-    const modelKey = String(input.modelKey ?? "").trim();
-    if (!modelKey || !modelKey.includes("/")) {
+    // Product name `agent.model.complete`; existing grant `agent.complete`
+    // remains valid for plugins installed before the rename.
+    if (
+      !loaded.permissions.has("agent.model.complete") &&
+      !loaded.permissions.has("agent.complete")
+    ) {
+      throw apiError("PERMISSION_DENIED", "agent.model.complete");
+    }
+    let modelKey = String(input.modelKey ?? "").trim();
+    if (!modelKey) {
+      // Omitted model → host default from the ready catalog (isDefault).
+      // Use services.listModels directly: this grant must not require models.list.
+      const rows = (await this.services.listModels?.()) ?? [];
+      const list = Array.isArray(rows) ? rows : [];
+      const row = list.find(
+        (item) =>
+          item &&
+          typeof item === "object" &&
+          (item as { isDefault?: boolean }).isDefault === true &&
+          typeof (item as { modelKey?: unknown }).modelKey === "string",
+      ) as { modelKey?: string } | undefined;
+      const fallback = list.find(
+        (item) =>
+          item && typeof item === "object" && typeof (item as { modelKey?: unknown }).modelKey === "string",
+      ) as { modelKey?: string } | undefined;
+      modelKey = String(row?.modelKey ?? fallback?.modelKey ?? "").trim();
+      if (!modelKey || !modelKey.includes("/")) {
+        throw apiError("NO_MODEL", "no configured model for agent.model.complete");
+      }
+    }
+    if (!modelKey.includes("/")) {
       throw apiError("INVALID_ARGUMENT", "modelKey must be providerId/modelId");
     }
     const system = typeof input.system === "string" ? input.system : "";

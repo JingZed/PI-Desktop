@@ -50,14 +50,11 @@ export const PERMISSION_RISK: Record<string, RiskTier> = {
   // The renderer host draws inside the app's own window, and the runtime hooks
   // run inside the user's own turn, so a fault there is the user's too.
   "renderer.extension": "high",
-  // Runtime slots (#561): each one is consulted while a turn runs and can
-  // change what the agent does. The ones that rewrite what the model sees
-  // (request and tool gate), spend the user's tokens (continuations), reach
-  // conversation content (recap, session read, session lifecycle) or add a
-  // tool to the agent's own catalogue sit at the top tier; structured turn
-  // facts carry no conversation text, and live observation can only watch, so
-  // they are a tier below.
-  "runtime.request.before": "high",
+  // Runtime slots (#561): withdrawn slot 6 (runtime.request.before) is not
+  // registered. Remaining slots: rewrites / gate / continuations / conversation
+  // reads sit at high; structured turn facts (no conversation text) low; live
+  // watch medium. agent.model.complete spends the user's configured models.
+  "agent.model.complete": "high",
   "runtime.send.before": "high",
   "runtime.session.lifecycle": "high",
   "runtime.session.read": "high",

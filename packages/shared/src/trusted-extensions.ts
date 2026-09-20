@@ -171,14 +171,9 @@ export const TRUSTED_EXTENSION_EVENT_PERMISSIONS = {
   // Slot 4: block a call with a reason, replace a tool's result.
   tool_call: "runtime.tool.gate",
   tool_result: "runtime.tool.gate",
-  // Slot 6: rewrite what is sent to the model (system prompt, model and
-  // thinking level, request payload, message list).
-  before_agent_start: "runtime.request.before",
-  context: "runtime.request.before",
-  before_provider_request: "runtime.request.before",
-  before_provider_headers: "runtime.request.before",
-  model_select: "runtime.request.before",
-  thinking_level_select: "runtime.request.before",
+  // Slot 6 (`runtime.request.before`) is withdrawn: before_agent_start /
+  // context / before_provider_* / model_select / thinking_level_select are
+  // no longer plugin-facing rewrite points. Unmapped events stay unconsulted.
   // Slot 2: live observation of the running turn.
   agent_start: "runtime.turn.watch",
   agent_end: "runtime.turn.watch",
@@ -416,6 +411,30 @@ export function trustedExtensionEventPermission(event: string): string | undefin
     : undefined;
 }
 
+/**
+ * Events withdrawn with slot 6 (`runtime.request.before`). The runner must not
+ * consult handlers for these even if an extension registers them: silent
+ * rewrites of what the model reads are not offered. Missing from the permission
+ * map alone would leave them ungated, so the runner refuses on this set.
+ */
+export const WITHDRAWN_RUNTIME_EVENTS = [
+  "before_agent_start",
+  "context",
+  "before_provider_request",
+  "before_provider_headers",
+  "model_select",
+  "thinking_level_select",
+] as const;
+
+export type WithdrawnRuntimeEvent = (typeof WITHDRAWN_RUNTIME_EVENTS)[number];
+
+export function isWithdrawnRuntimeEvent(event: string): event is WithdrawnRuntimeEvent {
+  return (WITHDRAWN_RUNTIME_EVENTS as readonly string[]).includes(event);
+}
+
+/** Plugin-side completion on user-configured models (`pi.ai.complete`). */
+export const PLUGIN_MODEL_COMPLETE_PERMISSION = "agent.model.complete";
+
 
 /**
  * The one slot permission behind a plugin tool's extended result fields (ADR
@@ -514,11 +533,12 @@ export function trustedExtensionApiPermission(apiCall: string): string | undefin
  * gate" behavior. A name that is mapped and missing here would silently leave
  * its event unrestricted, which is the drift
  * `apps/desktop/test/runtime-slot-permissions.test.mjs` exists to catch: it
- * fails when this list and `PLUGIN_PERMISSIONS` disagree. The twelfth ADR 0295
- * slot, `runtime.approval.before`, is not built and is deliberately absent.
+ * fails when this list and `PLUGIN_PERMISSIONS` disagree. Slot 6
+ * (`runtime.request.before`) is withdrawn and is deliberately absent. The
+ * twelfth ADR 0295 slot, `runtime.approval.before`, is not built and is
+ * deliberately absent.
  */
 export const REGISTERED_SLOT_PERMISSIONS = [
-  "runtime.request.before",
   "runtime.send.before",
   "runtime.session.lifecycle",
   "runtime.session.read",

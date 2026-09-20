@@ -1785,6 +1785,7 @@ importConfirm: "Imported extensions run inside the agent process with the same a
       "agent.tool.register": "Add tools for the agent",
       "agent.prompt.inject": "Adjust agent instructions",
       "agent.complete": "Run a one-shot completion with your models",
+      "agent.model.complete": "Use your configured models for one-shot plugin AI",
       "agent.extension": "Run code inside the agent",
       "renderer.extension": "Run plugin UI inside the app window",
       "runtime.send.before": "Inspect a message before it is sent",
@@ -1792,7 +1793,7 @@ importConfirm: "Imported extensions run inside the agent process with the same a
       "runtime.turn.abort": "Stop the running turn",
       "runtime.turn.closing": "Act just before a turn ends",
       "runtime.turn.facts": "Read structured facts about a turn",
-      "runtime.request.before": "Rewrite what is sent to the model",
+
       "runtime.session.lifecycle": "Follow session and compaction events",
       "runtime.session.read": "Read a session's content",
       "runtime.tool.gate": "Block tool calls and replace tool results",
@@ -1843,6 +1844,9 @@ importConfirm: "Imported extensions run inside the agent process with the same a
       "agent.prompt.inject": "Can change instructions sent to the AI agent.",
       "agent.complete":
         "Can spend your model quota on a one-shot completion. The plugin never receives your API keys.",
+      "agent.model.complete":
+        "Can spend quota on one-shot plugin AI with your configured models. The plugin never receives your API keys. The session system prompt is not merged unless the plugin passes system.",
+
       "agent.extension": "Runs ExtensionAPI modules inside the agent process with the same access as the agent's own tools. Enable only code you trust.",
       "renderer.extension":
         "This plugin ships code that runs inside the app's own window. It shares the app's process, can draw anywhere in the interface, and a crash can take the interface down with it. Only install it if you trust the plugin author.",
@@ -1856,8 +1860,7 @@ importConfirm: "Imported extensions run inside the agent process with the same a
         "The plugin is consulted while a turn is still running and can ask the agent to keep going. That spends more tokens without a new message from you.",
       "runtime.turn.facts":
         "The plugin may read structured facts about a turn: tool calls and outcomes, tokens, spend, duration, files touched. It carries no conversation text.",
-      "runtime.request.before":
-        "Before each request the plugin may change the system prompt, the model and thinking level, the request payload, and the message list the agent keeps. Every change is recorded at diff level so you can inspect it afterwards.",
+
       "runtime.session.lifecycle":
         "The plugin is told when a session is created, switched, deleted or forked, and before a compaction. It can cancel a compaction and receives the conversation segment the compaction is about to replace; it cannot veto the other actions.",
       "runtime.session.read":

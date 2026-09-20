@@ -1760,6 +1760,7 @@ sklm: {
       "agent.tool.register": "為智慧體新增工具",
       "agent.prompt.inject": "調整智慧體指令",
       "agent.complete": "用你的模型發起一次補全",
+      "agent.model.complete": "使用你已設定的模型發起一次性插件 AI",
       "agent.extension": "在 agent 內執行程式碼",
       "renderer.extension": "在應用視窗內執行外掛介面",
       "runtime.send.before": "在訊息傳送前檢查",
@@ -1767,7 +1768,7 @@ sklm: {
       "runtime.turn.abort": "停止正在執行的輪次",
       "runtime.turn.closing": "在輪次結束前介入",
       "runtime.turn.facts": "讀取本輪的結構化事實",
-      "runtime.request.before": "改寫送給模型的內容",
+
       "runtime.session.lifecycle": "追蹤工作階段與壓縮事件",
       "runtime.session.read": "讀取工作階段內容",
       "runtime.tool.gate": "攔截工具呼叫並替換工具結果",
@@ -1811,6 +1812,8 @@ sklm: {
       "agent.tool.register": "允許 AI 呼叫此外掛提供的額外工具。",
       "agent.prompt.inject": "可能修改傳送給智慧體的指令。",
       "agent.complete": "會消耗你的模型額度發起一次補全。外掛拿不到 API 金鑰。",
+      "agent.model.complete":
+        "可使用你已設定的模型發起一次性插件 AI 請求並消耗額度。插件拿不到你的 API Key。除非插件自己傳入 system，否則不會合併會話系統提示詞。",
       "agent.extension": "在 agent 程序內執行 ExtensionAPI 模組，擁有與 agent 自身工具相同的權限。只啟用你信任的程式碼。",
       "renderer.extension":
         "此外掛提供的程式碼會在應用自身視窗內執行：它與應用共用同一個程序，可在介面任意位置繪製，崩潰可能連帶介面一起結束。只在你信任外掛作者時才安裝。",
@@ -1823,8 +1826,7 @@ sklm: {
         "輪次仍在執行時外掛會被徵詢，並可以要求智慧體繼續進行。這會在你沒有新訊息的情況下消耗更多額度。",
       "runtime.turn.facts":
         "外掛可以讀取本輪的結構化事實：工具呼叫與結果、token、花費、耗時、改動的檔案。不包含對話正文。",
-      "runtime.request.before":
-        "每次請求前，外掛可以修改系統提示詞、模型與思考等級、請求負載，以及 agent 保留的訊息清單。每處變更都會以 diff 層級記錄，事後可以檢視。",
+
       "runtime.session.lifecycle":
         "工作階段建立、切換、刪除、fork 時會通知外掛，壓縮前也會通知。外掛可以取消壓縮，並收到壓縮即將替換掉的對話片段；其他動作它無法否決。",
       "runtime.session.read":

@@ -25,6 +25,8 @@ import {
   trustedExtensionApiPermission,
   trustedExtensionApiScopePermission,
   trustedExtensionEventPermission,
+  isWithdrawnRuntimeEvent,
+  PLUGIN_MODEL_COMPLETE_PERMISSION,
   TRUSTED_EXTENSION_RECAP_DEFAULT_LIMIT,
   TRUSTED_EXTENSION_RECAP_MAX_LIMIT,
   type TrustedExtensionAgentModelConfig,
@@ -576,6 +578,8 @@ export class TrustedExtensionRunner {
   }
 
   hasHandlers(event: string): boolean {
+    // Slot 6 is withdrawn: the runtime must never treat these as live hooks.
+    if (isWithdrawnRuntimeEvent(event)) return false;
     for (const extension of this.loaded.values()) {
       if ((extension.handlers.get(event)?.length ?? 0) > 0) return true;
     }
@@ -653,6 +657,19 @@ export class TrustedExtensionRunner {
   ): Promise<R | undefined> {
     if (this.disposed) return undefined;
     if (this.disposed) return undefined;
+    if (isWithdrawnRuntimeEvent(event)) {
+      for (const extension of this.loaded.values()) {
+        if ((extension.handlers.get(event)?.length ?? 0) > 0) {
+          this.report(
+            extension.spec.id,
+            "rejected_registration",
+            `handler for "${event}" skipped: slot 6 (runtime.request.before) is not offered`,
+            event,
+          );
+        }
+      }
+      return undefined;
+    }
     let acc: R | undefined;
     const timed = RESULT_EVENTS.has(event);
     for (const extension of this.loaded.values()) {

@@ -214,10 +214,8 @@ export default function (pi: any) {
   pi.on("session_start", (e: any, ctx: any) => { (globalThis as any).__started = e.reason + ctx.hasUI; });
 }
 `,
-      // The plugin's own grants: the tier (`agent.extension`) plus the slots its
-      // two hooks exercise — `before_agent_start` (slot 6) and `tool_call`
-      // (slot 4). Without them the runner skips both handlers (ADR 0295 rule 2).
-      ["agent.extension", "runtime.request.before", "runtime.tool.gate"],
+      // Tier + tool gate only: slot 6 is withdrawn, before_agent_start is not consulted.
+      ["agent.extension", "runtime.tool.gate"],
     );
     const { bridge, log } = fakeBridge();
     const runner = new TrustedExtensionRunner({ specs: [ext], bridge, reservedToolNames: () => ["read"] });
@@ -236,12 +234,18 @@ export default function (pi: any) {
     const start = await runner.emit<{ systemPrompt?: string }>("before_agent_start", {
       type: "before_agent_start", prompt: "hi", systemPrompt: "base",
     });
-    expect(start?.systemPrompt).toBe("base +marker");
+    expect(start).toBeUndefined();
     const blocked = await runner.emit<{ block?: boolean }>("tool_call", { type: "tool_call", toolName: "bash", toolCallId: "t", input: {} });
     expect(blocked).toEqual({ block: true, reason: "no bash" });
     const allowed = await runner.emit("tool_call", { type: "tool_call", toolName: "read", toolCallId: "t", input: {} });
     expect(allowed).toBeUndefined();
-    expect(runner.getDiagnostics()).toEqual([]);
+    expect(runner.getDiagnostics()).toEqual([
+      expect.objectContaining({
+        kind: "rejected_registration",
+        member: "before_agent_start",
+        message: expect.stringContaining("runtime.request.before"),
+      }),
+    ]);
   });
 
   it("registers a plugin-owned agent and exposes its stream model", async () => {
@@ -426,14 +430,12 @@ export default function (pi: any) {
     expect((globalThis as { __exec?: { stdout: string; code: number } }).__exec).toMatchObject({ stdout: "out", code: 0 });
   });
 
-  it("folds context results, and records a stalled handler as a timeout", async () => {
+  it("does not consult context handlers: slot 6 is withdrawn", async () => {
     const ext = spec("ctx", `export default function (pi: any) {
   pi.on("context", (e: any) => ({ messages: [...e.messages, { role: "user", content: "extra" }] }));
-  pi.on("context", (e: any) => ({ messages: e.messages.slice(0, 1) }));
   pi.on("tool_result", () => { throw new Error("nope"); });
 }`,
-      // `context` is slot 6 and `tool_result` is slot 4 (ADR 0295 rule 2).
-      ["runtime.request.before", "runtime.tool.gate"],
+      ["runtime.tool.gate"],
     );
     const { bridge } = fakeBridge();
     const runner = new TrustedExtensionRunner({ specs: [ext], bridge });
@@ -444,19 +446,20 @@ export default function (pi: any) {
       { type: "context", messages },
       (acc, next) => next,
     );
-    // The second handler saw the original payload, not the first handler's output.
-    expect(folded?.messages).toEqual([messages[0]]);
+    expect(folded).toBeUndefined();
+    expect(runner.hasHandlers("context")).toBe(false);
     await runner.emit("tool_result", { type: "tool_result", toolName: "x", toolCallId: "1", input: {}, content: [], details: {}, isError: false });
     expect(runner.getDiagnostics()).toEqual([
+      expect.objectContaining({ kind: "rejected_registration", member: "context", message: expect.stringContaining("runtime.request.before") }),
       expect.objectContaining({ kind: "handler_error", member: "tool_result", message: "nope" }),
     ]);
     await runner.dispose();
     expect(await runner.emit("turn_start", { type: "turn_start" })).toBeUndefined();
   });
 
-  it("maps every wired event to its slot permission and leaves the rest unrestricted", () => {
+  it("maps every wired event to its slot permission and leaves the rest alone", () => {
     // The map is the contract (ADR 0295 rule 2): whatever the runner does not
-    // find here has no slot and stays unrestricted.
+    // find here has no slot. Slot 6 events are withdrawn and unmapped.
     expect(trustedExtensionEventPermission("turn_closing")).toBe("runtime.turn.closing");
     expect(trustedExtensionEventPermission("tool_call")).toBe("runtime.tool.gate");
     expect(trustedExtensionEventPermission("tool_result")).toBe("runtime.tool.gate");
@@ -468,7 +471,7 @@ export default function (pi: any) {
       "model_select",
       "thinking_level_select",
     ]) {
-      expect(trustedExtensionEventPermission(event), event).toBe("runtime.request.before");
+      expect(trustedExtensionEventPermission(event), event).toBeUndefined();
     }
     for (const event of [
       "agent_start",
@@ -500,16 +503,27 @@ export default function (pi: any) {
     }
     expect(trustedExtensionEventPermission("input")).toBe("runtime.send.before");
 
-    // Every mapped event is one the runtime actually emits, and every event
-    // this runner knows that is not mapped is one of the three the map
-    // deliberately leaves alone.
+    // Mapped events are live; unmapped = runner boundaries + withdrawn slot 6.
     const wired = new Set<string>(TRUSTED_EXTENSION_EVENTS);
     for (const event of Object.keys(TRUSTED_EXTENSION_EVENT_PERMISSIONS)) {
       expect(wired.has(event), event).toBe(true);
     }
-    expect(
-      TRUSTED_EXTENSION_EVENTS.filter((event) => !(event in TRUSTED_EXTENSION_EVENT_PERMISSIONS)),
-    ).toEqual(["session_start", "session_shutdown", "session_info_changed"]);
+    const unmapped = TRUSTED_EXTENSION_EVENTS.filter(
+      (event) => !(event in TRUSTED_EXTENSION_EVENT_PERMISSIONS),
+    ).sort();
+    expect(unmapped).toEqual(
+      [
+        "before_agent_start",
+        "before_provider_headers",
+        "before_provider_request",
+        "context",
+        "model_select",
+        "session_info_changed",
+        "session_shutdown",
+        "session_start",
+        "thinking_level_select",
+      ].sort(),
+    );
     expect(trustedExtensionEventPermission("session_start")).toBeUndefined();
     expect(trustedExtensionEventPermission("session_shutdown")).toBeUndefined();
     expect(trustedExtensionEventPermission("session_info_changed")).toBeUndefined();

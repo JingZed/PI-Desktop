@@ -1760,6 +1760,7 @@ sklm: {
       "agent.tool.register": "Agregar herramientas para el agente",
       "agent.prompt.inject": "Ajustar instrucciones del agente",
       "agent.complete": "Ejecutar una finalización de una sola vez con sus modelos",
+      "agent.model.complete": "IA de plugin con tus modelos configurados",
       "agent.extension": "Ejecutar código dentro del agente",
       "renderer.extension": "Ejecutar la interfaz del complemento en la ventana de la aplicación",
       "runtime.send.before": "Revisar un mensaje antes de enviarlo",
@@ -1767,7 +1768,7 @@ sklm: {
       "runtime.turn.abort": "Detener el turno en curso",
       "runtime.turn.closing": "Actuar justo antes de que termine un turno",
       "runtime.turn.facts": "Leer datos estructurados de un turno",
-      "runtime.request.before": "Reescribir lo que se envía al modelo",
+
       "runtime.session.lifecycle": "Seguir los eventos de sesión y compactación",
       "runtime.session.read": "Leer el contenido de una sesión",
       "runtime.tool.gate": "Bloquear llamadas a herramientas y sustituir resultados",
@@ -1810,6 +1811,8 @@ sklm: {
       "agent.tool.register": "Permite que la IA llame a herramientas adicionales proporcionadas por este complemento.",
       "agent.prompt.inject": "Puede cambiar las instrucciones enviadas al agente de IA.",
       "agent.complete": "Puede gastar su cuota de modelo en una finalización única. El complemento nunca recibe sus claves API.",
+      "agent.model.complete":
+        "Puede consumir cuota de IA de plugin con tus modelos configurados. El plugin nunca recibe tus claves API. El system prompt de la sesion no se fusiona salvo que el plugin pase system.",
       "agent.extension": "Ejecuta módulos ExtensionAPI dentro del proceso del agente con el mismo acceso que sus propias herramientas. Activa solo código en el que confíes.",
       "renderer.extension":
         "Este complemento incluye código que se ejecuta en la propia ventana de la aplicación. Comparte el proceso de la aplicación, puede dibujar en cualquier parte de la interfaz y un fallo puede llevarse la interfaz consigo. Instálelo solo si confía en el autor del complemento.",
@@ -1823,8 +1826,7 @@ sklm: {
         "Se consulta al complemento mientras un turno sigue en curso y puede pedirle al agente que continúe. Eso gasta más tokens sin un mensaje nuevo de su parte.",
       "runtime.turn.facts":
         "El complemento puede leer datos estructurados de un turno: llamadas de herramienta y resultados, tokens, gasto, duración y archivos tocados. No incluye el texto de la conversación.",
-      "runtime.request.before":
-        "Antes de cada petición el plugin puede cambiar el prompt del sistema, el modelo y el nivel de razonamiento, el cuerpo de la petición y la lista de mensajes que mantiene el agente. Cada cambio se registra a nivel de diff para poder revisarlo después.",
+
       "runtime.session.lifecycle":
         "El plugin recibe aviso cuando una sesión se crea, se cambia, se elimina o se bifurca, y antes de una compactación. Puede cancelar una compactación y recibe el fragmento de conversación que esta reemplazaría; no puede vetar las demás acciones.",
       "runtime.session.read":

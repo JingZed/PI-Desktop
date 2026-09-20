@@ -1268,11 +1268,14 @@ export type PluginLlmContext = {
 };
 
 export type PluginCompleteInput = {
-  modelKey: string;
+  /** `providerId/modelId`; omitted → host default / session-bound model. */
+  modelKey?: string;
   thinkingLevel?: string;
   system?: string;
   messages?: Array<{ role: "user" | "assistant"; content: string }>;
   includeSessionContext?: boolean;
+  /** Audit label, e.g. "prompt-enhance". */
+  purpose?: string;
 };
 
 export type PluginCompleteResult = {
@@ -1285,6 +1288,18 @@ export type PluginCompleteResult = {
     totalTokens: number;
   };
 };
+
+/**
+ * Plugin-level completion on user-configured models (`pi.ai.complete`).
+ * Permission: `agent.model.complete` or legacy `agent.complete`.
+ * `system` is exactly what the plugin passes — the host does not merge the
+ * session system prompt into this side request.
+ */
+export type PluginAiCompleteInput = PluginCompleteInput & {
+  messages: Array<{ role: "user" | "assistant" | "system"; content: string }>;
+};
+
+export type PluginAiCompleteResult = PluginCompleteResult;
 
 export type PluginServiceContext = {
   /** Appends a line to the plugin's host log. */
@@ -1651,6 +1666,14 @@ export type PluginHostApi = {
     unregisterTool: (name: string) => Promise<void>;
     complete: (input: PluginCompleteInput) => Promise<PluginCompleteResult>;
   };
+  /** Plugin-level AI on user-configured models. Permission `agent.model.complete`. */
+  ai: {
+    complete: (input: PluginAiCompleteInput) => Promise<PluginAiCompleteResult>;
+    completeStream: (
+      input: PluginAiCompleteInput,
+      onDelta?: (text: string) => void,
+    ) => Promise<PluginAiCompleteResult>;
+  };
   models: {
     list: () => Promise<PluginModelInfo[]>;
   };
@@ -1843,11 +1866,11 @@ export const PLUGIN_PERMISSIONS = [
   "speech.adapter.register",
   "keyboard.globalShortcut",
   "net.websocket",
-  // Runtime slots (#561). Each one is consulted while a turn is running and can
-  // change what the agent does, so they are separate, individually reviewed
-  // grants rather than one bundled switch. Every slot ADR 0295 builds is
-  // registered here; the twelfth (`runtime.approval.before`) is not built.
-  "runtime.request.before",
+  // Runtime slots (#561). Slot 6 (`runtime.request.before`) is withdrawn by
+  // product decision — silent request rewrites are not offered. The twelfth
+  // (`runtime.approval.before`) is not built. `agent.model.complete` gates
+  // plugin-side completion on user-configured models (`pi.ai.complete`).
+  "agent.model.complete",
   "runtime.send.before",
   "runtime.session.lifecycle",
   "runtime.session.read",

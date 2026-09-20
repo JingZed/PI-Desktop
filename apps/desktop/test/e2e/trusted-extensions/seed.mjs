@@ -146,7 +146,8 @@ export default function (pi: any) {
  *                            after_provider_response
  */
 const SLOT_PERMISSIONS = {
-  fx: ["runtime.request.before", "runtime.tool.gate", "runtime.turn.watch"],
+  // Slot 6 (runtime.request.before) is withdrawn; fx no longer gets it.
+  fx: ["runtime.tool.gate", "runtime.turn.watch"],
   queue: ["runtime.turn.continue"],
 };
 

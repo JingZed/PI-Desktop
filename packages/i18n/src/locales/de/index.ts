@@ -1760,6 +1760,7 @@ sklm: {
       "agent.tool.register": "Tools für den Agenten hinzufügen",
       "agent.prompt.inject": "Agentenanweisungen anpassen",
       "agent.complete": "One-Shot-Vervollständigung mit Ihren Modellen durchführen",
+      "agent.model.complete": "Einmalige Plugin-KI mit deinen konfigurierten Modellen",
       "agent.extension": "Code im Agenten ausführen",
       "renderer.extension": "Plugin-Oberfläche im App-Fenster ausführen",
       "runtime.send.before": "Eine Nachricht vor dem Senden prüfen",
@@ -1767,7 +1768,7 @@ sklm: {
       "runtime.turn.abort": "Die laufende Runde stoppen",
       "runtime.turn.closing": "Kurz vor Ende einer Runde eingreifen",
       "runtime.turn.facts": "Strukturierte Fakten zu einer Runde lesen",
-      "runtime.request.before": "Umschreiben, was an das Modell geht",
+
       "runtime.session.lifecycle": "Sitzungs- und Kompaktierungsereignisse verfolgen",
       "runtime.session.read": "Inhalt einer Sitzung lesen",
       "runtime.tool.gate": "Tool-Aufrufe blockieren und Ergebnisse ersetzen",
@@ -1810,6 +1811,8 @@ sklm: {
       "agent.tool.register": "Ermöglicht der KI, zusätzliche Tools aufzurufen, die von diesem Plugin bereitgestellt werden.",
       "agent.prompt.inject": "Kann Anweisungen ändern, die an den KI-Agenten gesendet werden.",
       "agent.complete": "Kann Ihr Modellkontingent für eine einmalige Fertigstellung ausgeben. Das Plugin erhält niemals Ihre API-Schlüssel.",
+      "agent.model.complete":
+        "Kann Kontingent fuer einmalige Plugin-KI mit konfigurierten Modellen verbrauchen. Das Plugin erhaelt keine API-Keys. Der Session-Systemprompt wird nicht zusammengefuehrt, sofern das Plugin system nicht selbst uebergibt.",
       "agent.extension": "Führt ExtensionAPI-Module im Agentenprozess mit denselben Rechten wie die Tools des Agenten aus. Aktiviere nur Code, dem du vertraust.",
       "renderer.extension":
         "Dieses Plugin liefert Code, der im Fenster der App selbst läuft. Er teilt sich den Prozess der App, kann überall in der Oberfläche zeichnen, und ein Absturz kann die Oberfläche mitreißen. Installieren Sie es nur, wenn Sie dem Plugin-Autor vertrauen.",
@@ -1823,8 +1826,7 @@ sklm: {
         "Das Plugin wird befragt, während eine Runde noch läuft, und kann den Agenten bitten, weiterzumachen. Das verbraucht mehr Token, ohne dass Sie eine neue Nachricht senden.",
       "runtime.turn.facts":
         "Das Plugin kann strukturierte Fakten zu einer Runde lesen: Tool-Aufrufe und Ergebnisse, Token, Kosten, Dauer, berührte Dateien. Gesprächstext ist nicht enthalten.",
-      "runtime.request.before":
-        "Vor jeder Anfrage darf das Plugin den System-Prompt, das Modell und die Denkstufe, die Anfrage-Nutzlast und die Nachrichtenliste des Agenten ändern. Jede Änderung wird auf Diff-Ebene festgehalten und ist danach einsehbar.",
+
       "runtime.session.lifecycle":
         "Das Plugin erfährt, wenn eine Sitzung erstellt, gewechselt, gelöscht oder geforkt wird, und vor einer Kompaktierung. Es kann eine Kompaktierung abbrechen und erhält den Gesprächsausschnitt, den sie ersetzen würde; die übrigen Aktionen kann es nicht verhindern.",
       "runtime.session.read":

@@ -1779,6 +1779,7 @@ importConfirm: "İçe aktarılan uzantılar ajan sürecinde, ajanın kendi araç
       "agent.tool.register": "Ajan için araç ekle",
       "agent.prompt.inject": "Ajan yönergelerini ayarla",
       "agent.complete": "Modellerinizle tek seferlik tamamlatma çalıştır",
+      "agent.model.complete": "Yapilandirdiginiz modellerle tek seferlik plugin AI",
       "agent.extension": "Ajanın içinde kod çalıştır",
       "renderer.extension": "Eklenti arayüzünü uygulama penceresinde çalıştır",
       "runtime.send.before": "İletiyi gönderilmeden önce incele",
@@ -1786,7 +1787,7 @@ importConfirm: "İçe aktarılan uzantılar ajan sürecinde, ajanın kendi araç
       "runtime.turn.abort": "Çalışan turu durdur",
       "runtime.turn.closing": "Tur bitmeden hemen önce devreye gir",
       "runtime.turn.facts": "Bir turun yapısal bilgilerini oku",
-      "runtime.request.before": "Modele gönderileni yeniden yaz",
+
       "runtime.session.lifecycle": "Oturum ve sıkıştırma olaylarını izle",
       "runtime.session.read": "Oturum içeriğini oku",
       "runtime.tool.gate": "Araç çağrılarını engelle ve araç sonuçlarını değiştir",
@@ -1835,7 +1836,10 @@ importConfirm: "İçe aktarılan uzantılar ajan sürecinde, ajanın kendi araç
       "agent.tool.register": "AI’nin bu eklentinin sağladığı ek araçları çağırmasını sağlar.",
       "agent.prompt.inject": "AI ajanına gönderilen yönergeleri değiştirebilir.",
       "agent.complete":
+
         "Model kotanızı tek seferlik bir tamamlatma için harcayabilir. Eklenti API anahtarlarınızı almaz.",
+      "agent.model.complete":
+        "Yapilandirdiginiz modellerle tek seferlik plugin AI icin kota harcayabilir. Plugin API anahtarlarinizi almaz. Plugin system gecmedikce oturum sistem promptu birlestirilmez.",
       "agent.extension": "ExtensionAPI modüllerini ajan sürecinde, ajanın kendi araçlarıyla aynı erişimle çalıştırır. Yalnızca güvendiğiniz kodu etkinleştirin.",
       "renderer.extension":
         "Bu eklenti, uygulamanın kendi penceresinde çalışan kod içerir. Uygulamanın sürecini paylaşır, arayüzün her yerine çizebilir ve bir çökme arayüzü de beraberinde götürebilir. Yalnızca eklenti yazarına güveniyorsanız yükleyin.",
@@ -1849,8 +1853,7 @@ importConfirm: "İçe aktarılan uzantılar ajan sürecinde, ajanın kendi araç
         "Tur hâlâ çalışırken eklentiye danışılır ve eklenti ajanın devam etmesini isteyebilir. Bu, sizden yeni bir ileti olmadan daha fazla token harcar.",
       "runtime.turn.facts":
         "Eklenti bir tura ilişkin yapısal bilgileri okuyabilir: araç çağrıları ve sonuçları, token, harcama, süre, dokunulan dosyalar. Konuşma metni içermez.",
-      "runtime.request.before":
-        "Her istekten önce eklenti sistem istemini, modeli ve düşünme düzeyini, istek gövdesini ve ajanın tuttuğu mesaj listesini değiştirebilir. Her değişiklik diff düzeyinde kaydedilir ve sonradan incelenebilir.",
+
       "runtime.session.lifecycle":
         "Bir oturum oluşturulduğunda, değiştirildiğinde, silindiğinde veya çatallandığında ve sıkıştırma öncesinde eklentiye bildirilir. Eklenti sıkıştırmayı iptal edebilir ve sıkıştırmanın değiştireceği konuşma bölümünü alır; diğer işlemleri veto edemez.",
       "runtime.session.read":
