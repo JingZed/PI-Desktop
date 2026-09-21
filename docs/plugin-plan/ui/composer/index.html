@@ -1,0 +1,98 @@
+<!-- status: draft · issue #545 · branch feat/528-plugin-slots -->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>输入区 · 目录</title>
+<style>
+  :root{
+    --bg:#0e0e0e; --surface:#161616; --line:#2a2a2a; --line-2:#353535;
+    --text:#ededed; --text-2:#b0b0b0; --muted:#7d7d7d; --faint:#5c5c5c;
+    --ok:#40c977; --ok-bg:rgba(64,201,119,.10);
+    --warn:#ff8549; --warn-bg:rgba(255,133,73,.10);
+    --ui:#c27aff; --ui-bg:rgba(194,122,255,.10);
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    --mono:ui-monospace,"SF Mono","Cascadia Code",Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14px;line-height:1.65;-webkit-font-smoothing:antialiased}
+  code{font-family:var(--mono);font-size:12.5px;color:var(--text-2)}
+
+  .plan-nav{display:flex;flex-wrap:wrap;align-items:center;gap:4px;padding:10px 28px;background:#0c0c0c;border-bottom:1px solid var(--line);font-size:13px}
+  .plan-nav a{color:var(--text-2);text-decoration:none;padding:3px 8px;border-radius:6px}
+  .plan-nav a:hover{background:var(--surface);color:var(--text)}
+  .plan-nav a[aria-current="page"]{background:var(--surface);color:var(--text);box-shadow:inset 0 0 0 1px var(--line-2)}
+  .plan-nav .sep{color:var(--faint);padding:0 2px}
+  .plan-nav .spacer{flex:1}
+
+  .top{border-bottom:1px solid var(--line);padding:24px 28px 20px;background:linear-gradient(180deg,#141414,#0e0e0e)}
+  .top .crumb{font-family:var(--mono);font-size:11.5px;color:var(--faint);letter-spacing:.06em}
+  .top h1{margin:6px 0;font-size:21px}
+  .top p{margin:0;color:var(--text-2);max-width:80ch}
+  .top .meta{margin-top:8px;color:var(--faint);font-size:12.5px}
+  main{max-width:880px;margin:0 auto;padding:24px 28px 80px}
+  h2{font-size:15px;margin:28px 0 10px;padding-top:14px;border-top:1px solid var(--line)}
+  h2:first-child{margin-top:0;border-top:0;padding-top:0}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+  .card{display:block;padding:14px 16px;border-radius:11px;background:var(--surface);border:1px solid var(--line);text-decoration:none;color:inherit}
+  .card:hover{border-color:var(--line-2);background:#191919}
+  .card .name{font-family:var(--mono);font-size:12.5px;color:var(--text-2)}
+  .card .what{margin:6px 0 0;font-size:13.5px}
+  .card .files{margin:8px 0 0;font-family:var(--mono);font-size:11.5px;color:var(--faint)}
+  ul{margin:0;padding-left:1.2em}
+  li{margin:3px 0}
+</style>
+</head>
+<body>
+
+<nav class="plan-nav">
+  <a href="../../index.html">插件插槽目录</a>
+  <span class="sep">/</span>
+  <a href="index.html" aria-current="page">输入区</a>
+  <span class="spacer"></span>
+  <a href="index.html" aria-current="page">目录</a>
+  <a href="requirements.html">需求</a>
+  <a href="demo.html">演示</a>
+</nav>
+
+<header class="top">
+  <div class="crumb">docs/plugin-plan · ui · composer</div>
+  <h1>输入区</h1>
+  <p>聊天输入框这一块。四个位置：<code>composer.left</code>（工具栏左侧）、<code>composer.middle</code>（工具栏右侧、模型选择左边）、<code>composer.trigger</code>（打触发符弹出的列表）、<code>composer.content</code>（输入框里的记号）。外加两组方法：读写草稿、读写附件。</p>
+  <div class="meta">status: draft · issue #545 · branch feat/528-plugin-slots</div>
+</header>
+
+<main>
+
+  <h2>这个目录里有什么</h2>
+  <div class="cards">
+    <a class="card" href="requirements.html">
+      <div class="name">requirements.html</div>
+      <p class="what">要什么：槽位划分、固定件、中槽规则、触发符注册、草稿与附件方法、明确不做。</p>
+      <p class="files">已定 / 建议 / 还没定 分开标色</p>
+    </a>
+    <a class="card" href="demo.html">
+      <div class="name">demo.html</div>
+      <p class="what">长什么样：7 个场景，从默认样式到知识库选择、# 触发远程数据、插件实现增强、常用语、附件读写、草稿统计。</p>
+      <p class="files">不写说明文字，只有界面</p>
+    </a>
+  </div>
+
+  <h2>一句话回顾</h2>
+  <ul>
+    <li>固定件不许动：左边是附件、模式切换、权限切换；模型选择和发送永远在最右。</li>
+    <li>中槽的宿主默认项只有<b>上下文用量</b>；插件可以隐藏它、替换成自己的。</li>
+    <li>宿主不再自带「提示词增强」，这个能力交给插件（demo 场景 4）。</li>
+    <li>触发符注册制：插件声明一个符号，弹出列表的样式是宿主的，列表内容是插件的。</li>
+    <li>选中的东西在输入框里是一个记号（chip），发送时按结构化数据解析。</li>
+    <li>分支上旧的 <code>beforeSend</code> 整块移交原型（模型 + 上下文 + 增强整体交给一个插件）已废弃，按新边界重做。</li>
+  </ul>
+
+  <h2>还没定的事</h2>
+  <p style="color:var(--muted);font-size:13px">中槽多个插件的排序、触发符与 <code>/</code> <code>@</code> 的优先关系、记号的数据格式、附件方法的权限名——见 requirements.html 的「还没定的事」。</p>
+
+</main>
+</body>
+</html>

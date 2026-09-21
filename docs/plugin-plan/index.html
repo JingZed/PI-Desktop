@@ -64,6 +64,9 @@
   <span class="sep">·</span>
   <span style="color:var(--muted);font-size:12.5px">已开：</span>
   <a href="ui/user-message/index.html">用户消息卡</a>
+  <a href="ui/tool-card/index.html">工具调用卡</a>
+  <a href="ui/block-renderer/index.html">块渲染器</a>
+  <a href="ui/composer/index.html">输入区</a>
 </nav>
 
 <header class="top">
@@ -117,13 +120,16 @@
     <table>
       <thead><tr><th>id</th><th>插槽</th><th>形态</th><th>文件夹</th><th>状态</th></tr></thead>
       <tbody>
-        <tr><td class="id">composer-controls</td><td>Composer 控件槽</td><td><span class="pill ui">组件</span></td><td><span class="pill none">未开</span></td><td></td></tr>
-        <tr><td class="id">composer-reference</td><td>Composer 引用</td><td><span class="pill ui">组件</span></td><td><span class="pill none">未开</span></td><td></td></tr>
-        <tr><td class="id">completion-source</td><td>补全来源</td><td><span class="pill ui">组件 + 数据</span></td><td><span class="pill none">未开</span></td><td></td></tr>
-        <tr><td class="id">attachment-source</td><td>附件源</td><td><span class="pill api">非 UI</span></td><td><span class="pill none">未开</span></td><td></td></tr>
-        <tr><td class="id">draft-rewrite</td><td>改写草稿</td><td><span class="pill api">非 UI</span></td><td><span class="pill none">未开</span></td><td></td></tr>
+        <tr class="open">
+          <td class="id">composer</td>
+          <td>输入区<br /><span style="color:var(--muted);font-size:12.5px">composer.left / composer.middle / composer.trigger / composer.content，外加读写草稿与附件两组方法；固定件：附件 · 模式 · 权限 · 模型 · 发送；宿主增强移除，中槽可隐藏 / 替换宿主默认项</span></td>
+          <td><span class="pill ui">组件 + 方法</span></td>
+          <td><a href="ui/composer/index.html">ui/composer/</a></td>
+          <td><span class="pill draft">draft</span></td>
+        </tr>
       </tbody>
     </table>
+    <p class="note" style="margin:10px 0 0">原 #545 输入区五条（composer-controls / composer-reference / completion-source / attachment-source / draft-rewrite）合并进 <code>ui/composer/</code> 一个文件夹，按新边界重新划分。</p>
   </section>
 
   <section>
