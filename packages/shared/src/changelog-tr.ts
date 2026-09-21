@@ -2,6 +2,16 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const trEntries: ChangelogEntry[] = [
   {
+    "version": "0.15.3",
+    "date": "2026-09-22",
+    "highlights": [
+      "Akıl yürütme kaydırıcısı tıklama, klavye seçimi ve sürüklemeyi akıcı biçimde canlandırır; azaltılmış hareket ayarını izler ve kaydetme başarısız olursa onaylanan değeri güvenle geri yükler.",
+      "Akıl yürütme izinin dolu kısmı başlangıç noktasını tamamen kapatır; böylece gri bir yarım nokta görünmez.",
+      "Bir akıl yürütme durağının veya etiketinin üzerine gelince ilgili etiket vurgulanır; dolu noktalar ve mevcut tutamaç görünümünü korur.",
+    ],
+  },
+
+  {
     "version": "0.15.2",
     "date": "2026-09-21",
     "highlights": [

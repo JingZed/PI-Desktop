@@ -2,6 +2,16 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const esEntries: ChangelogEntry[] = [
   {
+    "version": "0.15.3",
+    "date": "2026-09-22",
+    "highlights": [
+      "El deslizador de razonamiento anima con fluidez los clics, la selección con teclado y el arrastre, respeta el movimiento reducido y recupera el valor confirmado si falla el guardado.",
+      "La pista de razonamiento cubre por completo el punto inicial, para que el extremo relleno no deje un semipunto gris visible.",
+      "Al pasar sobre un punto o etiqueta de razonamiento se resalta la etiqueta correspondiente, mientras los puntos rellenos y el control actual mantienen su aspecto.",
+    ],
+  },
+
+  {
     "version": "0.15.2",
     "date": "2026-09-21",
     "highlights": [
