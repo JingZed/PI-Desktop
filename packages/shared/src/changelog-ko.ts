@@ -2,6 +2,16 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const koEntries: ChangelogEntry[] = [
   {
+    version: "0.15.3",
+    date: "2026-09-22",
+    highlights: [
+      "추론 슬라이더가 클릭, 키보드 선택, 드래그를 부드럽게 애니메이션하고 모션 감소 설정을 따르며 저장 실패 시 확인된 값을 안전하게 복원합니다.",
+      "추론 트랙의 채워진 부분이 시작 점을 완전히 덮어 회색 반점이 남지 않습니다.",
+      "추론 눈금이나 레이블 위에 마우스를 올리면 해당 레이블이 강조되며 채워진 점과 현재 손잡이 모양은 유지됩니다.",
+    ],
+  },
+
+  {
     version: "0.15.2",
     date: "2026-09-21",
     highlights: [

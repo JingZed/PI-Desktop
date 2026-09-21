@@ -2,6 +2,16 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const frEntries: ChangelogEntry[] = [
   {
+    "version": "0.15.3",
+    "date": "2026-09-22",
+    "highlights": [
+      "Le curseur de raisonnement anime fluidement les clics, la sélection au clavier et le glissement, respecte la réduction des animations et restaure la valeur confirmée après un échec d’enregistrement.",
+      "La piste de raisonnement remplie couvre entièrement le point de départ, sans laisser apparaître un demi-point gris.",
+      "Le survol d’un point ou d’un libellé de raisonnement met en évidence le libellé correspondant, sans modifier les points remplis ni le curseur actuel.",
+    ],
+  },
+
+  {
     "version": "0.15.2",
     "date": "2026-09-21",
     "highlights": [
