@@ -1527,8 +1527,9 @@ identify the platform validation still needed.
   or Agent|Plan|Goal mode control. The
   left-of-input Composer chip owns the active session's Agent/Plan/Goal switch,
   and the Composer-right combined chip owns model and reasoning selection. The
-  task title is the only visible title text and uses the available width,
-  with an ellipsis only on overflow. Check an English title longer than 10
+  task title is the only visible title text and is capped at 20 Unicode code
+  points with a single-character ellipsis when longer, then uses CSS ellipsis
+  if the available width is narrower. Check an English title longer than 20
   characters in wide and narrow layouts, with the sidebar expanded/collapsed
   and the work panel open/closed; titles must not overlap the action buttons.
   The complete title and project scope remain available through its tooltip. The sidebar

@@ -1,5 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { useAppStore } from "../stores/app-store";
+import { truncateConversationTitle } from "../lib/conversation-title";
 import {
   IconSidebar,
   IconNewSession,
@@ -43,6 +44,7 @@ export function ConversationTopbar({
   const fullTaskTitle = isDefaultSessionTitle(activeSession?.title)
     ? t("chat.untitledTask")
     : activeSession?.title || t("chat.untitledTask");
+  const visibleTaskTitle = truncateConversationTitle(fullTaskTitle);
   const project = projectName(workspace?.path, workspace?.name);
 
   return (
@@ -75,7 +77,7 @@ export function ConversationTopbar({
           className="ct-title-wrap"
           title={project ? `${project} · ${fullTaskTitle}` : fullTaskTitle}
         >
-          <span className="ct-title">{fullTaskTitle}</span>
+          <span className="ct-title">{visibleTaskTitle}</span>
         </div>
       </div>
 

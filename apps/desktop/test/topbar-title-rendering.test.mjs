@@ -8,7 +8,7 @@ import { I18nextProvider } from "react-i18next";
 import { catalogs } from "@pi-desktop/i18n";
 import { createServer } from "vite";
 
-test("topbar preserves complete titles for width-based clipping and tooltips", async () => {
+test("topbar caps visible titles while preserving complete tooltip text", async () => {
   const server = await createServer({
     root: fileURLToPath(new URL("..", import.meta.url)),
     configFile: false,
@@ -19,6 +19,7 @@ test("topbar preserves complete titles for width-based clipping and tooltips", a
   });
   try {
     const { ConversationTopbar } = await server.ssrLoadModule("/src/components/ConversationTopbar.tsx");
+    const { truncateConversationTitle } = await server.ssrLoadModule("/src/lib/conversation-title.ts");
     const { useAppStore } = await server.ssrLoadModule("/src/stores/app-store.ts");
     const i18n = createInstance();
     await i18n.init({ lng: "en", resources: { en: { translation: catalogs.en } } });
@@ -35,9 +36,12 @@ test("topbar preserves complete titles for width-based clipping and tooltips", a
             onToggleSidebar() {}, onNewTask() {}, onOpenSearch() {},
           }),
         ));
-        const expected = title === "New task" ? catalogs.en.chat.untitledTask : title;
-        assert.equal(html.match(/class="ct-title">([^<]*)<\/span>/)?.[1], expected);
-        assert.ok(html.includes(`title="Project · ${expected}"`));
+        const fullTitle = title === "New task" ? catalogs.en.chat.untitledTask : title;
+        assert.equal(
+          html.match(/class="ct-title">([^<]*)<\/span>/)?.[1],
+          truncateConversationTitle(fullTitle),
+        );
+        assert.ok(html.includes(`title="Project · ${fullTitle}"`));
       }
     }
   } finally {

@@ -273,8 +273,10 @@ combined model × reasoning selection (§11).
   the native Windows close control (D357).
 - Title cluster (task title) flexes to the remaining width after toolbar
   reservations (sidebar lead-in, action icons, work-panel toggle, and
-  platform window controls). The visible title uses CSS ellipsis only when
-  that width overflows; the full title remains in the native tooltip.
+  platform window controls). The visible title is capped at 20 Unicode code
+  points, including a single-character ellipsis when the session title is
+  longer; CSS ellipsis still handles narrower available widths. The full
+  title remains in the native tooltip.
   The right cluster (action icons) is `flex: 0 0 auto`
   and is never squeezed by a long title. The conversation surface keeps a
   `min-width` so its content is not crushed on narrow windows.
@@ -321,7 +323,7 @@ combined model × reasoning selection (§11).
 
 | Element | Default | Running | Error | No workspace |
 |---|---|---|---|---|
-| Task title | session title (or untitled), uses the available width, with an ellipsis only on overflow | same | same | same |
+| Task title | session title (or untitled), capped at 20 Unicode code points with an ellipsis for longer titles, then constrained to the available width | same | same | same |
 | New task / Search | icon buttons | same | same | same |
 | Composer stop control | hidden | visible only when the running composer draft is empty | hidden | hidden |
 | Project name | title tooltip only | same | same | omitted |
