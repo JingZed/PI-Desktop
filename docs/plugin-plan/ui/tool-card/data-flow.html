@@ -1,4 +1,4 @@
-<!-- status: draft -->
+ <!-- status: finalized -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -70,31 +70,31 @@
 <header class="top">
   <h1>工具调用卡 · 数据流</h1>
   <p>自己注册的工具：调用数据推给卡片组件；失败是数据。宿主 / 他人工具不进插件。</p>
-  <div class="meta">status: draft · 接口字段名是建议值，还没进 SDK</div>
+   <div class="meta">status: finalized · 槽名与 props 字段名已定稿（见 slot-contract.html §6）；SDK 尚未实现</div>
 </header>
 <main>
 
 <section>
-  <h2><span class="n">1</span>接口约定 <span class="tag proposal">建议</span></h2>
-  <p>插件注册工具时一并给出卡片组件。没有认领，也没有宿主函数。</p>
+   <h2><span class="n">1</span>接口约定 <span class="tag decided">已定</span></h2>
+   <p>插件注册工具时一并给出卡片组件。没有认领，也没有宿主函数。注册走统一判别式联合 <code>{ slot:"toolCard", toolName, component }</code>，<code>toolName</code> 须命中 manifest <code>contributes.agentTools[].name</code>。</p>
   <table>
     <thead><tr><th>props</th><th>含义</th></tr></thead>
     <tbody>
-      <tr><td><code>tool</code></td><td>工具名与来源（一定是自己注册的那个）</td></tr>
-      <tr><td><code>call</code></td><td>这次调用：id、入参、状态、耗时</td></tr>
-      <tr><td><code>result</code></td><td>结果数据；失败信息也在数据里</td></tr>
-      <tr><td><code>error</code></td><td>失败字段（数据不是抛错）</td></tr>
+       <tr><td><code>toolName</code> · <code>toolCallId</code> · <code>messageId</code> · <code>sessionId</code></td><td>本次调用与标识（toolName 必是自己注册的工具）</td></tr>
+       <tr><td><code>toolArgs?</code></td><td>入参</td></tr>
+       <tr><td><code>toolStatus</code></td><td>running / success / error</td></tr>
+       <tr><td><code>toolResult?</code> · <code>toolError?</code> · <code>durationMs?</code></td><td>结果 / 失败信息 / 耗时（失败是数据不是抛错）</td></tr>
     </tbody>
   </table>
   <p>权限：随 <code>renderer.extension</code>。副作用走插件自己的 <code>plugin.call</code>。</p>
 </section>
 
 <section>
-  <h2><span class="n">2</span>数据怎么走 <span class="tag proposal">建议</span></h2>
+   <h2><span class="n">2</span>数据怎么走 <span class="tag decided">已定</span></h2>
   <table>
     <thead><tr><th>方向</th><th>内容</th></tr></thead>
     <tbody>
-      <tr><td>宿主 → 插件</td><td>这次调用的整份数据推给卡片组件</td></tr>
+       <tr><td>宿主 → 插件</td><td>这次调用的整份数据推给卡片组件；运行中 500ms 节拍合并推送，状态跃迁与最终结果立即推</td></tr>
       <tr><td>插件 → 宿主</td><td><strong>无</strong>。不回调、不改执行</td></tr>
       <tr><td>宿主 / 他人工具</td><td>不进插件，走宿主默认卡</td></tr>
     </tbody>
@@ -144,10 +144,10 @@
 </section>
 
 <section>
-  <h2><span class="n">6</span>还没定的事 <span class="tag proposal">待拍板</span></h2>
+   <h2><span class="n">6</span>定稿记录 <span class="tag decided">已定</span></h2>
   <ul>
-    <li>卡片数据字段名定稿</li>
-    <li>运行中是否按节拍推送</li>
+     <li>卡片数据字段定稿：<code>toolName</code> / <code>toolCallId</code> / <code>toolArgs?</code> / <code>toolStatus</code> / <code>toolResult?</code> / <code>toolError?</code> / <code>durationMs?</code>（复用 SDK 既有词表；失败即数据）</li>
+     <li>注册走统一判别式联合 <code>{ slot:"toolCard", toolName, component }</code>，<code>toolName</code> 须命中 manifest <code>contributes.agentTools[].name</code>；运行中 500ms 节拍合并推送整份 props，状态跃迁与最终结果立即推</li>
   </ul>
 </section>
 

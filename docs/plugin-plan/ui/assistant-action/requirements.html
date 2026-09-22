@@ -1,4 +1,4 @@
-<!-- status: draft -->
+ <!-- status: finalized -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -66,7 +66,7 @@
   <div class="crumb">docs/plugin-plan · ui/assistant-action</div>
   <h1>AI 回复操作栏 · 需求</h1>
   <p>AI 回复卡操作栏两侧的新增位。与用户消息操作栏同形、同约束。</p>
-  <div class="meta">status: draft · 本轮拍板见文末</div>
+   <div class="meta">status: finalized · 本轮拍板见文末</div>
 </header>
 <main>
 
@@ -132,7 +132,7 @@
       <tr><td>插件自实现功能（含删除）</td><td>宿主不额外处理</td></tr>
     </tbody>
   </table>
-  <div class="callout warn"><b>还没定的事：</b>SDK 槽名（建议 <code>assistantAction</code> + <code>positions:["left","right"]</code>）；左右按钮数量上限。</div>
+   <div class="callout ok"><b>定稿：</b>SDK 槽名 <code>assistantAction</code>（与 <code>userAction</code> 同形，注册形状 <code>positions?: ["left","right"]</code>，省略即两侧）；左右上限与折叠规则与 user-action 完全一致：每侧 3 个可见项 + 宿主「⋯」折叠菜单，宿主键永不折叠。</div>
 </section>
 
 </main>

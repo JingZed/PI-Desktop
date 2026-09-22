@@ -1,5 +1,5 @@
-<!-- AI生成 -->
-<!-- status: draft -->
+ <!-- AI生成 -->
+ <!-- status: finalized -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -64,7 +64,7 @@
 <header class="top">
   <h1>组件插槽公共契约</h1>
   <p>所有 UI 插槽共用的一套词与规则。各槽页只写自己的增量。</p>
-  <div class="meta">status: <b>draft</b> · 引用代码写 <code>分支@sha · 路径 · 符号</code>，不用裸行号</div>
+   <div class="meta">status: <b>finalized</b> · 引用代码写 <code>分支@sha · 路径 · 符号</code>，不用裸行号</div>
 </header>
 <main>
 
@@ -73,8 +73,8 @@
   <table>
     <thead><tr><th>类型</th><th>槽</th><th>冲突语义</th></tr></thead>
     <tbody>
-      <tr><td>additive 左右位</td><td><code>user-action</code> · <code>assistant-action</code></td><td>按注册顺序叠；无抢注</td></tr>
-      <tr><td>additive 追加位</td><td><code>entry-extra</code>（仅 AI 回复）</td><td>多插件叠放；无抢注</td></tr>
+       <tr><td>additive 左右位</td><td><code>user-action</code>（<code>userAction</code>） · <code>assistant-action</code>（<code>assistantAction</code>）</td><td>按注册顺序叠；无抢注</td></tr>
+       <tr><td>additive 追加位</td><td><code>entry-extra</code>（<code>entryExtra</code>，仅 AI 回复）</td><td>多插件叠放；无抢注</td></tr>
       <tr><td>自有工具卡</td><td><code>tool-card</code></td><td>无认领：只画自己注册的工具</td></tr>
       <tr><td>keyed 语言</td><td><code>block-renderer</code></td><td><code>前缀:语言</code>；不得注册已有语言</td></tr>
     </tbody>
@@ -136,14 +136,17 @@
   <p>纯展示槽随 <code>renderer.extension</code>。副作用按词表声明并配权限。</p>
 </section>
 
-<section>
-  <h2><span class="n">6</span>还没定的事</h2>
-  <ul>
-    <li>SDK 槽名定稿：<code>userAction</code> / <code>assistantAction</code> / <code>entryExtra</code></li>
-    <li>左右位按钮数量上限与折叠</li>
-    <li><code>ui.ask</code> 与 agent 侧同名接口的最终消歧</li>
-  </ul>
-</section>
+ <section>
+   <h2><span class="n">6</span>定稿记录（已定稿）</h2>
+   <ul>
+     <li>SDK 槽名已定稿：<code>userAction</code> / <code>assistantAction</code> / <code>entryExtra</code>；各槽页只链接本契约，不复述</li>
+     <li>注册走统一判别式联合：<code>{ slot: "userAction" | "assistantAction" | "entryExtra" | "toolCard", ... }</code>；<code>toolCard</code> 项须带 <code>toolName</code> 且命中 manifest <code>contributes.agentTools[].name</code></li>
+     <li>左右位（userAction / assistantAction）每侧最多 3 个可见项，第 4 个起进宿主「⋯」折叠菜单；entryExtra 单块折叠态 320px / 展开态 600px 内部滚动</li>
+     <li>composer 触发符固定 <code>@</code> / <code>#</code> / <code>/</code>；记号单草稿上限 8 个；tool-card 运行中 500ms 节拍合并推送（状态跃迁立即推）</li>
+     <li><code>ui.ask</code> 定名不变：与 agent 侧布尔确认同名不同物，消歧表述以 render/ask 为准</li>
+     <li>SDK 尚未实现：以上为文档定稿；落地时按根 AGENTS.md §13/§10 同步 spec/ADR 与契约测试</li>
+   </ul>
+ </section>
 
 </main>
 </body>

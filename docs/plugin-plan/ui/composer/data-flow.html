@@ -1,4 +1,4 @@
-<!-- status: draft -->
+ <!-- status: finalized -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -70,12 +70,12 @@
 <header class="top">
   <h1>输入区 · 数据流</h1>
   <p>组件槽的数据怎么走。草稿读写 / 附件方法不在本夹。</p>
-  <div class="meta">status: draft · 接口字段名是建议值，还没进 SDK</div>
+   <div class="meta">status: finalized · 槽名与 props 字段名已定稿（见 slot-contract.html §6）；SDK 尚未实现</div>
 </header>
 <main>
 
 <section>
-  <h2><span class="n">1</span>接口约定 <span class="tag proposal">建议</span></h2>
+   <h2><span class="n">1</span>接口约定 <span class="tag decided">已定</span></h2>
   <p>本夹只谈组件槽：左控件、右控件、触发符、记号。</p>
   <table>
     <thead><tr><th>槽</th><th>插件拿到什么</th></tr></thead>
@@ -89,7 +89,7 @@
 </section>
 
 <section>
-  <h2><span class="n">2</span>数据怎么走 <span class="tag proposal">建议</span></h2>
+   <h2><span class="n">2</span>数据怎么走 <span class="tag decided">已定</span></h2>
   <table>
     <thead><tr><th>方向</th><th>内容</th></tr></thead>
     <tbody>
@@ -140,10 +140,10 @@
 </section>
 
 <section>
-  <h2><span class="n">6</span>还没定的事 <span class="tag proposal">待拍板</span></h2>
+   <h2><span class="n">6</span>定稿记录 <span class="tag decided">已定</span></h2>
   <ul>
-    <li>触发符号字符集</li>
-    <li>记号折叠规则</li>
+     <li>触发符固定 3 个：<code>@</code>（上下文/引用）、<code>#</code>（数据/资源）、<code>/</code>（指令）；全角归一化；一符一插件，重复注册返回 <code>PLUGIN_SLOT_DUPLICATE</code>；仅行首或空白后且非 IME 组词中触发，程序写入永不触发</li>
+     <li>记号单草稿上限 8 个，第 9 个起同位置折叠为宿主记号 <code>⧉ +N</code>（标注首个溢出插件）；发送 payload 不丢</li>
   </ul>
 </section>
 

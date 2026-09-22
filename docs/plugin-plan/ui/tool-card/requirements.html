@@ -1,4 +1,4 @@
-<!-- status: draft -->
+ <!-- status: finalized -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -66,7 +66,7 @@
   <div class="crumb">docs/plugin-plan · ui/tool-card</div>
   <h1>工具调用卡 · 需求</h1>
   <p>对话里每一次工具调用显示的那张卡。插件只画自己注册的工具，展示不交互。</p>
-  <div class="meta">status: draft · 本轮拍板见文末</div>
+   <div class="meta">status: finalized · 本轮拍板见文末</div>
 </header>
 <main>
 
@@ -83,7 +83,7 @@
   <h2>槽形状 <span class="tag decided">已定</span></h2>
   <div class="callout ok"><b>无认领概念。</b>插件只画<strong>自己注册的</strong>工具的卡片；宿主工具和别人工具<strong>不可定制</strong>，永远走宿主默认卡。</div>
   <ul>
-    <li>插件注册工具时一并给出卡片组件，这张卡只服务该工具的调用。</li>
+     <li>插件注册工具时一并给出卡片组件，这张卡只服务该工具的调用。注册走统一判别式联合 <code>{ slot:"toolCard", toolName, component }</code>，<code>toolName</code> 须命中 manifest <code>contributes.agentTools[].name</code>。</li>
     <li>整卡自己画；不提供「只换头部 / 只换一半」的局部替换。</li>
   </ul>
 </section>
@@ -132,7 +132,7 @@
       <tr><td>宿主 / 他人工具</td><td>永远走宿主默认卡，一个字不变</td></tr>
     </tbody>
   </table>
-  <div class="callout warn"><b>还没定的事：</b>卡片数据的字段名；运行中是否按节拍推送；SDK 注册写法。</div>
+   <div class="callout ok"><b>定稿：</b>卡片数据字段 <code>toolName</code> / <code>toolCallId</code> / <code>toolArgs?</code> / <code>toolStatus</code> / <code>toolResult?</code> / <code>toolError?</code> / <code>durationMs?</code>（复用 SDK 既有词表，失败即数据）；注册走统一判别式联合 <code>{ slot:"toolCard", toolName, component }</code>；运行中 500ms 节拍合并推送整份 props，状态跃迁与最终结果立即推。</div>
 </section>
 
 </main>

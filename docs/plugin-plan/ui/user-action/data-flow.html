@@ -1,4 +1,4 @@
-<!-- status: draft -->
+ <!-- status: finalized -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -71,12 +71,12 @@
 <header class="top">
   <h1>用户消息操作栏 · 数据流</h1>
   <p>插件能拿到什么、自己画什么、出错时发生什么。</p>
-  <div class="meta">status: draft · 接口字段名是建议值，还没进 SDK</div>
+   <div class="meta">status: finalized · 槽名与 props 字段名已定稿（见 slot-contract.html §6）；SDK 尚未实现</div>
 </header>
 <main>
 
 <section>
-  <h2><span class="n">1</span>接口约定 <span class="tag proposal">建议</span></h2>
+   <h2><span class="n">1</span>接口约定 <span class="tag decided">已定</span></h2>
   <p>插件注册左右两个组件槽。只渲染，不提供宿主函数。</p>
   <table>
     <thead><tr><th>props</th><th>含义</th></tr></thead>
@@ -90,7 +90,7 @@
 </section>
 
 <section>
-  <h2><span class="n">2</span>数据怎么走 <span class="tag proposal">建议</span></h2>
+   <h2><span class="n">2</span>数据怎么走 <span class="tag decided">已定</span></h2>
   <table>
     <thead><tr><th>方向</th><th>内容</th></tr></thead>
     <tbody>
@@ -144,10 +144,10 @@
 </section>
 
 <section>
-  <h2><span class="n">6</span>还没定的事 <span class="tag proposal">待拍板</span></h2>
+   <h2><span class="n">6</span>定稿记录 <span class="tag decided">已定</span></h2>
   <ul>
-    <li>SDK 槽名（建议 <code>userAction</code> + <code>positions:["left","right"]</code>）</li>
-    <li>左右插槽按钮数量上限与折叠规则</li>
+     <li>SDK 槽名 <code>userAction</code>；注册形状 <code>positions?: ["left","right"]</code>（省略即两侧）；props 仍带 <code>position?</code> 由宿主告知挂载侧</li>
+     <li>每侧最多 3 个可见项，第 4 个起进宿主「⋯」折叠菜单（左槽 ⋯ 置宿主键前、右槽置末尾）；宿主键永不折叠，装/卸插件时重算</li>
   </ul>
 </section>
 

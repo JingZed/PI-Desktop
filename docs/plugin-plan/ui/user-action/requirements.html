@@ -1,4 +1,4 @@
-<!-- status: draft -->
+ <!-- status: finalized -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -66,7 +66,7 @@
   <div class="crumb">docs/plugin-plan · ui/user-action</div>
   <h1>用户消息操作栏 · 需求</h1>
   <p>用户消息卡操作栏两侧的新增位。本页记录已拍板的边界。</p>
-  <div class="meta">status: draft · 本轮拍板见文末</div>
+   <div class="meta">status: finalized · 本轮拍板见文末</div>
 </header>
 <main>
 
@@ -135,7 +135,7 @@
       <tr><td>插件自实现功能（含删除）</td><td>宿主不额外处理</td></tr>
     </tbody>
   </table>
-  <div class="callout warn"><b>还没定的事：</b>左右插槽的视觉密度上限（最多几个按钮后折叠）；SDK 槽名（建议 <code>userAction</code> + <code>positions:[left,right]</code>）。</div>
+   <div class="callout ok"><b>定稿：</b>SDK 槽名 <code>userAction</code>（注册形状 <code>positions?: ["left","right"]</code>，省略即两侧；props 类型共用 <code>PluginActionSlotProps</code>）；每侧最多 3 个可见项，第 4 个起进宿主「⋯」折叠菜单，宿主键永不折叠，装/卸插件时重算。</div>
 </section>
 
 </main>
