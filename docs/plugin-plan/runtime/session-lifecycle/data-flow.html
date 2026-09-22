@@ -1,14 +1,17 @@
-<!-- status: draft · issue #561 · branch feat/528-plugin-slots -->
+<!-- status: draft -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>session-lifecycle · 数据流</title>
+<title>session-lifecycle · 会话生命周期（仅压缩前可否决） · 数据流</title>
 <style>
   :root{
     --bg:#0e0e0e; --surface:#161616; --surface-2:#1b1b1b; --line:#2a2a2a; --line-2:#353535;
     --text:#ededed; --text-2:#b0b0b0; --muted:#7d7d7d; --faint:#5c5c5c;
+    --ok:#40c977; --ok-bg:rgba(64,201,119,.10);
+    --warn:#ff8549; --warn-bg:rgba(255,133,73,.10);
+    --error:#ff6764; --error-bg:rgba(255,103,100,.10);
     --host:#4c8dff; --host-bg:rgba(76,141,255,.10);
     --plugin:#c27aff; --plugin-bg:rgba(194,122,255,.10);
     --slot:#ff8549; --slot-bg:rgba(255,133,73,.10);
@@ -18,32 +21,44 @@
   *{box-sizing:border-box}
   html,body{margin:0}
   body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14px;line-height:1.65;-webkit-font-smoothing:antialiased}
+  code{font-family:var(--mono);font-size:12.5px;color:var(--text-2)}
+  .plan-nav{display:flex;flex-wrap:wrap;align-items:center;gap:4px;padding:10px 28px;background:#0c0c0c;border-bottom:1px solid var(--line);font-size:13px}
+  .plan-nav a{color:var(--text-2);text-decoration:none;padding:3px 8px;border-radius:6px}
+  .plan-nav a:hover{background:var(--surface);color:var(--text)}
+  .plan-nav a[aria-current="page"]{background:var(--surface);color:var(--text);box-shadow:inset 0 0 0 1px var(--line-2)}
+  .plan-nav .sep{color:var(--faint);padding:0 2px}
+  .plan-nav .spacer{flex:1}
   .top{border-bottom:1px solid var(--line);padding:24px 28px 20px;background:linear-gradient(180deg,#141414,#0e0e0e)}
   .top .crumb{font-family:var(--mono);font-size:11.5px;color:var(--faint);letter-spacing:.06em}
-  .top h1{margin:6px 0;font-size:21px}
+  .top h1{margin:6px 0;font-size:21px;letter-spacing:-.01em}
   .top p{margin:0;color:var(--text-2);max-width:80ch}
   .top .meta{margin-top:8px;color:var(--faint);font-size:12.5px}
-  code{font-family:var(--mono);font-size:12.5px;color:var(--text-2)}
-  main{max-width:960px;margin:0 auto;padding:24px 28px 90px}
-  section{margin:0 0 44px}
-  section > h2{display:flex;align-items:baseline;gap:8px;margin:0 0 6px;font-size:17px;border-top:1px solid var(--line);padding-top:14px}
-  section > h2 .n{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+  main{max-width:920px;margin:0 auto;padding:24px 28px 80px}
+  section{margin:0 0 40px}
+  section > h2{display:flex;align-items:baseline;gap:8px;margin:0 0 10px;font-size:17px;border-top:1px solid var(--line);padding-top:14px}
+  section > h2:first-child{border-top:0;padding-top:0}
+  section > h2 .n{font-family:var(--mono);font-size:11.5px;color:var(--muted);border:1px solid var(--line-2);border-radius:4px;padding:1px 6px}
   section > h2 .tag{font-family:var(--mono);font-size:11px;padding:1px 6px;border-radius:4px}
   .tag.verified{color:var(--ok);background:var(--ok-bg)}
-  .tag.proposal{color:var(--slot);background:var(--slot-bg)}
-  .lead{margin:0 0 14px;color:var(--text-2);max-width:82ch}
+  .tag.proposal{color:var(--warn);background:var(--warn-bg)}
+  .tag.open{color:var(--plugin);background:var(--plugin-bg)}
+  .tag.defect{color:var(--error);background:var(--error-bg)}
   h3{margin:20px 0 6px;font-size:14.5px}
   p{margin:0 0 10px}
-  ul{margin:0 0 12px;padding-left:1.2em}li{margin:3px 0}
+  ul{margin:0 0 12px;padding-left:1.2em}
+  li{margin:3px 0}
   table{width:100%;border-collapse:collapse;font-size:13.5px;margin:0 0 14px}
   th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
-  th{color:var(--muted);font-weight:500;font-size:12px;text-transform:uppercase;letter-spacing:.03em}
+  th{color:var(--muted);font-weight:500;font-size:12px;letter-spacing:.03em;text-transform:uppercase}
   td.id{font-family:var(--mono);font-size:12.5px;color:var(--text-2);white-space:nowrap}
   pre{margin:0 0 14px;padding:12px 14px;border-radius:9px;background:#121212;border:1px solid var(--line);overflow-x:auto;font-family:var(--mono);font-size:12.5px;line-height:1.6;color:var(--text-2)}
   pre .k{color:var(--plugin)}
   pre .c{color:var(--faint)}
   .callout{margin:0 0 14px;padding:11px 13px;border-radius:9px;background:var(--surface);color:var(--text-2);font-size:13px}
-  .callout.warn{border-left:2px solid var(--slot)}
+  .callout.ok{border-left:2px solid var(--ok)}
+  .callout.warn{border-left:2px solid var(--warn)}
+  .callout.error{border-left:2px solid var(--error)}
+  .callout.open{border-left:2px solid var(--plugin)}
   .callout b{color:var(--text);font-weight:560}
   .legend{display:flex;flex-wrap:wrap;gap:8px 16px;margin:0 0 14px;font-size:12.5px;color:var(--muted)}
   .chip{display:inline-block;padding:1px 7px;border-radius:99px;font-size:11px;font-family:var(--mono)}
@@ -68,13 +83,16 @@
   .arrow-row{display:grid;grid-template-columns:1fr 1fr 1fr;border-top:1px solid var(--line);background:var(--surface-2);font-family:var(--mono);font-size:12px;color:var(--muted)}
   .arrow-row div{padding:8px 14px}
   .arrow-row div + div{border-left:1px solid var(--line)}
-  .arrow-row .x{color:var(--host)}.arrow-row .y{color:var(--plugin)}
-  .plan-nav{display:flex;flex-wrap:wrap;align-items:center;gap:4px;padding:10px 28px;background:#0c0c0c;border-bottom:1px solid var(--line);font-size:13px}
-  .plan-nav a{color:var(--text-2);text-decoration:none;padding:3px 8px;border-radius:6px}
-  .plan-nav a:hover{background:var(--surface);color:var(--text)}
-  .plan-nav a[aria-current="page"]{background:var(--surface);color:var(--text);box-shadow:inset 0 0 0 1px var(--line-2)}
-  .plan-nav .sep{color:var(--faint);padding:0 2px}
-  .plan-nav .spacer{flex:1}
+  .arrow-row .x{color:var(--host)}
+  .arrow-row .y{color:var(--plugin)}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+  .card{display:block;padding:14px 16px;border-radius:11px;background:var(--surface);border:1px solid var(--line);text-decoration:none;color:inherit}
+  .card:hover{border-color:var(--line-2);background:#191919}
+  .card .name{font-family:var(--mono);font-size:12.5px;color:var(--text-2)}
+  .card .what{margin:6px 0 0;font-size:13.5px}
+  .card .files{margin:8px 0 0;font-family:var(--mono);font-size:11.5px;color:var(--faint)}
+  .omitted{margin:14px 0 0;padding:11px 13px;border-radius:9px;background:var(--surface);border:1px dashed var(--line-2);color:var(--muted);font-size:13px}
+  .cite{font-family:var(--mono);font-size:11.5px;color:var(--faint)}
 </style>
 </head>
 <body>
@@ -92,34 +110,31 @@
 <header class="top">
   <div class="crumb">docs/plugin-plan · runtime/session-lifecycle</div>
   <h1>session-lifecycle · 数据流</h1>
-  <p>会话一生的五类通知从哪来、带什么、能不能拦。六节固定：接口约定 / 数据怎么走 / 出错怎么办 / 不提供什么 / 相关条目 / 还没定的事。</p>
-  <div class="meta">status: draft · issue #561 · 字段名是建议值</div>
+  <p>生命周期事件与压缩前否决的路径。六节固定：接口约定 / 数据怎么走 / 出错怎么办 / 不提供什么 / 相关条目 / 还没定的事。</p>
+  <div class="meta">status: draft · issue #561 · 权限 <code>runtime.session.lifecycle</code> · 仅 before_compact 可否决</div>
 </header>
 
 <main>
-
 <!-- ============ 1 接口约定 ============ -->
 <section>
   <h2><span class="n">1</span>接口约定 <span class="tag proposal">建议</span></h2>
-  <p class="lead">headless 事件监听，<code>runtime.session.lifecycle</code>。除 <code>before_compact</code> 外全部 fire-and-forget。</p>
-
-<pre><span class="c">// 插件 headless（建议形态）</span>
-pi.on(<span class="k">"session_deleted"</span>, ({ sessionId }) =&gt; myCache.drop(sessionId))
-pi.on(<span class="k">"session_before_compact"</span>, ({ messages, tokensBefore, retained }) =&gt; {
-  <span class="k">if</span> (myIndex.pending(sessionId)) <span class="k">return</span> { <span class="k">cancel</span>: <span class="k">true</span> }
-  <span class="c">// 唯一能拦的时刻：压缩前</span>
-})</pre>
-
-  <h3>五类时刻</h3>
-  <table>
-    <thead><tr><th>事件</th><th>载荷</th><th>可否决</th></tr></thead>
+    <p class="lead">无界面事件监听，<code>runtime.session.lifecycle</code>。除 <code>before_compact</code> 外全部通知式。</p>
+<pre><span class="c">// 仅压缩前可否决</span>
+pi.on(<span class="k">"session_before_compact"</span>, (payload) =&gt; {
+  <span class="c">// payload: { type, reason, retentionMode,</span>
+  <span class="c">//           segment: { messages, messageCount, tokensBefore, retained } }</span>
+  <span class="k">if</span> (needMoreTime(payload.segment)) {
+    <span class="k">return</span> { <span class="k">cancel</span>: <span class="k">true</span> };
+  }
+  <span class="k">return</span> {}; <span class="c">// 或 { cancel: false } / 不返回</span>
+});</pre>
+    <table>
+    <thead><tr><th>方面</th><th>内容</th></tr></thead>
     <tbody>
-      <tr><td class="id">created / deleted</td><td>会话标识与元信息</td><td>否</td></tr>
-      <tr><td class="id">before_switch</td><td>旧 / 新会话 id</td><td>否</td></tr>
-      <tr><td class="id">before_fork</td><td>源会话与 fork 目标</td><td>否</td></tr>
-      <tr><td class="id">before_compact</td><td><code>{ messages, messageCount, tokensBefore, retained }</code></td><td><b>是</b>（<code>{ cancel: true }</code>，30s 预算内）</td></tr>
-      <tr><td class="id">compact / compact_failed</td><td>结果</td><td>否</td></tr>
-      <tr><td class="id">权限</td><td colspan="2"><code>runtime.session.lifecycle</code></td></tr>
+      <tr><td class="id">before_compact 输入</td><td><code>{ type, reason, retentionMode, segment: { messages, messageCount, tokensBefore, retained } }</code></td></tr>
+      <tr><td class="id">before_compact 输出</td><td><code>{ cancel?: boolean }</code>——<b>仅压缩前可否决</b></td></tr>
+      <tr><td class="id">其余时刻</td><td>通知式：不等待、不可拦、返回值忽略</td></tr>
+      <tr><td class="id">权限</td><td><code>runtime.session.lifecycle</code></td></tr>
     </tbody>
   </table>
 </section>
@@ -127,61 +142,65 @@ pi.on(<span class="k">"session_before_compact"</span>, ({ messages, tokensBefore
 <!-- ============ 2 数据怎么走 ============ -->
 <section>
   <h2><span class="n">2</span>数据怎么走 <span class="tag verified">已核实</span></h2>
-  <div class="legend">
-    <span><span class="chip host">host</span> 桌面 IPC / sidecar</span>
+    <div class="legend">
+    <span><span class="chip host">host</span> 宿主 / 内核</span>
     <span><span class="chip slot">slot</span> 钩子边界</span>
-    <span><span class="chip plugin">plugin</span> 插件 headless</span>
+    <span><span class="chip plugin">plugin</span> 插件</span>
   </div>
-
   <div class="flow">
     <div class="flow-head">
-      <div class="h">宿主（两路来事件）</div>
+      <div class="h">宿主</div>
       <div class="s">钩子边界</div>
-      <div class="p">插件 headless</div>
+      <div class="p">插件</div>
     </div>
     <div class="flow-body">
-      <div class="lane">
-        <ul>
-          <li><span class="what">桌面 IPC 路</span><span class="why">create / delete 直接 emit；switch / fork 转发</span></li>
-          <li><span class="what">sidecar 路</span><span class="why">压缩三事件自己发</span></li>
-          <li><span class="what">before_compact 结果性</span><span class="why">等插件、可被 cancel</span></li>
-          <li><span class="what">其余不等待</span><span class="why">fire-and-forget</span></li>
-        </ul>
-      </div>
-      <div class="lane">
-        <ul>
-          <li><span class="what">统一经 runner</span><span class="why">槽权限门控 + 诊断</span></li>
-          <li><span class="what">否决权仅压缩</span><span class="why">ADR 0295 规则 11</span></li>
-          <li><span class="what">原生 Pi 会话例外</span><span class="why">不经桌面的路径听不到</span></li>
-          <li><span class="what">broker 缺口</span><span class="why">沙箱插件未接（ADR 0292）</span></li>
-        </ul>
-      </div>
-      <div class="lane">
-        <ul>
-          <li><span class="what">跟着生命周期走</span><span class="why">清缓存 / 迁配置</span></li>
-          <li><span class="what">压缩段可检查</span><span class="why">有未处理内容就 cancel</span></li>
-          <li><span class="what">别指望拦用户</span><span class="why">切 / 删拦不住，设计如此</span></li>
-        </ul>
-      </div>
+      <div class="lane"><ul>
+          <li><span class="what">会话时刻发生</span><span class="why">三处来源</span></li>
+          <li><span class="what">create/delete 桌面</span><span class="why">switch/fork 桌面转发</span></li>
+          <li><span class="what">compact sidecar</span><span class="why">before_compact 带完整载荷</span></li>
+          <li><span class="what">cancel → 取消这一次压缩</span><span class="why">其余通知即发</span></li>
+      </ul></div>
+      <div class="lane"><ul>
+          <li><span class="what">runtime.session.lifecycle</span><span class="why">统一权限</span></li>
+          <li><span class="what">before_compact 唯一可否决</span><span class="why">返回 { cancel? }</span></li>
+          <li><span class="what">沙箱缺口</span><span class="why">未接（ADR 0300）</span></li>
+      </ul></div>
+      <div class="lane"><ul>
+          <li><span class="what">监听五种时刻</span><span class="why">只读为主</span></li>
+          <li><span class="what">before_compact 读 segment</span><span class="why">外层 type/reason/retentionMode</span></li>
+          <li><span class="what">可返回 cancel</span><span class="why">仅此一处</span></li>
+      </ul></div>
     </div>
     <div class="arrow-row">
-      <div class="x">生命周期事件 →</div>
-      <div class="x">→ 镜像 / 询问</div>
-      <div class="y">← cancel（仅压缩前）</div>
+      <div class="x">→ 事件 / 压缩前载荷</div>
+      <div class="x">cancel? →</div>
+      <div class="y">← 多数无返回</div>
     </div>
   </div>
+  <h3>before_compact 的一生</h3>
+    <table>
+    <thead><tr><th>时刻</th><th>发生什么</th></tr></thead>
+    <tbody>
+      <tr><td class="id">压缩将启</td><td>sidecar 发出 before_compact，载荷含 <code>type, reason, retentionMode, segment</code></td></tr>
+      <tr><td class="id">插件</td><td>读 segment；可返回 <code>{ cancel?: boolean }</code></td></tr>
+      <tr><td class="id">cancel: true</td><td>这一次压缩取消；内容保留</td></tr>
+      <tr><td class="id">不取消 / 超时</td><td>压缩继续；随后 compact 或 compact_failed 通知</td></tr>
+    </tbody>
+  </table>
+  <div class="callout warn"><b>仅压缩前可否决。</b>切会话、fork、删除都不接受 cancel。</div>
 </section>
 
 <!-- ============ 3 出错怎么办 ============ -->
 <section>
   <h2><span class="n">3</span>出错怎么办 <span class="tag verified">已核实</span></h2>
-  <table>
+      <table>
     <thead><tr><th>情况</th><th>结果</th><th>靠什么保证</th></tr></thead>
     <tbody>
-      <tr><td class="id">通知事件插件超时 / 抛错</td><td>无人等待，流程照常</td><td>fire-and-forget</td></tr>
-      <tr><td class="id">before_compact 超时</td><td>按不取消处理，压缩继续</td><td>30s 预算</td></tr>
-      <tr><td class="id">cancel 后插件长期不放手</td><td>现状无计数；连续取消待拍板</td><td>预算（限速待议）</td></tr>
-      <tr><td class="id">无权限</td><td><code>permission_denied</code></td><td>槽权限门控</td></tr>
+      <tr><td class="id">before_compact 超时</td><td>按不取消处理，压缩继续</td><td>结果性预算</td></tr>
+      <tr><td class="id">返回 cancel: true</td><td>这一次压缩取消</td><td>唯一否决点</td></tr>
+      <tr><td class="id">通知事件抛错</td><td>记诊断，会话操作照常</td><td>通知式隔离</td></tr>
+      <tr><td class="id">试图 cancel 切换 / 删除</td><td>不支持——忽略</td><td>仅压缩前可否决</td></tr>
+      <tr><td class="id">沙箱插件</td><td>目前收不到</td><td>ADR 0300</td></tr>
     </tbody>
   </table>
 </section>
@@ -189,13 +208,13 @@ pi.on(<span class="k">"session_before_compact"</span>, ({ messages, tokensBefore
 <!-- ============ 4 不提供什么 ============ -->
 <section>
   <h2><span class="n">4</span>不提供什么 <span class="tag verified">已核实</span></h2>
-  <table>
+      <table>
     <thead><tr><th>不给</th><th>为什么</th></tr></thead>
     <tbody>
-      <tr><td class="id">切 / fork / 删的否决权</td><td>用户直接操作，插件只旁观</td></tr>
-      <tr><td class="id">原生 Pi 会话事件</td><td>桌面不经手的路径（现状边界）</td></tr>
-      <tr><td class="id">会话内容的写权</td><td>只通知，不代管</td></tr>
-      <tr><td class="id">无限拖延压缩</td><td>cancel 在 30s 预算内；连续取消待限</td></tr>
+      <tr><td class="id">切换 / fork / 删除的否决</td><td>用户直接操作不可拦；仅压缩前可否决</td></tr>
+      <tr><td class="id">改写压缩段</td><td>只能取消这一次，不能改 messages</td></tr>
+      <tr><td class="id">改 retention 策略</td><td>retentionMode 只读</td></tr>
+      <tr><td class="id">通知回执</td><td>通知式，不等待</td></tr>
     </tbody>
   </table>
 </section>
@@ -203,12 +222,13 @@ pi.on(<span class="k">"session_before_compact"</span>, ({ messages, tokensBefore
 <!-- ============ 5 相关条目 ============ -->
 <section>
   <h2><span class="n">5</span>相关条目</h2>
-  <table>
+      <table>
     <thead><tr><th>谁</th><th>关系</th><th>位置</th></tr></thead>
     <tbody>
-      <tr><td class="id">turn-recap</td><td>压缩保护场景里「先读再拦」的读取来源</td><td><code>runtime/turn-recap/</code></td></tr>
-      <tr><td class="id">turn-facts</td><td>会话级统计的另一只手（session 范围需 session.read）</td><td><code>runtime/turn-facts/</code></td></tr>
-      <tr><td class="id">ADR 0295 规则 11</td><td>否决权只给压缩前的出处</td><td><code>docs/adr/0295</code></td></tr>
+      <tr><td class="id">turn-recap</td><td>压缩会改变 recap 能看到的行；可用 before_compact 挡一下</td><td><code>runtime/turn-recap/</code></td></tr>
+      <tr><td class="id">turn-watch</td><td>轮内事件；这里是会话级时刻</td><td><code>runtime/turn-watch/</code></td></tr>
+      <tr><td class="id">ADR 0301</td><td>消息行与压缩后的存储模型</td><td><code>docs/adr/0301</code></td></tr>
+      <tr><td class="id">ADR 0303</td><td>仅压缩前可否决的出处</td><td><code>docs/adr/0303</code></td></tr>
     </tbody>
   </table>
 </section>
@@ -216,9 +236,10 @@ pi.on(<span class="k">"session_before_compact"</span>, ({ messages, tokensBefore
 <!-- ============ 6 还没定的事 ============ -->
 <section>
   <h2><span class="n">6</span>还没定的事</h2>
-  <p style="color:var(--text-2)">幽灵映射处置、连续 cancel 限速、目录现状列修正——见 requirements.html 的「本轮拍板（待定）」。</p>
+    <p style="color:var(--text-2)">cancel 次数上限、retentionMode 取值表、segment.messages 粒度——见 requirements.html 的「本轮拍板」。</p>
 </section>
 
+<p style="color:var(--faint);font-size:12px">引用中的 <sha> 为占位，合并前用 feat/528-plugin-slots 当时的提交号重戳。</p>
 </main>
 </body>
 </html>

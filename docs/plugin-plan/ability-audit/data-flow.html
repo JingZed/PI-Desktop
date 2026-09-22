@@ -1,0 +1,189 @@
+<!-- AI生成 -->
+<!-- status: draft -->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>能力清单 · 数据流（设计稿）</title>
+<style>
+  :root{
+    --bg:#0e0e0e; --surface:#161616; --surface-2:#1b1b1b; --line:#2a2a2a; --line-2:#353535;
+    --text:#ededed; --text-2:#b0b0b0; --muted:#7d7d7d; --faint:#5c5c5c;
+    --ok:#40c977; --warn:#ff8549; --error:#ff6764;
+    --host:#4c8dff; --plugin:#c27aff; --slot:#ff8549;
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    --mono:ui-monospace,"SF Mono","Cascadia Code",Consolas,monospace;
+  }
+  *{box-sizing:border-box} html,body{margin:0}
+  body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14px;line-height:1.6}
+  a{color:inherit} code{font-family:var(--mono);font-size:12px;color:var(--text-2);background:var(--surface-2);padding:1px 5px;border-radius:4px}
+  .plan-nav{display:flex;flex-wrap:wrap;align-items:center;gap:4px;padding:10px 28px;background:#0c0c0c;border-bottom:1px solid var(--line);font-size:13px}
+  .plan-nav a{color:var(--text-2);text-decoration:none;padding:3px 8px;border-radius:6px}
+  .plan-nav a:hover{background:var(--surface);color:var(--text)}
+  .plan-nav a[aria-current="page"]{background:var(--surface);color:var(--text);box-shadow:inset 0 0 0 1px var(--line-2)}
+  .plan-nav .sep{color:var(--faint);padding:0 2px} .plan-nav .spacer{flex:1}
+  .top{border-bottom:1px solid var(--line);padding:26px 28px 20px}
+  .top h1{margin:0 0 6px;font-size:21px} .top p{margin:0;color:var(--text-2);max-width:76ch}
+  .top .meta{margin-top:8px;color:var(--faint);font-size:12.5px}
+  main{max-width:1080px;margin:0 auto;padding:26px 28px 80px}
+  section{margin:0 0 40px}
+  section>h2{display:flex;align-items:baseline;gap:10px;margin:0 0 8px;font-size:16.5px}
+  section>h2 .n{font-family:var(--mono);font-size:11.5px;color:var(--muted);border:1px solid var(--line-2);border-radius:4px;padding:1px 6px}
+  .tag{font-family:var(--mono);font-size:11px;padding:1px 7px;border-radius:99px}
+  .tag.proposal{color:var(--warn);background:rgba(255,133,73,.10)}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;margin:0 0 12px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-weight:500;font-size:12px;text-transform:uppercase;letter-spacing:.03em}
+  .callout{margin:12px 0;padding:12px 14px;border-radius:10px;background:var(--surface);border-left:3px solid var(--line-2);color:var(--text-2);font-size:13px}
+  .callout.warn{border-left-color:var(--warn)}
+  .callout.ok{border-left-color:var(--ok)}
+  .callout b{color:var(--text)}
+  pre{margin:0 0 12px;padding:12px 14px;background:var(--surface-2);border-radius:8px;overflow:auto;font-family:var(--mono);font-size:12px;color:var(--text-2);line-height:1.5}
+</style>
+</head>
+<body>
+<p data-aigc-mark="1" style="margin:0 0 8px;font-size:10px;line-height:1.3;color:#6b6560;font-weight:400;">AI生成</p>
+
+<nav class="plan-nav">
+  <a href="../index.html">插件插槽目录</a><span class="sep">/</span>
+  <a href="index.html">能力清单</a>
+  <span class="spacer"></span>
+  <a href="index.html">目录</a>
+  <a href="data-flow.html" aria-current="page">数据流</a>
+</nav>
+<header class="top">
+  <h1>能力清单 · 数据流（设计稿）</h1>
+  <p>N1–N4 四个待补能力的契约。六节固定；字段名为建议值。</p>
+  <div class="meta">status: <b>draft</b> · 设计稿 · 供审查</div>
+</header>
+<main>
+
+<section>
+  <h2><span class="n">1</span>接口约定 <span class="tag proposal">建议</span></h2>
+
+  <h3>N1 · <code>pi.session.getModel()</code></h3>
+  <pre>pi.session.getModel(): Promise&lt;{
+  modelKey: string | null      // `provider/model`
+  thinkingLevel: string | null
+  providerId?: string
+  modelId?: string
+}&gt;</pre>
+  <p>权限：<code>session.read</code>（只读，不抬权）。与 <code>session:modelChanged</code> 成对：事件推变更，本方法取快照。</p>
+
+  <h3>N2 · <code>session:usageUpdated</code>（事件）</h3>
+  <pre>// pi.events.on("session:usageUpdated", handler)
+{
+  sessionId: string
+  turnId: string
+  usage: {
+    inputTokens: number
+    outputTokens: number
+    cacheReadTokens?: number
+    cacheWriteTokens?: number
+    reasoningTokens?: number
+    totalTokens?: number
+    toolCalls?: number
+    pluginToolUsage?: number
+  }
+  modelKey?: string
+  endedAt?: number
+}</pre>
+  <p>替代方案：给已有 <code>session:turnEnded</code> 增加 <code>usage</code> 字段（改动更小，事件数不增）。</p>
+
+  <h3>N3 · <code>pi.session.getContext()</code></h3>
+  <pre>pi.session.getContext(input?: {
+  sessionId?: string     // 缺省 = 当前会话
+  scope?: "all" | "sinceCompaction"
+}): Promise&lt;{
+  sessionId: string
+  system?: string
+  messages: Array&lt;{
+    id: string
+    role: "user" | "assistant" | "system" | "tool"
+    text: string
+    createdAt?: number
+  }&gt;
+  usageEstimate: { tokens: number; truncated: boolean }
+  modelKey?: string
+}&gt;</pre>
+  <p>权限：新开 <code>session.context.read</code>（high，装时确认）——比 <code>session.read</code> 更宽，能读正文。</p>
+
+  <h3>N4 · <code>pi.session.applyCompaction()</code></h3>
+  <pre>pi.session.applyCompaction(input: {
+  sessionId: string
+  summary: string                    // 用户可见的摘要正文
+  retainedMessageIds?: string[]      // 保留的消息；缺省 = 只留摘要
+  reason?: string
+}): Promise&lt;{
+  ok: boolean
+  compactionId: string
+  tokensBefore: number
+  tokensAfter: number
+}&gt;</pre>
+  <p>权限：新开 <code>session.compact.write</code>（high，装时确认 + 界面可见）。</p>
+</section>
+
+<section>
+  <h2><span class="n">2</span>数据怎么走 <span class="tag proposal">建议</span></h2>
+  <table>
+    <thead><tr><th>能力</th><th>方向</th><th>路径</th></tr></thead>
+    <tbody>
+      <tr><td>N1</td><td>拉取</td><td>插件 → session RPC → host-core 会话态</td></tr>
+      <tr><td>N2</td><td>推送</td><td>endTurn 落库后 → 事件总线 → <code>pi.events</code></td></tr>
+      <tr><td>N3</td><td>拉取</td><td>插件 → session RPC → 消息表 / 压缩记录</td></tr>
+      <tr><td>N4</td><td>写入</td><td>插件提交摘要 → <b>宿主校验并应用</b> → 写 <code>ContextCompactionRecord</code> → 广播 <code>session:compacted</code></td></tr>
+    </tbody>
+  </table>
+  <div class="callout ok"><b>DIY 压缩时序：</b><code>before_compact</code> 拦截（可选）→ <code>getContext</code> 读 → 插件自算摘要 → <code>applyCompaction</code> 写回 → UI 显示压缩行。</div>
+</section>
+
+<section>
+  <h2><span class="n">3</span>出错怎么办 <span class="tag proposal">建议</span></h2>
+  <table>
+    <thead><tr><th>情况</th><th>结果</th></tr></thead>
+    <tbody>
+      <tr><td>无权限</td><td><code>permission_denied</code>，不静默</td></tr>
+      <tr><td>sessionId 不存在 / 已删</td><td><code>NOT_FOUND</code></td></tr>
+      <tr><td>N3 过大</td><td><code>truncated: true</code>，只回窗口内</td></tr>
+      <tr><td>N4 与并发压缩冲突</td><td><code>CONFLICT</code>，要求重读再写</td></tr>
+      <tr><td>N4 summary 为空</td><td><code>INVALID_PAYLOAD</code></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2><span class="n">4</span>不提供什么 <span class="tag proposal">建议</span></h2>
+  <ul>
+    <li><b>不提供</b> <code>replaceMessages</code> / 静默覆盖 message list（产品已排除）</li>
+    <li>N4 <b>不</b>静默生效：必须进压缩记录、界面可见、可审计</li>
+    <li>N2 <b>不</b>含消息正文，只含计量</li>
+    <li>N1 <b>不</b>提供改模型（改模型走会话绑定 / 受信 <code>setModel</code>）</li>
+    <li>N3 默认当前会话；跨会话读需要 <code>sessionId</code> + high 权限</li>
+  </ul>
+  <div class="callout warn"><b>宿主保证：</b>权限门控、N4 审计与可见。<br/><b>已接受代价：</b>持有 <code>session.context.read</code> 的插件可读正文——安装审查须明示。</div>
+</section>
+
+<section>
+  <h2><span class="n">5</span>相关条目</h2>
+  <ul>
+    <li><code>runtime/session-lifecycle/</code> — <code>before_compact</code> 拦截</li>
+    <li><code>runtime/turn-facts/</code> · <code>runtime/turn-recap/</code> — 读侧补充</li>
+    <li><code>render/plugin-call/</code> — 插件自有数据</li>
+    <li><code>../slot-contract.html</code> · <code>../index.html</code></li>
+  </ul>
+</section>
+
+<section>
+  <h2><span class="n">6</span>还没定的事</h2>
+  <ul>
+    <li>N2：新事件 vs 扩 <code>turnEnded</code></li>
+    <li>N4：是否强制二次用户确认；summary 是否允许插件 HTML（建议纯文本）</li>
+    <li>N3：是否暴露工具结果全文（建议 <code>role:"tool"</code> 只给摘要）</li>
+    <li>四件的最终权限名与是否进 <code>PLUGIN_PERMISSIONS</code></li>
+  </ul>
+</section>
+
+</main>
+</body>
+</html>
