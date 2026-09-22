@@ -77,11 +77,13 @@
   <a href="render/draft/index.html">draft</a>
   <a href="render/attachments/index.html">attachments</a>
   <a href="render/plugin-call/index.html">plugin.call</a>
+  <span class="sep">·</span>
+  <a href="host-api/index.html">host-api</a>
 </nav>
 
 <header class="top">
   <h1>插件插槽目录</h1>
-  <p>三类：<strong>UI 插槽</strong>（组件挂载位）· <strong>render 相关接口</strong>（渲染侧可调用能力）· <strong>运行时钩子</strong>（agent 生命周期挂点）。</p>
+  <p>四类：<strong>UI 插槽</strong>（组件挂载位）· <strong>render 相关接口</strong>（渲染侧可调用能力）· <strong>运行时契约</strong>（agent 生命周期挂点与会话数据契约）· <strong>host-api</strong>（插件可调用的宿主 API 全集，已实现）。</p>
   <div class="meta">状态：<b>draft</b> · 公共约定 <code>slot-contract.html</code> · 引用代码写 <code>分支@sha · 路径 · 符号</code></div>
 </header>
 
@@ -281,9 +283,48 @@
         <td><a href="runtime/session-lifecycle/index.html">runtime/session-lifecycle/</a></td>
         <td><span class="pill draft">draft</span></td>
       </tr>
+      <tr class="open">
+        <td class="id">session-model</td>
+        <td>当前会话模型快照<br /><span style="color:var(--muted);font-size:12.5px">拉取 API · 与 modelChanged 成对 · N1</span></td>
+        <td><span class="pill rt">契约</span></td>
+        <td><a href="runtime/session-model/index.html">runtime/session-model/</a></td>
+        <td><span class="pill draft">proposal</span></td>
+      </tr>
+      <tr class="open">
+        <td class="id">session-context</td>
+        <td>读会话全量上下文<br /><span style="color:var(--muted);font-size:12.5px">system + 消息 + token 估算 · N3</span></td>
+        <td><span class="pill rt">契约</span></td>
+        <td><a href="runtime/session-context/index.html">runtime/session-context/</a></td>
+        <td><span class="pill draft">draft</span></td>
+      </tr>
+      <tr class="open">
+        <td class="id">session-compaction</td>
+        <td>压缩摘要托管写回<br /><span style="color:var(--muted);font-size:12.5px">可审计 · 界面可见 · 非静默改写 · N4</span></td>
+        <td><span class="pill rt">契约</span></td>
+        <td><a href="runtime/session-compaction/index.html">runtime/session-compaction/</a></td>
+        <td><span class="pill draft">draft</span></td>
+      </tr>
     </tbody>
   </table>
 </section>
+
+<section>
+  <h2><span class="n">API</span> host-api · 宿主 API 全集</h2>
+  <p class="lead">插件今天已经能调用的官方 API 与生命周期钩子全集（95 条，均为 implemented）。逐条页面见其目录。</p>
+  <table>
+    <thead><tr><th>id</th><th>内容</th><th>给谁用</th><th>文件夹</th><th>状态</th></tr></thead>
+    <tbody>
+      <tr class="open">
+        <td class="id">host-api</td>
+        <td>PluginHostApi 方法 + PluginModule 钩子<br /><span style="color:var(--muted);font-size:12.5px">24 个命名空间 · 每条一文件夹 · 三页</span></td>
+        <td>所有插件</td>
+        <td><a href="host-api/index.html">host-api/</a></td>
+        <td><span class="pill has">implemented</span></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
 
 <p class="note">
   <b>怎么用。</b>链到文件夹的条目才有内容。开新文件夹先补本表，再写页面。demo 对齐宿主组件观感，插槽位用虚线标出。

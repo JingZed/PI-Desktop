@@ -19,7 +19,10 @@ docs/plugin-plan/
   slot-contract.html   shared contract for all UI slots
   ui/<slot-id>/        one UI slot             e.g. ui/user-action
   render/<api-id>/     one renderer interface  e.g. render/draft
-  runtime/<hook-id>/   one runtime hook        e.g. runtime/before-send
+  runtime/<contract-id>/  one runtime hook or session data contract
+                          e.g. runtime/before-send, runtime/session-context
+  host-api/<api-id>/   one callable host API or lifecycle hook (implemented
+                        surface; Chinese title 曾经是「已有能力」) e.g. host-api/fs.readText
 ```
 
 Folder id is lowercase-kebab and must match the name the SDK will use. Titles
