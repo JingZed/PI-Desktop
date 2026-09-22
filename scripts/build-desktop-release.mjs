@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import process from "node:process";
+import { createPnpmInvocation } from "./build-desktop-release-process.mjs";
 
 const forwardedArgs = process.argv.slice(2);
 
@@ -18,13 +19,10 @@ if (!["linux", "mac", "win"].includes(target)) {
   throw new Error(`Unsupported desktop release target: ${target}`);
 }
 
-const pnpmCommand = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
-
 function runBuilder(args) {
   return new Promise((resolve, reject) => {
-    const child = spawn(pnpmCommand, ["exec", "electron-builder", ...args], {
-      stdio: "inherit",
-    });
+    const invocation = createPnpmInvocation(process.platform, args);
+    const child = spawn(invocation.command, invocation.args, invocation.options);
 
     child.once("error", reject);
     child.once("exit", (code, signal) => {

@@ -4,6 +4,7 @@ import {
   readMainSource,
   readSharedTypesSource,
 } from "./helpers/source-contracts.mjs";
+import { createPnpmInvocation } from "../../../scripts/build-desktop-release-process.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
@@ -282,12 +283,25 @@ test("packaging publishes an electron-updater feed for GitHub Releases", () => {
   assert.match(buildReleaseSource, /"--publish",\s*"never"/);
   assert.match(buildReleaseSource, /piDistribution=installed/);
   assert.match(buildReleaseSource, /piDistribution=zip/);
+  assert.match(buildReleaseSource, /createPnpmInvocation\(process\.platform/);
   // The upload step must carry every updater feed, and the release publishes
   // all platforms unfiltered (D126/D285).
   assert.match(releaseWorkflowSource, /release\/\*\.zip/);
   assert.match(releaseWorkflowSource, /release\/\*\.rpm/);
   assert.match(releaseWorkflowSource, /release\/latest\*\.yml/);
   assert.match(releaseWorkflowSource, /files: dist\/\*/);
+});
+
+test("desktop release runner launches the Windows pnpm shim through a shell", () => {
+  const windows = createPnpmInvocation("win32", ["--win", "nsis"]);
+  assert.equal(windows.command, "pnpm.cmd");
+  assert.deepEqual(windows.args, ["exec", "electron-builder", "--win", "nsis"]);
+  assert.equal(windows.options.shell, true);
+
+  const linux = createPnpmInvocation("linux", ["--linux"]);
+  assert.equal(linux.command, "pnpm");
+  assert.deepEqual(linux.args, ["exec", "electron-builder", "--linux"]);
+  assert.equal(linux.options.shell, false);
 });
 
 test("shared shipped-locale changelog is the in-app notes source of truth", () => {
