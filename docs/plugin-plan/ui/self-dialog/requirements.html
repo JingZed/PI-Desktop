@@ -1,4 +1,4 @@
-<!-- status: draft -->
+ <!-- status: finalized -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -65,7 +65,7 @@
   <div class="crumb">docs/plugin-plan · ui/self-dialog</div>
   <h1>自理弹窗 · 需求</h1>
   <p>插件自理的全屏弹窗和角落浮层。无槽无注册；四条底线；Esc 不关安全层。</p>
-  <div class="meta">status: draft · 无数据流页（原因见「本轮拍板」）</div>
+   <div class="meta">status: finalized · 无数据流页（原因见「本轮拍板」）</div>
 </header>
 <main>
 
@@ -131,7 +131,7 @@
       <tr><td>有没有数据流</td><td><strong>没有 data-flow.html。</strong>宿主不经手任何数据——无槽无注册，没有接口、没有数据往来</td></tr>
     </tbody>
   </table>
-  <div class="callout warn"><b>还没定的事：</b>推荐样式的工具类清单；z 序建议值。</div>
+   <div class="callout ok"><b>定稿：</b>推荐工具类 <code>p-overlay</code> / <code>p-dialog</code>（含 <code>p-dialog-head/__body/__foot</code>）/ <code>p-notice</code>（含 <code>p-notice-icon/__msg/__dismiss</code>），token <code>--ds-scrim</code>、<code>--ds-shadow-dialog</code>；z 序：插件自理层 600..899（首个 600，每层 +1），宿主安全层固定 900，现网 1000+ 阶梯不动。</div>
 </section>
 
 </main>

@@ -1,4 +1,4 @@
-<!-- status: draft -->
+ <!-- status: finalized -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -66,7 +66,7 @@
   <div class="crumb">docs/plugin-plan · ui/composer</div>
   <h1>输入区 · 需求</h1>
   <p>只写组件槽：左右控件、触发符、记号。固定件归宿主。草稿读写 / 附件方法不在本夹。</p>
-  <div class="meta">status: draft · 本轮拍板见文末</div>
+   <div class="meta">status: finalized · 本轮拍板见文末</div>
 </header>
 <main>
 
@@ -136,7 +136,7 @@
       <tr><td>附件入参</td><td>只收 <code>content|token</code>，禁 path / URL ref</td></tr>
     </tbody>
   </table>
-  <div class="callout warn"><b>还没定的事：</b>触发符号字符集；记号折叠规则。</div>
+   <div class="callout ok"><b>定稿：</b>触发符固定 <code>@</code> / <code>#</code> / <code>/</code> 三个（一符一插件，重复注册返回 <code>PLUGIN_SLOT_DUPLICATE</code>；行首或空白后、非 IME 组词中才触发，程序写入永不触发）；记号单草稿上限 8 个，第 9 个起折叠为 <code>⧉ +N</code>，发送 payload 不丢。</div>
 </section>
 
 </main>

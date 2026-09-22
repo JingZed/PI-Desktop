@@ -1,4 +1,4 @@
-<!-- status: draft -->
+ <!-- status: finalized -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -66,7 +66,7 @@
   <div class="crumb">docs/plugin-plan · ui/entry-extra</div>
   <h1>AI 回复追加区 · 需求</h1>
   <p>AI 回复正文下方的追加位。additive，可多插件叠加。用户消息没有本槽。</p>
-  <div class="meta">status: draft · 本轮拍板见文末</div>
+   <div class="meta">status: finalized · 本轮拍板见文末</div>
 </header>
 <main>
 
@@ -127,7 +127,7 @@
       <tr><td>entry 正文 / 整卡替换</td><td>不开放、不做</td></tr>
     </tbody>
   </table>
-  <div class="callout warn"><b>还没定的事：</b>SDK 槽名（建议沿用 <code>entryExtra</code>，仅挂 AI 回复）；单块最大高度。</div>
+   <div class="callout ok"><b>定稿：</b>SDK 槽名 <code>entryExtra</code>，仅挂 AI 回复（类型写死：props 只收 assistant 消息、无 <code>position</code> 字段）；单块折叠态宿主钳制 320px（超出渐隐 + 宿主「展开」钮），展开态 600px 内部滚动。</div>
 </section>
 
 </main>

@@ -1,4 +1,4 @@
-<!-- status: draft -->
+ <!-- status: finalized -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -70,12 +70,12 @@
 <header class="top">
   <h1>AI 回复操作栏 · 数据流</h1>
   <p>与用户消息操作栏同一套：props 一次给全，插件只渲染，不回调宿主。</p>
-  <div class="meta">status: draft · 接口字段名是建议值，还没进 SDK</div>
+   <div class="meta">status: finalized · 槽名与 props 字段名已定稿（见 slot-contract.html §6）；SDK 尚未实现</div>
 </header>
 <main>
 
 <section>
-  <h2><span class="n">1</span>接口约定 <span class="tag proposal">建议</span></h2>
+   <h2><span class="n">1</span>接口约定 <span class="tag decided">已定</span></h2>
   <p>插件注册左右两个组件槽。只渲染，不提供宿主函数。</p>
   <table>
     <thead><tr><th>props</th><th>含义</th></tr></thead>
@@ -89,7 +89,7 @@
 </section>
 
 <section>
-  <h2><span class="n">2</span>数据怎么走 <span class="tag proposal">建议</span></h2>
+   <h2><span class="n">2</span>数据怎么走 <span class="tag decided">已定</span></h2>
   <table>
     <thead><tr><th>方向</th><th>内容</th></tr></thead>
     <tbody>
@@ -142,10 +142,10 @@
 </section>
 
 <section>
-  <h2><span class="n">6</span>还没定的事 <span class="tag proposal">待拍板</span></h2>
+   <h2><span class="n">6</span>定稿记录 <span class="tag decided">已定</span></h2>
   <ul>
-    <li>SDK 槽名（建议 <code>assistantAction</code>）</li>
-    <li>左右按钮数量上限与折叠规则</li>
+     <li>SDK 槽名 <code>assistantAction</code>，与 <code>userAction</code> 同形（共用 <code>PluginActionSlotProps</code>）；注册形状 <code>positions?: ["left","right"]</code>（省略即两侧）</li>
+     <li>左右上限与折叠规则与 user-action 完全一致：每侧 3 个可见项 + 宿主「⋯」折叠菜单，宿主键永不折叠</li>
   </ul>
 </section>
 

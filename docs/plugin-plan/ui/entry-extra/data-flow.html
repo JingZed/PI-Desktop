@@ -1,4 +1,4 @@
-<!-- status: draft -->
+ <!-- status: finalized -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -70,12 +70,12 @@
 <header class="top">
   <h1>AI 回复追加区 · 数据流</h1>
   <p>宿主把这条 AI 回复的数据推给追加块；插件只渲染，不回调宿主。</p>
-  <div class="meta">status: draft · 接口字段名是建议值，还没进 SDK</div>
+   <div class="meta">status: finalized · 槽名与 props 字段名已定稿（见 slot-contract.html §6）；SDK 尚未实现</div>
 </header>
 <main>
 
 <section>
-  <h2><span class="n">1</span>接口约定 <span class="tag proposal">建议</span></h2>
+   <h2><span class="n">1</span>接口约定 <span class="tag decided">已定</span></h2>
   <p>插件注册一个追加组件。additive，可叠加。</p>
   <table>
     <thead><tr><th>props</th><th>含义</th></tr></thead>
@@ -88,7 +88,7 @@
 </section>
 
 <section>
-  <h2><span class="n">2</span>数据怎么走 <span class="tag proposal">建议</span></h2>
+   <h2><span class="n">2</span>数据怎么走 <span class="tag decided">已定</span></h2>
   <table>
     <thead><tr><th>方向</th><th>内容</th></tr></thead>
     <tbody>
@@ -140,10 +140,10 @@
 </section>
 
 <section>
-  <h2><span class="n">6</span>还没定的事 <span class="tag proposal">待拍板</span></h2>
+   <h2><span class="n">6</span>定稿记录 <span class="tag decided">已定</span></h2>
   <ul>
-    <li>SDK 槽名（建议 <code>entryExtra</code>）</li>
-    <li>单块最大高度与折叠</li>
+     <li>SDK 槽名 <code>entryExtra</code>；「仅挂 AI 回复」写死进类型：props 只收 assistant 消息变体、无 <code>position</code> 字段</li>
+     <li>单块折叠态宿主钳制 320px（超出 8% 渐隐 + 宿主「展开」钮），展开态 600px 内部滚动；多块按注册顺序叠放</li>
   </ul>
 </section>
 
