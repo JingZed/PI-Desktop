@@ -4,7 +4,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>输入区 · 目录</title>
+<title>提示与浮层 · 目录</title>
 <style>
   :root{
     --bg:#0e0e0e; --surface:#161616; --line:#2a2a2a; --line-2:#353535;
@@ -50,7 +50,7 @@
 <nav class="plan-nav">
   <a href="../../index.html">插件插槽目录</a>
   <span class="sep">/</span>
-  <a href="index.html">输入区</a>
+  <a href="index.html" aria-current="page">提示与浮层</a>
   <span class="spacer"></span>
   <a href="index.html" aria-current="page">目录</a>
   <a href="requirements.html">需求</a>
@@ -59,9 +59,9 @@
 </nav>
 
 <header class="top">
-  <div class="crumb">docs/plugin-plan · ui · composer</div>
-  <h1>输入区</h1>
-  <p>聊天输入框这一块。四个位置：<code>composer.left</code>（工具栏左侧）、<code>composer.middle</code>（工具栏右侧、模型选择左边）、<code>composer.trigger</code>（打触发符弹出的列表）、<code>composer.content</code>（输入框里的记号）。外加两组方法：读写草稿、读写附件。</p>
+  <div class="crumb">docs/plugin-plan · ui · layers</div>
+  <h1>提示与浮层 · 确认卡</h1>
+  <p>一件事：<code>ui.confirm()</code> 固定格式确认卡（渲染进程 API，属于 renderer 档）——输入框上方同宽横栏、内容与按钮都走参数、点击回调。插件不能接管宿主的权限审批卡；要全屏弹窗 / 角落浮层走 <code>ui/self-dialog/</code>（插件自理）。</p>
   <div class="meta">status: draft · issue #545 · branch feat/528-plugin-slots</div>
 </header>
 
@@ -71,34 +71,31 @@
   <div class="cards">
     <a class="card" href="requirements.html">
       <div class="name">requirements.html</div>
-      <p class="what">要什么：槽位划分、固定件、中槽规则、触发符注册、草稿与附件方法、明确不做。</p>
+      <p class="what">要什么：确认卡的固定格式与排队规则、自理弹窗的四条底线、与现状（注册制槽位）的边界改口、明确不做。</p>
       <p class="files">已定 / 建议 / 还没定 分开标色</p>
     </a>
     <a class="card" href="demo.html">
       <div class="name">demo.html</div>
-      <p class="what">长什么样：8 个场景，从默认样式到知识库选择、# 触发远程数据、插件实现增强、常用语、附件读写、草稿统计、中槽重排宿主用量。</p>
+      <p class="what">长什么样：7 幕，从权限审批卡、ui.confirm、三种卡型、排队，到自理弹窗、自理悬浮层和边界。</p>
       <p class="files">不写说明文字，只有界面</p>
     </a>
     <a class="card" href="data-flow.html">
       <div class="name">data-flow.html</div>
-      <p class="what">数据怎么走：四个界面槽、三个方法、记号的一生，发送时发生什么，出错怎么办。</p>
+      <p class="what">数据怎么走：ui.confirm 的入参出参、内容组件的渲染环境、点击回调的一生、出错怎么办。</p>
       <p class="files">接口约定 · 数据怎么走 · 出错怎么办 · 不提供什么 · 相关条目 · 还没定的事</p>
     </a>
   </div>
 
   <h2>一句话回顾</h2>
   <ul>
-    <li>固定件不许动：左边是附件、模式切换、权限切换；模型选择和发送永远在最右。</li>
-    <li>中槽里宿主的东西只有<b>上下文用量</b>——现成组件 <code>ContextUsage</code>，默认装在槽里，整项交给插件处置：可隐藏、可替换、可重排（排序声明见数据流页）。插件之间仍按声明顺序。</li>
-    <li>读写草稿、写附件不是界面槽，归 <code>api/</code>：三个权限 <code>composer.readDraft</code> / <code>writeDraft</code> / <code>attachments</code>——附件是加 / 列 / 移三动作一个权限，移只能动自己加的。</li>
-    <li>触发符注册制：单个符号，触发后输入是筛选；弹层样式是宿主的，列表内容是插件的。抢注安装时提醒，先装者为准。<code>/</code> <code>@</code> 不开放。</li>
-    <li>记号（chip）由插件一次给两份：label 给人看、send 给 AI（文字 / 附件 / 不发送三种），payload 宿主只搬运不解析、只还给写入它的插件；key 由宿主分配。手打的 <code>#</code> 不算记号。外形宿主固定，【icon | 文字】。</li>
-    <li>编辑历史消息回填底部输入框，前面是一个锚点记号；删锚点即退出编辑；切换编辑对象直接清空、不做保护；发送时先删掉被编辑那条及其之后的对话再重发（截断重跑）。</li>
-    <li>分支上旧的 <code>beforeSend</code> 整块移交原型（模型 + 上下文 + 增强整体交给一个插件）已废弃，按新边界重做。</li>
+    <li><b>确认卡</b>是固定格式：输入框上方同宽（窄 5px）紧贴的横栏，左内容右按钮；卡壳、位置、按钮样式是宿主的；<b>内容与按钮都走参数</b>（固定字段文案 + ≤3 个按钮，支持下拉形态），点击后 Promise 回调；不接受内容组件、不让自绘。</li>
+    <li>三种卡型：确认（2 钮 → <code>"ok" | "cancel"</code>）、选择（下拉 → 按下的 actionId）、知会（1 钮 → <code>"ok"</code>）。</li>
+    <li>排队：权限请求永远第一优先；插件确认卡 FIFO，一次只显示一张，其余折叠成条；不响应 Esc；不设超时；插件卸载时 await 收到 <code>cancel</code> + 原因码。</li>
+    <li>现状的注册制 <code>modal</code> 槽、<code>overlay</code> 槽、<code>inlineConfirm</code> 接管槽与 <code>ui.openModal</code> 等四个动作在重设计中移除；弹窗 / 悬浮层自理另立文件夹 <code>ui/self-dialog/</code>。</li>
   </ul>
 
   <h2>还没定的事</h2>
-  <p style="color:var(--muted);font-size:13px">触发符号的字符集（emoji、全角算不算单个字符）未定——见 requirements.html 的「还没定的事」。</p>
+  <p style="color:var(--muted);font-size:13px">权限名归属、内容组件的 props、自理弹窗的遮罩样式建议——见 requirements.html 的「还没定的事」。</p>
 
 </main>
 </body>

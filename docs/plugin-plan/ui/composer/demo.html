@@ -1,3 +1,4 @@
+<!-- status: draft · issue #545 · branch feat/528-plugin-slots -->
 <!DOCTYPE html>
 <html lang="zh-CN" data-theme="dark">
 <head>
@@ -292,6 +293,8 @@
       font-variant-numeric: tabular-nums; cursor: default;
     }
     .ctx-trigger:hover { background: var(--ds-bg-hover); color: var(--ds-text-primary); }
+    /* 被插件隐藏的宿主组件：划掉的淡影 */
+    .ctx-trigger.is-hidden { opacity: .35; text-decoration: line-through; cursor: not-allowed; }
     .ctx-ring { display: inline-flex; flex: 0 0 auto; }
 
     /* 草稿统计弹层（插件自己的浮层） */
@@ -328,6 +331,7 @@
   <a href="index.html">目录</a>
   <a href="requirements.html">需求</a>
   <a href="demo.html" aria-current="page">演示</a>
+  <a href="data-flow.html">数据流</a>
 </nav>
 
   <div class="shell">
@@ -366,11 +370,13 @@
               <span class="slot-box is-empty"><span class="slot-name">composer.left</span></span>
             </div>
             <div class="cright">
-              <span class="slot-box is-empty"><span class="slot-name">composer.middle</span></span>
-              <button class="ctx-trigger" type="button">
-                <span class="ctx-ring"><svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="2.4"/><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-dasharray="14.5 37.7" stroke-linecap="round" transform="rotate(-90 8 8)"/></svg></span>
-                38%
-              </button>
+              <span class="slot-box">
+                <span class="slot-name">composer.middle · ContextUsage（默认）</span>
+                <button class="ctx-trigger" type="button">
+                  <span class="ctx-ring"><svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="2.4"/><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-dasharray="14.5 37.7" stroke-linecap="round" transform="rotate(-90 8 8)"/></svg></span>
+                  38%
+                </button>
+              </span>
               <button class="icon-btn" type="button"><span class="face"><span>GLM-4.7</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></span></button>
               <button class="send-btn" type="button" aria-label="发送"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg></button>
             </div>
@@ -413,10 +419,13 @@
               </span>
             </div>
             <div class="cright">
-              <button class="ctx-trigger" type="button">
-                <span class="ctx-ring"><svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="2.4"/><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-dasharray="14.5 37.7" stroke-linecap="round" transform="rotate(-90 8 8)"/></svg></span>
-                38%
-              </button>
+              <span class="slot-box">
+                <span class="slot-name">composer.middle · ContextUsage</span>
+                <button class="ctx-trigger" type="button">
+                  <span class="ctx-ring"><svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="2.4"/><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-dasharray="14.5 37.7" stroke-linecap="round" transform="rotate(-90 8 8)"/></svg></span>
+                  38%
+                </button>
+              </span>
               <button class="icon-btn" type="button"><span class="face"><span>GLM-4.7</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></span></button>
               <button class="send-btn" type="button" aria-label="发送"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg></button>
             </div>
@@ -455,10 +464,13 @@
               <button class="icon-btn" type="button"><span class="face"><span>询问</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></span></button>
             </div>
             <div class="cright">
-              <button class="ctx-trigger" type="button">
-                <span class="ctx-ring"><svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="2.4"/><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-dasharray="14.5 37.7" stroke-linecap="round" transform="rotate(-90 8 8)"/></svg></span>
-                38%
-              </button>
+              <span class="slot-box">
+                <span class="slot-name">composer.middle · ContextUsage</span>
+                <button class="ctx-trigger" type="button">
+                  <span class="ctx-ring"><svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="2.4"/><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-dasharray="14.5 37.7" stroke-linecap="round" transform="rotate(-90 8 8)"/></svg></span>
+                  38%
+                </button>
+              </span>
               <button class="icon-btn" type="button"><span class="face"><span>GLM-4.7</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></span></button>
               <button class="send-btn" type="button" aria-label="发送"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg></button>
             </div>
@@ -478,7 +490,7 @@
         </article>
 
         <!-- ④ 中槽：插件增强 + 替换上下文用量 -->
-        <div class="stage" id="s4"><span class="no">4</span>composer.middle · 插件实现增强 / 替换上下文用量 · plugin_demo_polish · plugin_demo_ctx-pro</div>
+        <div class="stage" id="s4"><span class="no">4</span>composer.middle · 插件实现增强 / 替换上下文用量（两个插件各一个框 · 原 ContextUsage 已隐藏） · plugin_demo_polish · plugin_demo_ctx-pro</div>
 
         <div class="cshell">
           <div class="cinput-wrap">
@@ -492,7 +504,11 @@
             </div>
             <div class="cright">
               <span class="slot-box">
-                <span class="slot-name">composer.middle · plugin_demo_ctx-pro</span>
+                <span class="slot-name">composer.middle · plugin_demo_ctx-pro（原 ContextUsage 已隐藏）</span>
+                <button class="ctx-trigger is-hidden" type="button" aria-label="原上下文用量（已被本插件隐藏）">
+                  <span class="ctx-ring"><svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="2.4"/><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-dasharray="14.5 37.7" stroke-linecap="round" transform="rotate(-90 8 8)"/></svg></span>
+                  38%
+                </button>
                 <button class="ctx-trigger" type="button">
                   <span class="ctx-ring"><svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="2.4"/><circle cx="8" cy="8" r="6" fill="none" stroke="#6cb2ff" stroke-width="2.4" stroke-dasharray="17.2 37.7" stroke-linecap="round" transform="rotate(-90 8 8)"/></svg></span>
                   45%<span style="color:var(--ds-text-muted)">· 缓存 61%</span>
@@ -550,10 +566,13 @@
               </span>
             </div>
             <div class="cright">
-              <button class="ctx-trigger" type="button">
-                <span class="ctx-ring"><svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="2.4"/><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-dasharray="14.5 37.7" stroke-linecap="round" transform="rotate(-90 8 8)"/></svg></span>
-                38%
-              </button>
+              <span class="slot-box">
+                <span class="slot-name">composer.middle · ContextUsage</span>
+                <button class="ctx-trigger" type="button">
+                  <span class="ctx-ring"><svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="2.4"/><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-dasharray="14.5 37.7" stroke-linecap="round" transform="rotate(-90 8 8)"/></svg></span>
+                  38%
+                </button>
+              </span>
               <button class="icon-btn" type="button"><span class="face"><span>GLM-4.7</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></span></button>
               <button class="send-btn" type="button" aria-label="发送"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg></button>
             </div>
@@ -595,10 +614,13 @@
               </span>
             </div>
             <div class="cright">
-              <button class="ctx-trigger" type="button">
-                <span class="ctx-ring"><svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="2.4"/><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-dasharray="14.5 37.7" stroke-linecap="round" transform="rotate(-90 8 8)"/></svg></span>
-                38%
-              </button>
+              <span class="slot-box">
+                <span class="slot-name">composer.middle · ContextUsage</span>
+                <button class="ctx-trigger" type="button">
+                  <span class="ctx-ring"><svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="2.4"/><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-dasharray="14.5 37.7" stroke-linecap="round" transform="rotate(-90 8 8)"/></svg></span>
+                  38%
+                </button>
+              </span>
               <button class="icon-btn" type="button"><span class="face"><span>GLM-4.7</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></span></button>
               <button class="send-btn" type="button" aria-label="发送"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg></button>
             </div>
@@ -620,7 +642,14 @@
             </div>
             <div class="cright">
               <span class="slot-box">
-                <span class="slot-name">composer.middle</span>
+                <span class="slot-name">composer.middle · ContextUsage（默认顺序）</span>
+                <button class="ctx-trigger" type="button">
+                  <span class="ctx-ring"><svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="2.4"/><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-dasharray="14.5 37.7" stroke-linecap="round" transform="rotate(-90 8 8)"/></svg></span>
+                  38%
+                </button>
+              </span>
+              <span class="slot-box">
+                <span class="slot-name">composer.middle · plugin_demo_draft-stats</span>
                 <span class="menu-anchor">
                   <button class="icon-btn active" type="button" style="font-variant-numeric:tabular-nums"><span class="face"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9h16M4 15h16M10 3L8 21M16 3l-2 18"/></svg>1,284</span></button>
                   <div class="stats-pop">
@@ -632,10 +661,37 @@
                   </div>
                 </span>
               </span>
-              <button class="ctx-trigger" type="button">
-                <span class="ctx-ring"><svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="2.4"/><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-dasharray="14.5 37.7" stroke-linecap="round" transform="rotate(-90 8 8)"/></svg></span>
-                38%
-              </button>
+              <button class="icon-btn" type="button"><span class="face"><span>GLM-4.7</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></span></button>
+              <button class="send-btn" type="button" aria-label="发送"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg></button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ⑧ 中槽：重排宿主默认项 -->
+        <div class="stage" id="s8"><span class="no">8</span>composer.middle · 重排宿主默认项（用量排到插件按钮后面） · plugin_demo_draft-stats</div>
+
+        <div class="cshell">
+          <div class="cinput-wrap">
+            <div class="cinput">把这个季度的留存数据整理成一页摘要，附上环比变化最大的三个渠道。</div>
+          </div>
+          <div class="ctoolbar">
+            <div class="cleft">
+              <button class="icon-btn sq" type="button" aria-label="添加文件"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg></button>
+              <button class="icon-btn" type="button"><span class="face"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="8" width="16" height="11" rx="2"/><path d="M12 8V4M8 4h8"/></svg><span>Agent</span></span></button>
+              <button class="icon-btn" type="button"><span class="face"><span>询问</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></span></button>
+            </div>
+            <div class="cright">
+              <span class="slot-box">
+                <span class="slot-name">composer.middle · plugin_demo_draft-stats</span>
+                <button class="icon-btn" type="button" style="font-variant-numeric:tabular-nums"><span class="face"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9h16M4 15h16M10 3L8 21M16 3l-2 18"/></svg>1,284</span></button>
+              </span>
+              <span class="slot-box">
+                <span class="slot-name" style="top:auto;bottom:-11px">composer.middle · ContextUsage（重排后）</span>
+                <button class="ctx-trigger" type="button">
+                  <span class="ctx-ring"><svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="2.4"/><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-dasharray="14.5 37.7" stroke-linecap="round" transform="rotate(-90 8 8)"/></svg></span>
+                  38%
+                </button>
+              </span>
               <button class="icon-btn" type="button"><span class="face"><span>GLM-4.7</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></span></button>
               <button class="send-btn" type="button" aria-label="发送"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg></button>
             </div>
