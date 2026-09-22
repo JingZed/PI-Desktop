@@ -15,6 +15,10 @@ import {
   installPluginAssetProtocol,
   registerPluginAssetScheme,
 } from "../plugin-asset-protocol";
+import {
+  installPluginRendererProtocol,
+  registerPluginRendererScheme,
+} from "../plugin-renderer-protocol";
 import { applyNetworkProxyFromAppSettings } from "../network-proxy";
 import { readCloseBehavior } from "../window-preferences";
 import { createAgentHostBridge, type AgentHostBridge } from "../agent-host-bridge";
@@ -118,7 +122,7 @@ export type StartupDependencies = {
  * composition root through `StartupState` and dependency callbacks.
  */
 export function registerApplicationStartup(deps: StartupDependencies): void {
-  // Electron only accepts scheme privileges before the app is ready, and this
+  registerPluginRendererScheme();
   // runs from the composition root, before the `whenReady` promise can settle.
   registerPluginAssetScheme();
   // Crashpad ships with Electron, so the reporter needs no native dependency.
@@ -186,8 +190,15 @@ export function registerApplicationStartup(deps: StartupDependencies): void {
 
     // Serve declared theme assets before the renderer can ask for one; the
     // scheme itself was reserved in `registerApplicationStartup`.
+    // Serve declared theme assets before the renderer can ask for one; the
+    // scheme itself was reserved in `registerApplicationStartup`.
     installPluginAssetProtocol((pluginId, assetPath) =>
       plugins.resolveThemeAsset(pluginId, assetPath),
+    );
+    // Serve renderer entry modules the same way — a loaded plugin that
+    // declared `manifest.renderer` and holds `renderer.extension`.
+    installPluginRendererProtocol((pluginId, requestPath) =>
+      plugins.resolveRendererSource(pluginId, requestPath),
     );
     // Load the close-behavior preference before the first window exists: the
     // close handler reads `closeBehavior` synchronously, and a window created

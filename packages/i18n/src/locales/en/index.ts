@@ -309,6 +309,9 @@ export const en = {
     showErrorDetails: "Show details",
     hideErrorDetails: "Hide details",
     copyErrorDetails: "Copy details",
+    entryExtraExpand: "Show full block",
+    entryExtraCollapse: "Collapse block",
+    actionSlotMore: "More actions",
     errorProvider: "AI provider",
     errorModel: "Model",
     previewFile: "Preview in the side panel",
@@ -2018,6 +2021,7 @@ importConfirm: "Imported extensions run inside the agent process with the same a
       "agent.prompt.inject": "Adjust agent instructions",
       "agent.complete": "Run a one-shot completion with your models",
       "agent.extension": "Run code inside the agent",
+      "renderer.extension": "Draw UI in chat slots",
       "provider.register": "Add providers to the model list",
       "desktop.control": "Control the desktop",
       "models.list": "List authenticated models",
@@ -2062,7 +2066,10 @@ importConfirm: "Imported extensions run inside the agent process with the same a
       "agent.prompt.inject": "Can change instructions sent to the AI agent.",
       "agent.complete":
         "Can spend your model quota on a one-shot completion. The plugin never receives your API keys.",
-      "agent.extension": "Runs ExtensionAPI modules inside the agent process with the same access as the agent's own tools. Enable only code you trust.",
+      "agent.extension":
+        "Runs ExtensionAPI modules inside the agent process with the same access as the agent's own tools. Enable only code you trust.",
+      "renderer.extension":
+        "Loads this plugin's renderer module into the app window to draw UI slot components (message action bars, entry extras, tool cards, code-block renderers, composer controls). The module runs in the same document as PI-Desktop. Enable only code you trust.",
       "provider.register":
         "Adds the providers this plugin defines to Settings' provider list. The plugin supplies the endpoint and models; your API key stays in PI-Desktop.",
       "desktop.control":

@@ -78,6 +78,8 @@ import {
   delegateModelId,
   delegateThinkingLevel,
 } from "./model";
+import { PluginToolCard } from "./PluginToolCard";
+import { useSlotEntryForKey } from "../../../plugins/renderer-slots/use-slots";
 
 type ToolRowProps = {
   message: UiMessage;
@@ -337,6 +339,16 @@ export const ToolRow = memo(function ToolRow({
           : "is-done";
   const caret = hasDetails ? <IconChevronRight size={12} /> : null;
 
+  // The toolCard slot: one plugin card replaces the host card entirely for a
+  // tool the plugin itself registered (the no-claim gate lives in the
+  // loader). Topology nodes and denied rows keep the host card.
+  const pluginCardEntry = useSlotEntryForKey(
+    "toolCard",
+    variant === "default" && status !== "denied" ? message.toolName : undefined,
+  );
+  if (pluginCardEntry) {
+    return <PluginToolCard entry={pluginCardEntry} message={message} />;
+  }
   return (
     <div
       className={`tool-row ${variant === "topology" ? "subagent-topology-node" : ""} ${

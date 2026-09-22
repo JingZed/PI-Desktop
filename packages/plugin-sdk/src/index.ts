@@ -60,7 +60,24 @@ export type PluginManifest = {
   i18n?: PluginI18nMap;
   author?: PluginManifestAuthor;
   homepage?: string;
-  repository?: string;
+  /**
+   * Renderer entry (ES module path relative to the plugin root). Declaring it
+   * requires the `renderer.extension` permission; the module loads into the
+   * host renderer and registers UI slot components through `pi.slots`.
+   */
+  renderer?: string;
+  /**
+   * Outbound actions the renderer components may dispatch. Declaring fewer
+   * is safe; an action outside this list is refused with
+   * `PLUGIN_ACTION_UNDECLARED`. Requires `renderer.extension`.
+   */
+  rendererActions?: string[];
+  /**
+   * Methods the plugin's `onRendererCall` answers for `plugin.call`.
+   * Whitelist: an undeclared method is refused with `PLUGIN_CALL_NO_HANDLER`.
+   * Requires `renderer.extension`.
+   */
+  rendererCallMethods?: string[];
   main: string;
   icon?: string;
   /**
@@ -1272,6 +1289,10 @@ export const PLUGIN_PERMISSIONS = [
   "agent.prompt.inject",
   "agent.complete",
   "agent.extension",
+  // Renderer slots (`docs/plugin-plan/ui/`): the entry module loads into the
+  // host renderer's own document, so the surface it can touch is the
+  // renderer itself. One umbrella permission, like `agent.extension`.
+  "renderer.extension",
   "provider.register",
   "desktop.control",
   "models.list",
@@ -1325,7 +1346,8 @@ export function validateManifest(raw: unknown): {
     return { ok: false, error: "manifest.main is required" };
   }
   const mainError = relativePathError(m.main, "manifest.main");
-  if (mainError) return { ok: false, error: mainError };
+  const rendererError = manifestRendererError(m);
+  if (rendererError) return { ok: false, error: rendererError };
   if (typeof m.schemaVersion !== "number") {
     return { ok: false, error: "manifest.schemaVersion is required" };
   }
@@ -2073,3 +2095,81 @@ export {
   type PluginFsRule,
   type ResolvedFsAccess,
 } from "./fs-policy.js";
+
+/** Upper bounds for the renderer-slot declarations one plugin may carry. */
+export const MAX_RENDERER_ACTIONS_PER_PLUGIN = 16;
+export const MAX_RENDERER_CALL_METHODS_PER_PLUGIN = 32;
+
+/**
+ * Renderer-slot declaration check: the entry path, the outbound action
+ * whitelist, and the `plugin.call` method whitelist must all be well-formed,
+ * and any of them requires the `renderer.extension` permission.
+ */
+function manifestRendererError(m: Partial<PluginManifest>): string | undefined {
+  const hasRendererSurface =
+    m.renderer !== undefined ||
+    m.rendererActions !== undefined ||
+    m.rendererCallMethods !== undefined;
+  if (!hasRendererSurface) return undefined;
+  if (!m.permissions?.includes("renderer.extension")) {
+    return "manifest.renderer requires the renderer.extension permission";
+  }
+  if (m.renderer !== undefined) {
+    if (typeof m.renderer !== "string" || !m.renderer.trim()) {
+      return "manifest.renderer must be a non-empty string";
+    }
+    const pathError = relativePathError(m.renderer, "manifest.renderer");
+    if (pathError) return pathError;
+    if (!/\.(mjs|js)$/.test(m.renderer)) {
+      return "manifest.renderer must be a .js or .mjs module";
+    }
+  }
+  for (const [field, max] of [
+    ["rendererActions", MAX_RENDERER_ACTIONS_PER_PLUGIN],
+    ["rendererCallMethods", MAX_RENDERER_CALL_METHODS_PER_PLUGIN],
+  ] as const) {
+    const value = (m as Record<string, unknown>)[field];
+    if (value === undefined) continue;
+    if (!Array.isArray(value) || value.some((e) => typeof e !== "string" || !e.trim())) {
+      return `manifest.${field} must be an array of non-empty strings`;
+    }
+    if (value.length > max) {
+      return `manifest.${field} is limited to ${max} entries`;
+    }
+  }
+  return undefined;
+}
+
+export {
+  PLUGIN_RENDERER_SCHEME,
+  PLUGIN_RENDERER_SLOTS,
+  PLUGIN_SLOT_POSITIONS,
+  PLUGIN_COMPOSER_TRIGGERS,
+  PLUGIN_COMPOSER_TOKEN_LIMIT,
+  slotKeyError,
+  slotPositionsError,
+  toolCardOwnershipError,
+  type PiRendererApi,
+  type PiRendererModule,
+  type PluginRendererSlot,
+  type PluginRendererSlotOptions,
+  type PluginRendererSlotDiagnosticCode,
+  type PluginRendererDiagnostic,
+  type PluginRendererRegistration,
+  type PluginRendererStyleHandle,
+  type PluginRendererDispatch,
+  type PluginRendererActionName,
+  type PluginCallPayload,
+  type PluginSlotMessage,
+  type PluginSlotPosition,
+  type PluginActionSlotProps,
+  type PluginEntryExtraSlotProps,
+  type PluginToolCardSlotProps,
+  type PluginBlockRendererSlotProps,
+  type PluginComposerControlSlotProps,
+  type PluginComposerTriggerProps,
+  type PluginComposerTrigger,
+  type PluginComposerTriggerItem,
+  type PluginComposerTokenProps,
+  type PluginRendererCall,
+} from "./renderer.js";

@@ -41,7 +41,7 @@
   .pill.rt{color:var(--rt);background:var(--rt-bg)}
   .pill.api{color:var(--api);background:var(--api-bg)}
   .pill.draft{color:var(--warn);background:var(--warn-bg)}
-  .pill.none{color:var(--faint);background:rgba(255,255,255,.04)}
+  .pill.done{color:var(--api);background:var(--api-bg)}
   td a{color:var(--text);text-decoration:none;border-bottom:1px solid var(--line-2)}
   td a:hover{border-bottom-color:var(--ui)}
   .note{margin:16px 0 0;padding:12px 14px;border-radius:10px;background:var(--surface);color:var(--text-2);font-size:13px}
@@ -95,57 +95,58 @@
   <table>
     <thead><tr><th>id</th><th>插槽</th><th>形态</th><th>文件夹</th><th>状态</th></tr></thead>
     <tbody>
-      <tr class="open">
+      <tr class="done">
         <td class="id">user-action</td>
         <td>用户消息操作栏<br /><span style="color:var(--muted);font-size:12.5px">左右只许新增；不改正文、不动三键</span></td>
         <td><span class="pill ui">组件</span></td>
         <td><a href="ui/user-action/index.html">ui/user-action/</a></td>
-        <td><span class="pill draft">draft</span></td>
+        <td><span class="pill done">done</span></td>
       </tr>
-      <tr class="open">
+      <tr class="done">
         <td class="id">assistant-action</td>
         <td>AI 回复操作栏<br /><span style="color:var(--muted);font-size:12.5px">与用户卡同形</span></td>
         <td><span class="pill ui">组件</span></td>
         <td><a href="ui/assistant-action/index.html">ui/assistant-action/</a></td>
-        <td><span class="pill draft">draft</span></td>
+        <td><span class="pill done">done</span></td>
       </tr>
-      <tr class="open">
+      <tr class="done">
         <td class="id">entry-extra</td>
         <td>AI 回复追加区<br /><span style="color:var(--muted);font-size:12.5px">正文下方，可叠加</span></td>
         <td><span class="pill ui">组件</span></td>
         <td><a href="ui/entry-extra/index.html">ui/entry-extra/</a></td>
-        <td><span class="pill draft">draft</span></td>
+        <td><span class="pill done">done</span></td>
       </tr>
-      <tr class="open">
+      <tr class="done">
         <td class="id">tool-card</td>
         <td>工具调用卡<br /><span style="color:var(--muted);font-size:12.5px">只画自己注册的工具；无认领</span></td>
         <td><span class="pill ui">组件</span></td>
         <td><a href="ui/tool-card/index.html">ui/tool-card/</a></td>
-        <td><span class="pill draft">draft</span></td>
+        <td><span class="pill done">done</span></td>
       </tr>
-      <tr class="open">
+      <tr class="done">
         <td class="id">block-renderer</td>
         <td>块渲染器<br /><span style="color:var(--muted);font-size:12.5px"><code>前缀:语言</code>；不得注册已有语言</span></td>
         <td><span class="pill ui">组件</span></td>
         <td><a href="ui/block-renderer/index.html">ui/block-renderer/</a></td>
-        <td><span class="pill draft">draft</span></td>
+        <td><span class="pill done">done</span></td>
       </tr>
-      <tr class="open">
+      <tr class="done">
         <td class="id">composer</td>
         <td>输入区<br /><span style="color:var(--muted);font-size:12.5px">左右控件 · 触发符 · 记号；固定件不可动</span></td>
         <td><span class="pill ui">组件</span></td>
         <td><a href="ui/composer/index.html">ui/composer/</a></td>
-        <td><span class="pill draft">draft</span></td>
+        <td><span class="pill done">done</span></td>
       </tr>
-      <tr class="open">
+      <tr class="done">
         <td class="id">self-dialog</td>
         <td>弹窗 / 悬浮层 · 自理<br /><span style="color:var(--muted);font-size:12.5px">无槽无注册；四条底线</span></td>
         <td><span class="pill ui">指导</span></td>
         <td><a href="ui/self-dialog/index.html">ui/self-dialog/</a></td>
-        <td><span class="pill draft">draft</span></td>
+        <td><span class="pill done">done</span></td>
       </tr>
     </tbody>
   </table>
+  <p class="note"><b>落地状态：</b>以上 7 项已实现（SDK + 宿主挂载 + 契约测试 + 示例插件 <code>examples/plugins/ui-slots-demo</code>）；契约与词表详见 <a href="../slot-contract.html">slot-contract.html</a>。</p>
 </section>
 
 <section>

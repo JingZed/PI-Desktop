@@ -199,7 +199,9 @@ export type PluginCapability =
   | "services"
   | "bus"
   /** `contributes.agentExtensions`: ExtensionAPI modules in the agent process. */
-  | "agentExtension";
+  | "agentExtension"
+  /** `manifest.renderer`: the plugin ships a renderer slot entry (`docs/plugin-plan/ui/`). */
+  | "rendererUi";
 
 export type PluginSettingType =
   | "string"
@@ -282,9 +284,22 @@ export type PluginSummary = {
   status: "ready" | "error" | "disabled" | "load_error";
   errorMessage?: string;
   permissions: string[];
-  path?: string;
-  /** Derived from the manifest by the host: which contribution kinds exist. */
   capabilities?: PluginCapability[];
+  /**
+   * Present when the plugin declares `manifest.renderer`: the renderer entry
+   * plus the outbound action / `plugin.call` method whitelists the host
+   * enforces for its slot components.
+   */
+  renderer?: {
+    entry: string;
+    actions: string[];
+    callMethods: string[];
+  };
+  /** The plugin's own `contributes.agentTools` tool names (`tools` row from
+   * the host registry). The toolCard slot's no-claim gate reads this: a
+   * plugin card may only render calls of a tool this list names. Absent in
+   * registry rows written before the renderer milestone. */
+  tools?: string[];
   description?: string;
   author?: string;
   installedAt?: string;

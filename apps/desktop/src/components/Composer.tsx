@@ -52,6 +52,8 @@ import {
 import {
   createFileReference,
   editorSelectionRange,
+  readEditorValue,
+  setEditorCaret,
   isImageFilePath,
   nextChipToken,
 } from "../features/chat/composer/editor";
@@ -61,8 +63,18 @@ import { useComposerSubmit } from "../features/chat/composer/hooks/useComposerSu
 import { ComposerImageAttachments } from "../features/chat/composer/ComposerImageAttachments";
 import { ComposerInput } from "../features/chat/composer/ComposerInput";
 import { useComposerModelMenu } from "../features/chat/composer/hooks/useComposerModelMenu";
-import { ComposerToolbar } from "../features/chat/composer/ComposerToolbar";
+import { formatPluginTriggerInsert } from "@pi-desktop/shared";
+import { serializePluginTokens as serializePluginTokensForSend } from "../features/chat/composer/plugin-trigger";
 import { ComposerStatus } from "../features/chat/composer/ComposerStatus";
+import { ComposerToolbar } from "../features/chat/composer/ComposerToolbar";
+import { registerComposerInsert } from "../features/chat/composer/insert-bridge";
+import {
+  useComposerPluginTrigger,
+  useComposerPluginTokens,
+  useComposerTriggerAcceptBridge,
+} from "../features/chat/composer/use-plugin-composer-slots";
+import { SlotBoundary } from "../plugins/renderer-slots/use-slots";
+import { dispatchFor } from "../plugins/renderer-host/dispatch";
 
 const EMPTY_QUEUED_PROMPTS: QueuedPrompt[] = [];
 
@@ -419,6 +431,8 @@ export function Composer({
     sendBlocked,
     pasting,
     activeFileReferences,
+    serializePluginTokens: (draft: string) =>
+      serializePluginTokensForSend(draft, pluginTokensRef.current),
     t,
     sendPrompt,
     steerPrompt,
@@ -449,6 +463,44 @@ export function Composer({
     composing,
     enabled: !inputBlocked,
   });
+
+  // Plugin composer slots (# trigger + token records). The trigger state
+  // freezes during IME composition inside the hook; 程序写入 never fires it.
+  const pluginTrigger = useComposerPluginTrigger({
+    value,
+    cursor,
+    composing,
+    enabled: !inputBlocked,
+  });
+  const pluginTokens = useComposerPluginTokens();
+  // A ref keeps the submit serializer reading the latest token records
+  // without re-creating the submit callback on every keystroke.
+  const pluginTokensRef = useRef(pluginTokens.tokens);
+  pluginTokensRef.current = pluginTokens.tokens;
+  const activeTrigger = pluginTrigger;
+
+  // The accept route for `composer.acceptTriggerItem`: turn the picked item
+  // into a recorded token plus a `#label ` chip in the draft.
+  const pluginAcceptRef = useRef<(item: { label: string; value?: unknown }) => void>(
+    () => {},
+  );
+  useComposerTriggerAcceptBridge({
+    active: Boolean(activeTrigger),
+    onAccept: (item) => pluginAcceptRef.current(item),
+  });
+  pluginAcceptRef.current = (item) => {
+    if (!activeTrigger) return;
+    const folded = pluginTokens.addToken({
+      pluginId: activeTrigger.entry.pluginId,
+      label: item.label,
+      send: item.value,
+    });
+    const insert = formatPluginTriggerInsert(item.label);
+    const before = value.slice(0, activeTrigger.tokenStart);
+    const after = value.slice(activeTrigger.tokenEnd);
+    const nextText = `${before}${insert}${after}`;
+    applyEditorDraft(nextText, fileReferencesRef.current, before.length + insert.length);
+  };
 
   const acceptCompletion = (index: number) => {
     const result = composerAc.accept(index);
@@ -487,6 +539,24 @@ export function Composer({
   // height (it grows with multi-line input) so the last message sits just
   // above the box instead of far below it.
   useEffect(() => {
+  // The insert bridge: plugin slot components reach the draft through
+  // `composer.insertText`; this composer instance owns the live route while
+  // it is mounted and clears it on unmount (last-writer-wins is the docked
+  // composer, which is the one the user sees).
+  useEffect(() => {
+    registerComposerInsert((text) => {
+      const element = draft.ref.current;
+      if (!element) return;
+      const current = readEditorValue(element);
+      const selection = editorSelectionRange(element);
+      const nextText = current.slice(0, selection.start) + text + current.slice(selection.end);
+      applyEditorDraft(nextText, fileReferencesRef.current, selection.start + text.length);
+      element.focus();
+      setEditorCaret(element, selection.start + text.length);
+    });
+    return () => registerComposerInsert(null);
+  }, [draft, fileReferencesRef]);
+
     const el = dockRef.current;
     if (!el) return;
     // Setting a custom property on documentElement invalidates style for the
@@ -557,6 +627,53 @@ export function Composer({
               ac={composerAc}
               onAccept={acceptCompletion}
             />
+          ) : null}
+          {activeTrigger ? (
+            <div
+              className="pi-plugin-trigger-menu"
+              data-pi-plugin={activeTrigger.entry.pluginId}
+            >
+              <SlotBoundary entry={activeTrigger.entry} slot="composerTrigger">
+                {activeTrigger.entry.component({
+                  query: activeTrigger.query,
+                  dispatch: dispatchFor(activeTrigger.entry.pluginId),
+                }) as React.ReactNode}
+              </SlotBoundary>
+            </div>
+          ) : null}
+          {pluginTokens.tokens.length ? (
+            <div className="pi-plugin-token-chips" role="list">
+              {pluginTokens.tokens
+                .slice(0, 8)
+                .map((token) => (
+                  <span
+                    key={`${token.pluginId}:${token.label}`}
+                    className="pi-plugin-token-chip"
+                    role="listitem"
+                  >
+                    #{token.label}
+                    <button
+                      type="button"
+                      className="pi-plugin-token-chip-remove"
+                      aria-label={`remove #${token.label}`}
+                      onClick={() => pluginTokens.removeToken(token.label)}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              {pluginTokens.foldedCount > 0 ? (
+                <span
+                  className="pi-plugin-token-chip is-fold"
+                  title={pluginTokens.tokens
+                    .slice(8)
+                    .map((token) => `#${token.label} (${token.pluginId})`)
+                    .join("\n")}
+                >
+                  ⧉ +{pluginTokens.foldedCount}
+                </span>
+              ) : null}
+            </div>
           ) : null}
           <ComposerInput
             imagePreview={draft.imagePreview}

@@ -101,9 +101,10 @@
     <thead><tr><th>模型</th><th>契约</th><th>用在哪</th></tr></thead>
     <tbody>
       <tr><td>props-once</td><td>一次给全；重挂载才更新</td><td>块渲染（闭合后）</td></tr>
+      <tr><td><span class="pill core">核心 H</span></td><td><code>composer.acceptTriggerItem</code></td><td>触发符候选选中项回流（<code>label</code> + <code>value</code>）；宿主写入 <code>#label</code> 记号；菜单未开拒绝 <code>PLUGIN_ACTION_UNROUTED</code></td></tr>
+      <tr><td>props-once</td><td>一次给全；重挂载才更新</td><td>块渲染（闭合后）</td></tr>
       <tr><td>props-push</td><td>宿主推整份，插件不订阅</td><td>action · entryExtra · 工具卡</td></tr>
       <tr><td>request</td><td>问几次答几次</td><td>触发符候选</td></tr>
-    </tbody>
   </table>
   <table>
     <thead><tr><th>层</th><th>词</th><th>约束</th></tr></thead>
@@ -144,7 +145,7 @@
      <li>左右位（userAction / assistantAction）每侧最多 3 个可见项，第 4 个起进宿主「⋯」折叠菜单；entryExtra 单块折叠态 320px / 展开态 600px 内部滚动</li>
      <li>composer 触发符固定 <code>@</code> / <code>#</code> / <code>/</code>；记号单草稿上限 8 个；tool-card 运行中 500ms 节拍合并推送（状态跃迁立即推）</li>
      <li><code>ui.ask</code> 定名不变：与 agent 侧布尔确认同名不同物，消歧表述以 render/ask 为准</li>
-     <li>SDK 尚未实现：以上为文档定稿；落地时按根 AGENTS.md §13/§10 同步 spec/ADR 与契约测试</li>
+     <li>SDK 与宿主已实现（7 槽 + self-dialog 指导项；dispatch 词表 <code>plugin.call</code> / <code>composer.insertText</code> / <code>composer.acceptTriggerItem</code>）；示例见 <code>examples/plugins/ui-slots-demo</code>，契约测试见 <code>apps/desktop/test/plugin-*.test.mjs</code></li>
    </ul>
  </section>
 

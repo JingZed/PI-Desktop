@@ -1,0 +1,268 @@
+/**
+ * Host chrome styles for plugin slot regions plus the self-dialog tool
+ * classes (`docs/plugin-plan/ui/self-dialog/`): p-overlay / p-dialog /
+ * p-notice with the --ds-scrim / --ds-shadow-dialog tokens.
+ *
+ * Plugin self layers own z 600..899 (first 600, +1 per layer); the host
+ * safety layer (permission approvals, confirms) pins to 900; the existing
+ * 1000+ ladder is untouched.
+ */
+
+.pi-plugin-slot {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.pi-plugin-slot[data-pi-slot="entryExtra"] {
+  display: block;
+  width: 100%;
+}
+
+/* ---- self-dialog tool classes ---------------------------------------- */
+
+:root {
+  --ds-scrim: rgb(0 0 0 / 0.55);
+  --ds-shadow-dialog: 0 24px 64px rgb(0 0 0 / 0.4), 0 4px 16px rgb(0 0 0 / 0.3);
+  --ds-z-plugin-layer: 600;
+  --ds-z-safety-layer: 900;
+}
+
+.p-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--ds-z-plugin-layer);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ds-scrim);
+}
+
+.p-overlay__corner {
+  align-items: flex-end;
+  justify-content: flex-end;
+  background: transparent;
+  pointer-events: none;
+  padding: 16px;
+}
+
+.p-overlay__corner > * {
+  pointer-events: auto;
+}
+
+.p-dialog {
+  display: flex;
+  flex-direction: column;
+  min-width: 320px;
+  max-width: min(560px, calc(100vw - 48px));
+  max-height: min(70vh, 640px);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--ds-border, rgb(255 255 255 / 0.12));
+  background: var(--ds-bg-elevated, #1b1b1b);
+  color: var(--ds-text-primary, #ededed);
+  box-shadow: var(--ds-shadow-dialog);
+  overflow: hidden;
+}
+
+.p-dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  font-weight: var(--font-weight-semibold);
+  border-bottom: 1px solid var(--ds-border, rgb(255 255 255 / 0.08));
+}
+
+.p-dialog__body {
+  padding: 14px 16px;
+  overflow: auto;
+}
+
+.p-dialog__foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--ds-border, rgb(255 255 255 / 0.08));
+}
+
+.p-notice {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 320px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--ds-border, rgb(255 255 255 / 0.12));
+  background: var(--ds-bg-elevated, #1b1b1b);
+  color: var(--ds-text-primary, #ededed);
+  box-shadow: var(--ds-shadow-dialog);
+}
+
+.p-notice__msg {
+  flex: 1;
+  font-size: var(--text-md);
+  line-height: var(--leading-body);
+}
+.p-notice-icon {
+  flex: none;
+  width: 18px;
+  height: 18px;
+}
+
+.p-notice__dismiss {
+  cursor: pointer;
+  border: 0;
+  background: transparent;
+  color: var(--ds-text-secondary, #b0b0b0);
+  font: inherit;
+  padding: 0 2px;
+}
+
+.p-notice__dismiss:hover {
+  color: var(--ds-text-primary, #ededed);
+}
+/* ---- entryExtra clamp (docs/plugin-plan/ui/entry-extra) --------------- */
+
+.pi-entry-extra-stack {
+  display: block;
+  width: 100%;
+}
+
+.pi-entry-extra-block {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+}
+
+.pi-entry-extra-viewport {
+  overflow: hidden;
+}
+
+.pi-entry-extra-viewport[data-clipped="true"] {
+  -webkit-mask-image: linear-gradient(to bottom, #000 92%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 92%, transparent 100%);
+}
+
+.pi-entry-extra-viewport[data-expanded="true"] {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.pi-entry-extra-toggle {
+  margin-top: 4px;
+  padding: 2px 8px;
+  border: 0;
+  border-radius: var(--radius-2xs);
+  background: transparent;
+  color: var(--ds-text-secondary, rgb(255 255 255 / 0.6));
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.pi-entry-extra-toggle:hover {
+  color: var(--ds-text-primary, rgb(255 255 255 / 0.9));
+  background: var(--ds-bg-hover, rgb(255 255 255 / 0.06));
+}
+.pi-action-overflow {
+  position: relative;
+  display: inline-flex;
+}
+
+.pi-action-overflow-panel {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 120px;
+  padding: 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--ds-border, rgb(255 255 255 / 0.12));
+  background: var(--ds-bg-elevated, #1b1b1b);
+  color: var(--ds-text-primary, #ededed);
+  box-shadow: var(--ds-shadow-dialog);
+}
+
+.pi-action-overflow[data-side="left"] .pi-action-overflow-panel {
+  left: 0;
+}
+
+.pi-action-overflow[data-side="right"] .pi-action-overflow-panel {
+  right: 0;
+}
+
+.pi-plugin-slot[data-pi-slot="toolCard"] {
+  display: block;
+  width: 100%;
+}
+
+.pi-plugin-tool-card {
+  display: block;
+  width: 100%;
+}
+
+.pi-plugin-block-renderer {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+}
+
+/* ---- composer trigger menu + token chips (docs/plugin-plan/ui/composer) -- */
+
+.pi-plugin-trigger-menu {
+  position: absolute;
+  top: 8px;
+  left: 12px;
+  right: 12px;
+  z-index: 30;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--ds-border, rgb(255 255 255 / 0.12));
+  background: var(--ds-bg-elevated, #1b1b1b);
+  color: var(--ds-text-primary, #ededed);
+  box-shadow: var(--ds-shadow-dialog);
+}
+
+.pi-plugin-token-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 0 12px 6px;
+}
+
+.pi-plugin-token-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--ds-border, rgb(255 255 255 / 0.12));
+  background: var(--ds-bg-hover, rgb(255 255 255 / 0.06));
+  font-size: var(--text-xs);
+  line-height: var(--leading-tighter);
+}
+
+.pi-plugin-token-chip.is-fold {
+  cursor: default;
+}
+
+.pi-plugin-token-chip-remove {
+  cursor: pointer;
+  border: 0;
+  padding: 0 2px;
+  background: transparent;
+  color: var(--ds-text-secondary, rgb(255 255 255 / 0.6));
+  font: inherit;
+  font-size: var(--text-xs);
+}
+
+.pi-plugin-token-chip-remove:hover {
+  color: var(--ds-text-primary, #ededed);
+}

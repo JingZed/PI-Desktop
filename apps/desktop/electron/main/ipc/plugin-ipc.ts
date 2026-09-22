@@ -137,6 +137,14 @@ export function registerPluginIpc({
     return { ...result, plugins: pluginsWithSettings };
   });
 
+  handle(IPC.invoke.pluginRendererCall, async (pluginId: unknown, method: unknown, args: unknown) => {
+    const id = String(pluginId ?? "");
+    const name = String(method ?? "");
+    if (!id || !name) throw new Error("INVALID_ARGUMENT: pluginId and method are required");
+    return plugins.callRenderer(id, name, args);
+  });
+
+
   handle(IPC.invoke.pluginSettingsGet, async (id: string) => {
     const settings = await plugins.getPluginSettings(String(id ?? ""));
     return { settings };

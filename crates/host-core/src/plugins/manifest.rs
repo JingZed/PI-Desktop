@@ -7,7 +7,19 @@ pub struct PluginManifest {
     pub id: String,
     pub name: String,
     pub version: String,
-    pub main: String,
+  pub main: String,
+  /// Renderer entry module (relative path). Declaring it requires the
+  /// `renderer.extension` permission; the module registers UI slot
+  /// components in the host renderer (`docs/plugin-plan/ui/`).
+  #[serde(default, rename = "renderer")]
+  pub renderer: Option<String>,
+  /// Outbound actions the renderer components may dispatch; the desktop
+  /// host refuses anything outside this list.
+  #[serde(default, rename = "rendererActions")]
+  pub renderer_actions: Vec<String>,
+  /// Methods the plugin's `onRendererCall` answers for `plugin.call`.
+  #[serde(default, rename = "rendererCallMethods")]
+  pub renderer_call_methods: Vec<String>,
     #[serde(default)]
     pub description: Option<String>,
     /// Display strings per locale — `{ "en": { name, description, safetyNotes },
@@ -48,19 +60,8 @@ impl PluginManager {
         if manifest.name.trim().is_empty() || manifest.version.trim().is_empty() {
             bail!("PLUGIN_INVALID: name/version required");
         }
-        let main_path = path.join(&manifest.main);
-        if !main_path.exists() {
-            bail!("PLUGIN_LOAD_FAILED: main entry missing");
-        }
-        if let Some(ui) = &manifest.ui {
-            if let Some(panel) = &ui.panel {
-                let panel_path = path.join(panel);
-                if !panel_path.exists() {
-                    bail!("PLUGIN_INVALID: ui.panel missing");
-                }
-            }
-        }
         validate_contributions(path, &manifest)?;
+        validate_renderer(path, &manifest)?;
         Ok(manifest)
     }
 }

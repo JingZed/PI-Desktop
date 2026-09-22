@@ -578,7 +578,15 @@ async function handleParentCall(method, payload, invocationId) {
       if (entry.stop) await entry.stop();
       return { ok: true };
     }
-    case "lifecycle.unload": {
+    case "renderer.call": {
+      const handler = pluginModule?.onRendererCall;
+      if (typeof handler !== "function") {
+        const error = new Error("plugin does not implement onRendererCall");
+        error.code = "PLUGIN_CALL_NO_HANDLER";
+        throw error;
+      }
+      return handler(String(payload?.method ?? ""), payload?.args ?? {});
+    }
       for (const id of invocations.keys()) cancelInvocation(id, "Plugin unloaded");
       // Best effort: a throwing onUnload must not block teardown.
       try {

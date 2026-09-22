@@ -1262,6 +1262,24 @@ function parseSpeechAdapterReply(value: unknown): {
   throw apiError("INVALID_ARGUMENT", "speech adapter reply kind is invalid");
 }
 
+/** `plugin.call` relay limits (`docs/plugin-plan/render/plugin-call/`). */
+export const RENDERER_CALL_QPS = 10;
+export const RENDERER_CALL_MAX_BYTES = 64 * 1024;
+export const RENDERER_CALL_TIMEOUT_MS = 2_000;
+export const RENDERER_CALL_BREAKER_THRESHOLD = 5;
+export const RENDERER_CALL_BREAKER_COOLDOWN_MS = 30_000;
+
+/**
+ * Per-plugin relay bookkeeping, keyed weakly so an unloaded plugin's state
+ * goes with it. `calls` are the timestamps inside the current 1s QPS window.
+ */
+type RendererCallState = {
+  calls: number[];
+  failures: number;
+  disabledUntil: number;
+};
+const rendererCallStates = new WeakMap<object, RendererCallState>();
+
 export class PluginRuntime {
   private commands = new Map<string, RegisteredCommand>();
   private tools = new Map<string, RegisteredPluginTool>();
@@ -1511,6 +1529,95 @@ export class PluginRuntime {
       ts: Date.now(),
     });
     return { id: skill.id, name: skill.name, body: parsed.body };
+  }
+
+
+  /**
+   * Source resolver behind the `plugin-renderer://` scheme: a loaded,
+   * permission-granted plugin may serve module files from inside its own
+   * package, and nothing else (`docs/plugin-plan/ui/`).
+   */
+  resolveRendererSource(pluginId: string, requestPath: string): string | null {
+    const loaded = this.loaded.get(pluginId);
+    if (!loaded || loaded.disposing) return null;
+    if (!loaded.permissions.has("renderer.extension")) return null;
+    if (!loaded.manifest.renderer) return null;
+    const base = resolve(loaded.path);
+    const target = resolve(base, requestPath);
+    if (target !== base && !target.startsWith(base + sep)) return null;
+    return target;
+  }
+
+  /**
+   * The `plugin.call` relay: a renderer slot component asks its own plugin
+   * for one JSON answer. Whitelist, size ceiling, QPS brake, 2s timeout, and
+   * the failure breaker are all enforced here — the renderer only ever sees
+   * coded refusals, never the raw failure modes.
+   */
+  async callRenderer(pluginId: string, method: string, args: unknown): Promise<unknown> {
+    const loaded = this.loaded.get(pluginId);
+    if (!loaded || loaded.disposing || !loaded.child) {
+      throw apiError("PLUGIN_NOT_FOUND", `renderer plugin not loaded: ${pluginId}`);
+    }
+    if (!loaded.permissions.has("renderer.extension")) {
+      throw apiError("PLUGIN_PERMISSION_DENIED", "renderer.extension is not granted");
+    }
+    if (!loaded.manifest.renderer) {
+      throw apiError("PLUGIN_SLOT_NOT_DECLARED", "plugin declares no renderer entry");
+    }
+    if (!loaded.manifest.rendererCallMethods?.includes(method)) {
+      throw apiError("PLUGIN_CALL_NO_HANDLER", `method not declared: ${method}`);
+    }
+    let state = rendererCallStates.get(loaded);
+    if (!state) {
+      state = { calls: [], failures: 0, disabledUntil: 0 };
+      rendererCallStates.set(loaded, state);
+    }
+    const now = Date.now();
+    if (now < state.disabledUntil) {
+      throw apiError("PLUGIN_CALL_DISABLED", "plugin.call is cooling down after repeated failures");
+    }
+    state.calls = state.calls.filter((t) => now - t < 1000);
+    if (state.calls.length >= RENDERER_CALL_QPS) {
+      throw apiError("PLUGIN_CALL_RATE_LIMITED", `plugin.call exceeds ${RENDERER_CALL_QPS} calls/s`);
+    }
+    try {
+      if ((JSON.stringify({ method, args }) ?? "").length > RENDERER_CALL_MAX_BYTES) {
+        throw apiError("PLUGIN_CALL_TOO_LARGE", "plugin.call payload exceeds 64KB");
+      }
+    } catch (error) {
+      if ((error as PluginApiError)?.code) throw error;
+      throw apiError("PLUGIN_CALL_UNSERIALIZABLE", "plugin.call args must be JSON");
+    }
+    state.calls.push(now);
+    try {
+      const value = await this.sendToChild(
+        loaded,
+        { t: "call", method: "renderer.call", payload: { method, args } },
+        RENDERER_CALL_TIMEOUT_MS,
+      );
+      let answer: string;
+      try {
+        answer = JSON.stringify(value ?? null) ?? "";
+      } catch {
+        throw apiError("PLUGIN_CALL_UNSERIALIZABLE", "plugin.call answer must be JSON");
+      }
+      if (answer.length > RENDERER_CALL_MAX_BYTES) {
+        throw apiError("PLUGIN_CALL_TOO_LARGE", "plugin.call answer exceeds 64KB");
+      }
+      state.failures = 0;
+      return value ?? null;
+    } catch (error) {
+      if ((error as PluginApiError)?.code === "TIMEOUT") {
+        state.failures += 1;
+        if (state.failures >= RENDERER_CALL_BREAKER_THRESHOLD) {
+          state.disabledUntil = Date.now() + RENDERER_CALL_BREAKER_COOLDOWN_MS;
+          state.failures = 0;
+        }
+        throw apiError("PLUGIN_CALL_TIMEOUT", `plugin ${pluginId} did not answer ${method} within ${RENDERER_CALL_TIMEOUT_MS}ms`);
+      }
+      throw error;
+    }
   }
 
   getLoaded(pluginId: string): LoadedPlugin | undefined {

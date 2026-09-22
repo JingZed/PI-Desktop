@@ -66,14 +66,18 @@ pub(crate) use marketplace::{
     built_in_catalog_at, bundled_package_bytes, has_package_metadata, host_supports_version,
     latest_market_version,
 };
-pub(crate) use permissions::{derive_capabilities, derive_settings, permission_diff, sanitize_id};
+pub(crate) use permissions::{
+    derive_capabilities, derive_settings, permission_diff, renderer_row, sanitize_id, tools_row,
+};
 pub(crate) use providers::{
     declared_providers, is_known_api_style, is_known_auth_kind, owned_provider_ids,
     plugin_provider_row_id, reconcile_all, reconcile_plugin, remove_plugin_providers,
     set_plugin_providers_enabled, sync_plugin_providers, MAX_PLUGIN_PROVIDERS,
     MAX_PLUGIN_PROVIDER_MODELS,
 };
-pub(crate) use validation::{is_local_package_url, package_host_allowed, validate_contributions};
+pub(crate) use validation::{
+    is_local_package_url, package_host_allowed, validate_contributions, validate_renderer,
+};
 
 #[cfg(test)]
 mod tests;

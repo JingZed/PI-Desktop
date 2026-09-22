@@ -292,6 +292,9 @@ export const ko = {
     copied: "복사됨",
     copyFailed: "클립보드에 복사하지 못했습니다",
     messageMenu: "메시지 작업",
+    entryExtraExpand: "전체 콘텐츠 보기",
+    entryExtraCollapse: "콘텐츠 접기",
+    actionSlotMore: "더 많은 작업",
     conversationMenu: "대화 작업",
     selectMessageText: "메시지 텍스트 선택",
     copyConversation: "대화 복사",
@@ -2015,6 +2018,7 @@ importConfirm: "가져온 확장은 에이전트 프로세스 안에서 에이�
       "agent.prompt.inject": "에이전트 지침 조정",
       "agent.complete": "모델로 일회성 완성 실행",
       "agent.extension": "에이전트 안에서 코드 실행",
+      "renderer.extension": "채팅 슬롯에 UI 그리기",
       "provider.register": "모델 목록에 프로바이더 추가",
       "desktop.control": "데스크톱 제어",
       "models.list": "인증된 모델 목록 표시",
@@ -2059,6 +2063,7 @@ importConfirm: "가져온 확장은 에이전트 프로세스 안에서 에이�
       "agent.complete":
         "모델 할당량을 사용해 일회성 완성을 실행할 수 있습니다. 플러그인은 API 키를 받지 않습니다.",
       "agent.extension": "ExtensionAPI 모듈을 에이전트 프로세스 안에서 에이전트 자체 도구와 같은 권한으로 실행합니다. 신뢰하는 코드만 켜세요.",
+      "renderer.extension": "이 플러그인의 렌더러 모듈을 앱 창에 로드하여 메시지 작업 표시줄, 응답 추가 영역, 도구 카드, 코드 블록 렌더러, 작성기 컨트롤 등 UI 슬롯 구성 요소를 그립니다. 모듈은 PI-Desktop과 같은 문서에서 실행됩니다. 신뢰하는 코드만 활성화하세요.",
       "provider.register":
         "이 플러그인이 정의한 프로바이더를 설정의 프로바이더 목록에 추가합니다. 플러그인은 엔드포인트와 모델을 제공하며, API 키는 PI-Desktop에 남습니다.",
       "desktop.control":
