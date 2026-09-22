@@ -29,6 +29,14 @@ export type ChangelogEntry = {
 
 const enEntries: ChangelogEntry[] = [
   {
+    version: "0.15.4",
+    date: "2026-09-23",
+    highlights: [
+      "Preserve chat state and recover the workspace after a renderer crash.",
+    ],
+  },
+
+  {
     version: "0.15.3",
     date: "2026-09-22",
     highlights: [
@@ -835,6 +843,12 @@ const enEntries: ChangelogEntry[] = [
 
 const zhCNEntries: ChangelogEntry[] = [
   {
+    version: "0.15.4",
+    date: "2026-09-23",
+    highlights: ["渲染器崩溃后保留聊天状态，并恢复工作区。"],
+  },
+
+  {
     version: "0.15.3",
     date: "2026-09-22",
     highlights: [
@@ -1640,6 +1654,12 @@ const zhCNEntries: ChangelogEntry[] = [
 ];
 
 const zhTWEntries: ChangelogEntry[] = [
+  {
+    version: "0.15.4",
+    date: "2026-09-23",
+    highlights: ["渲染器崩潰後保留聊天狀態，並恢復工作區。"],
+  },
+
   {
     version: "0.15.3",
     date: "2026-09-22",

@@ -2,6 +2,14 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const deEntries: ChangelogEntry[] = [
   {
+    "version": "0.15.4",
+    "date": "2026-09-23",
+    "highlights": [
+      "Chat-Zustand nach einem Renderer-Absturz bewahren und den Arbeitsbereich wiederherstellen.",
+    ],
+  },
+
+  {
     "version": "0.15.3",
     "date": "2026-09-22",
     "highlights": [

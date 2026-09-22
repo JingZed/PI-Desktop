@@ -2,6 +2,12 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const koEntries: ChangelogEntry[] = [
   {
+    version: "0.15.4",
+    date: "2026-09-23",
+    highlights: ["렌더러가 충돌한 뒤에도 채팅 상태를 보존하고 작업 공간을 복구합니다."],
+  },
+
+  {
     version: "0.15.3",
     date: "2026-09-22",
     highlights: [

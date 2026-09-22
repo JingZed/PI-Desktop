@@ -2,6 +2,14 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const esEntries: ChangelogEntry[] = [
   {
+    "version": "0.15.4",
+    "date": "2026-09-23",
+    "highlights": [
+      "Conservar el estado del chat y recuperar el espacio de trabajo después de un fallo del renderizador.",
+    ],
+  },
+
+  {
     "version": "0.15.3",
     "date": "2026-09-22",
     "highlights": [
