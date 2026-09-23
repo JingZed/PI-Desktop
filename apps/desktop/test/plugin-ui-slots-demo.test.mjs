@@ -25,7 +25,6 @@ test("the demo manifest declares the full renderer action vocabulary", () => {
     [...manifest.rendererActions].sort(),
     ["composer.acceptTriggerItem", "composer.insertText", "plugin.call"],
   );
-  assert.ok(manifest.rendererCallMethods.includes("stats.summary"));
   assert.ok(manifest.permissions.includes("renderer.extension"));
   assert.ok(manifest.permissions.includes("agent.tool.register"));
   // toolCard ownership premise: the claimed tool is declared here.
@@ -36,6 +35,19 @@ test("the demo manifest declares the full renderer action vocabulary", () => {
   // Entry files exist.
   assert.ok(manifest.main.endsWith("main.js"));
   assert.ok(manifest.renderer.endsWith("renderer/index.mjs"));
+});
+
+test("the demo renderer stays valid ESM with every registration", () => {
+  execFileSync(process.execPath, ["--check", join(demoDir, "renderer/index.mjs")]);
+  assert.match(rendererSource, /import \{ createElement as h, useState \} from "react"/);
+});
+
+test("the page CSP lets the import map's blob shims load", () => {
+  // The React import map serves shims from blob: URLs; a built page whose
+  // script-src lacks blob: blocks every plugin module at load (seen live as
+  // PLUGIN_SLOT_LOAD_FAILED after a CSP security error).
+  const html = readFileSync(root("apps/desktop/index.html"), "utf8");
+  assert.match(html, /script-src[^;]*\bblob:/);
 });
 
 test("the headless entry answers the declared renderer method", async () => {

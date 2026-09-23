@@ -75,6 +75,7 @@ import {
   useComposerPluginTokens,
   useComposerTriggerAcceptBridge,
 } from "../features/chat/composer/use-plugin-composer-slots";
+import { ComposerTokenChip } from "../features/chat/composer/ComposerTokenChip";
 import { SlotBoundary } from "../plugins/renderer-slots/use-slots";
 import { dispatchFor } from "../plugins/renderer-host/dispatch";
 
@@ -537,10 +538,6 @@ export function Composer({
     );
   };
 
-  // Keep the transcript's bottom reserve in sync with the composer's real
-  // height (it grows with multi-line input) so the last message sits just
-  // above the box instead of far below it.
-  useEffect(() => {
   // The insert bridge: plugin slot components reach the draft through
   // `composer.insertText`; this composer instance owns the live route while
   // it is mounted and clears it on unmount (last-writer-wins is the docked
@@ -559,6 +556,10 @@ export function Composer({
     return () => registerComposerInsert(null);
   }, [draft, fileReferencesRef]);
 
+  // Keep the transcript's bottom reserve in sync with the composer's real
+  // height (it grows with multi-line input) so the last message sits just
+  // above the box instead of far below it.
+  useEffect(() => {
     const el = dockRef.current;
     if (!el) return;
     // Setting a custom property on documentElement invalidates style for the
@@ -651,21 +652,11 @@ export function Composer({
               {pluginTokens.tokens
                 .slice(0, 8)
                 .map((token) => (
-                  <span
+                  <ComposerTokenChip
                     key={`${token.pluginId}:${token.label}`}
-                    className="pi-plugin-token-chip"
-                    role="listitem"
-                  >
-                    #{token.label}
-                    <button
-                      type="button"
-                      className="pi-plugin-token-chip-remove"
-                      aria-label={`remove #${token.label}`}
-                      onClick={() => pluginTokens.removeToken(token.label)}
-                    >
-                      ×
-                    </button>
-                  </span>
+                    token={token}
+                    onRemove={pluginTokens.removeToken}
+                  />
                 ))}
               {pluginTokens.foldedCount > 0 ? (
                 <span

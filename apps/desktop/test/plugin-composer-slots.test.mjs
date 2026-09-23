@@ -209,3 +209,29 @@ test("the trigger menu and token chips have host chrome styles", () => {
   assert.match(shell, /\.pi-plugin-token-chip-remove \{/);
   assert.match(shell, /\.pi-plugin-token-chip\.is-fold \{/);
 });
+
+test("the composer mounts a composerToken outlet keyed by label", () => {
+  // The composerToken slot had no host outlet: registrations were dead.
+  // The chip renders the claiming plugin's component and falls back to the
+  // host chip when no registration covers the label.
+  const chip = readFileSync(src("features/chat/composer/ComposerTokenChip.tsx"), "utf8");
+  assert.match(chip, /useSlotEntryForKey\("composerToken", token\.label\)/);
+  assert.match(chip, /createElement\(/);
+  const composer = readFileSync(src("components/Composer.tsx"), "utf8");
+  assert.match(composer, /<ComposerTokenChip\b/);
+});
+
+test("the composer's plugin effects stay top-level and independent", () => {
+  // Regression: an earlier edit nested the insert-bridge effect inside the
+  // dock-height effect, so React committed the outer effect and called
+  // useEffect from within its setup — crash-on-boot React error #321.
+  const composer = readFileSync(src("components/Composer.tsx"), "utf8");
+  const bridgeAt = composer.indexOf("registerComposerInsert((text)");
+  const dockAt = composer.indexOf("const el = dockRef.current;");
+  assert.ok(bridgeAt > -1 && dockAt > bridgeAt, "insert-bridge effect precedes the dock effect");
+  const bridgeHead = composer.lastIndexOf("useEffect(() => {", bridgeAt);
+  assert.ok(
+    bridgeHead > -1 && !composer.slice(bridgeHead + 17, bridgeAt).includes("useEffect(() => {"),
+    "insert-bridge effect opens with its own useEffect, not one inherited from another effect",
+  );
+});

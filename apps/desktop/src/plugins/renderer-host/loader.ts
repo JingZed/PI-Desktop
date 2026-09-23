@@ -144,6 +144,15 @@ export function loadRendererModule(
         `onLoad for ${pluginId} failed: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
+    // Unload raced the async load: the plugin was torn down while `onLoad`
+    // was still running, so its late registrations, styles, and dispatch
+    // binding must not survive. The load memo was already deleted by
+    // `unloadRendererModule`, which is the lost-race signal here.
+    if (!loaded.has(pluginId)) {
+      slotRegistry.unregisterPlugin(pluginId);
+      removePluginStyles(pluginId);
+      unbindDispatch(pluginId);
+    }
     return { pluginId, module: mod as PiRendererModule };
   })();
   loaded.set(pluginId, promise);
