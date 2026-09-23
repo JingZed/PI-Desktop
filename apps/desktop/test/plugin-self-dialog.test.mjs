@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+ import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
@@ -10,10 +10,14 @@ const root = (relative) => join(here, "..", "..", "..", relative);
 
 const css = readFileSync(src("plugins/renderer-slots/slot-shell.css"), "utf8");
 const loader = readFileSync(src("plugins/renderer-host/loader.ts"), "utf8");
-const demoSource = readFileSync(
-  root("examples/plugins/ui-slots-demo/renderer/index.mjs"),
-  "utf8",
-);
+ // The renderer is split into small modules; aggregate them so both the
+ // positive assertions and the "no Esc wiring" negative scan cover all files.
+ const rendererDir = join(root("examples/plugins/ui-slots-demo"), "renderer");
+ const demoSource = readdirSync(rendererDir)
+   .filter((name) => name.endsWith(".mjs"))
+   .sort()
+   .map((name) => readFileSync(join(rendererDir, name), "utf8"))
+   .join("\n");
 
 test("self-dialog tool classes and the 600..899 / 900 z ladder exist", () => {
   // Tool classes from the finalized page.

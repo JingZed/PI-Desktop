@@ -44,10 +44,12 @@ function loadComponent(name, extras = {}) {
     "../../../components/ui": { TooltipButton },
     "./shared": shared,
     "./menu-items": { userMessageMenuItems: () => [] },
-    "./TranscriptMenu": {
-      useTranscriptMenu: () => () => {},
-      useChatTextActions: () => ({ copyText: () => {}, selectText: () => {} }),
-    },
+     "./TranscriptMenu": {
+       useTranscriptMenu: () => () => {},
+       useChatTextActions: () => ({ copyText: () => {}, selectText: () => {} }),
+     },
+     "./ActionBarSlots": { ActionBarSlots: ({ children }) => children },
+     "../../../plugins/renderer-slots/use-slots": { useSlotEntries: () => [] },
     ...extras,
   };
   const module = { exports: {} };

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+ import { readdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,7 +12,20 @@ const root = (relative) => join(here, "..", "..", "..", relative);
 const demoDir = root("examples/plugins/ui-slots-demo");
 const manifest = JSON.parse(readFileSync(join(demoDir, "manifest.json"), "utf8"));
 const mainSource = readFileSync(join(demoDir, "main.js"), "utf8");
-const rendererSource = readFileSync(join(demoDir, "renderer/index.mjs"), "utf8");
+ // The renderer is split into small ES modules; aggregate every file so
+ // assertions cover the full registration + dispatch surface.
+ const rendererDir = join(demoDir, "renderer");
+ const rendererFiles = readdirSync(rendererDir)
+   .filter((name) => name.endsWith(".mjs"))
+   .sort();
+ const rendererSource = rendererFiles
+   .map((name) => readFileSync(join(rendererDir, name), "utf8"))
+   .join("\n");
+ const checkRendererSyntax = () => {
+   for (const name of rendererFiles) {
+     execFileSync(process.execPath, ["--check", join(rendererDir, name)]);
+   }
+ };
 const sdkSource = readFileSync(
   root("packages/plugin-sdk/src/renderer.ts"),
   "utf8",
@@ -37,9 +50,17 @@ test("the demo manifest declares the full renderer action vocabulary", () => {
   assert.ok(manifest.renderer.endsWith("renderer/index.mjs"));
 });
 
-test("the demo renderer stays valid ESM with every registration", () => {
-  execFileSync(process.execPath, ["--check", join(demoDir, "renderer/index.mjs")]);
-  assert.match(rendererSource, /import \{ createElement as h, useState \} from "react"/);
+ test("the demo renderer stays valid ESM with every component on shared react", () => {
+   checkRendererSyntax();
+   // Every component module binds the host's single React through the
+   // document import map.
+   // document import map; index.mjs only wires siblings together.
+   for (const name of rendererFiles) {
+     // styles.mjs is CSS-only; index.mjs only wires siblings together.
+     if (name === "index.mjs" || name === "styles.mjs") continue;
+     const source = readFileSync(join(rendererDir, name), "utf8");
+     assert.match(source, /from "react"/, `${name} must import react via the import map`);
+   }
 });
 
 test("the page CSP lets the import map's blob shims load", () => {
@@ -68,13 +89,13 @@ test("the headless entry answers the declared renderer method", async () => {
 });
 
 test("the renderer entry registers every slot with valid keys", () => {
-  // Syntax gate: the host imports this file as ESM through the import map.
-  execFileSync(process.execPath, ["--check", join(demoDir, "renderer/index.mjs")]);
+   // Syntax gate: the host imports every renderer module as ESM.
+   checkRendererSyntax();
 
   const registrations = [...rendererSource.matchAll(/pi\.slots\.register\(\s*"([^"]+)"/g)].map(
     (match) => match[1],
   );
-  // 7 slots + the self-dialog sample riding in entryExtra.
+   // 7 slots + three entryExtra registrations (runner, spark, self-dialog).
   assert.deepEqual(
     registrations,
     [
@@ -86,7 +107,8 @@ test("the renderer entry registers every slot with valid keys", () => {
       "composerControl",
       "composerTrigger",
       "composerToken",
-      "entryExtra",
+       "entryExtra",
+       "entryExtra",
     ],
   );
 
