@@ -587,6 +587,7 @@ async function handleParentCall(method, payload, invocationId) {
       }
       return handler(String(payload?.method ?? ""), payload?.args ?? {});
     }
+    case "lifecycle.unload": {
       for (const id of invocations.keys()) cancelInvocation(id, "Plugin unloaded");
       // Best effort: a throwing onUnload must not block teardown.
       try {
