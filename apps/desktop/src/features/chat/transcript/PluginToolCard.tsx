@@ -10,7 +10,14 @@
  * default card is gone for this row, so the failure is a collapsed region,
  * not a missing tool call.
  */
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import {
+  createElement,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ComponentType,
+  type ReactNode,
+} from "react";
 import type { UiMessage } from "@pi-desktop/shared";
 import type { PluginToolCardSlotProps } from "@pi-desktop/plugin-sdk";
 import { SlotBoundary, useSlotSessionId } from "../../../plugins/renderer-slots/use-slots";
@@ -61,7 +68,7 @@ export function PluginToolCard({
   return (
     <SlotBoundary entry={entry} slot="toolCard">
       <div className="pi-plugin-tool-card" data-pi-tool={message.toolName}>
-        {entry.component(committed) as ReactNode}
+        {createElement(entry.component as ComponentType<Record<string, unknown>>, committed)}
       </div>
     </SlotBoundary>
   );

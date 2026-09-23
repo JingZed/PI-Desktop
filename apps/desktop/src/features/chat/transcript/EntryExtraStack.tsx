@@ -10,7 +10,14 @@
  *
  * 出错隔离 lives in `SlotBoundary`: a throwing block collapses only itself.
  */
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import {
+  createElement,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ComponentType,
+  type ReactNode,
+} from "react";
 import { useTranslation } from "react-i18next";
 import type { UiMessage } from "@pi-desktop/shared";
 import type { PluginEntryExtraSlotProps } from "@pi-desktop/plugin-sdk";
@@ -87,7 +94,7 @@ function EntryExtraBlock({
               : ENTRY_EXTRA_COLLAPSED_MAX_HEIGHT,
           }}
         >
-          <div ref={contentRef}>{entry.component(props) as ReactNode}</div>
+          <div ref={contentRef}>{createElement(entry.component as ComponentType<Record<string, unknown>>, props)}</div>
         </div>
         {showToggle ? (
           <button

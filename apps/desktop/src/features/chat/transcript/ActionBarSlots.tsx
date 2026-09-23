@@ -10,7 +10,14 @@
  * the gutters, so install/uninstall reflows immediately. 出错隔离 and the
  * `.pi-plugin-slot` chrome live in `SlotBoundary`.
  */
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  createElement,
+  useEffect,
+  useRef,
+  useState,
+  type ComponentType,
+  type ReactNode,
+} from "react";
 import { useTranslation } from "react-i18next";
 import type { UiMessage } from "@pi-desktop/shared";
 import type { PluginActionSlotProps } from "@pi-desktop/plugin-sdk";
@@ -53,7 +60,7 @@ function ActionSlotItem({
   );
   return (
     <SlotBoundary entry={entry} slot={slot}>
-      {entry.component(props) as ReactNode}
+      {createElement(entry.component as ComponentType<Record<string, unknown>>, props)}
     </SlotBoundary>
   );
 }

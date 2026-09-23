@@ -1,4 +1,4 @@
-import type { Dispatch, SetStateAction } from "react";
+import { createElement, type ComponentType, type Dispatch, type SetStateAction } from "react";
 import type { TFunction } from "i18next";
 import {
   keybindingDisplayParts,
@@ -286,10 +286,10 @@ function PluginControlGroup({
       {entries.map((entry) => (
         <SlotBoundary key={entry.id} entry={entry} slot="composerControl">
           <span className="pi-plugin-control" data-pi-plugin={entry.pluginId}>
-            {entry.component({
+            {createElement(entry.component as ComponentType<Record<string, unknown>>, {
               position: side,
               dispatch: dispatchFor(entry.pluginId),
-            }) as React.ReactNode}
+            })}
           </span>
         </SlotBoundary>
       ))}

@@ -139,3 +139,22 @@ test("slot shell styles carry the ⋯ overflow menu chrome", () => {
   assert.match(css, /\.pi-action-overflow-panel/);
   assert.match(css, /data-side="right"/);
 });
+
+test("slot outlets render plugin components as elements, never direct calls", () => {
+  // A direct entry.component(props) call runs the plugin's hooks inside the
+  // host component's hook chain → React "Invalid hook call". Every outlet
+  // must hand the component to createElement so it owns its fiber.
+  const outlets = {
+    "features/chat/transcript/ActionBarSlots.tsx": /createElement\(\s*entry\.component/,
+    "features/chat/transcript/EntryExtraStack.tsx": /createElement\(\s*entry\.component/,
+    "features/chat/transcript/PluginToolCard.tsx": /createElement\(\s*entry\.component/,
+    "components/PluginBlockRenderer.tsx": /createElement\(\s*entry\.component/,
+    "features/chat/composer/ComposerToolbar.tsx": /createElement\(\s*entry\.component/,
+    "components/Composer.tsx": /createElement\(\s*\n?\s*activeTrigger\.entry\.component/,
+  };
+  for (const [file, pattern] of Object.entries(outlets)) {
+    const source = readFileSync(src(file), "utf8");
+    assert.match(source, pattern, `${file} must render via createElement`);
+    assert.doesNotMatch(source, /entry\.component\(\{/, `${file} must not call entry.component directly`);
+  }
+});

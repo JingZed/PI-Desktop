@@ -8,7 +8,14 @@
  * component that throws (via the boundary's fallback) — the source code must
  * always stay visible to the user.
  */
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import {
+  createElement,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ComponentType,
+  type ReactNode,
+} from "react";
 import type { PluginBlockRendererSlotProps } from "@pi-desktop/plugin-sdk";
 import { SlotBoundary } from "../plugins/renderer-slots/use-slots";
 import type { SlotEntry } from "../plugins/renderer-slots/registry";
@@ -50,7 +57,7 @@ export function PluginBlockRenderer({
         data-pi-language={onceRef.current.language}
         style={{ maxHeight: BLOCK_RENDERER_MAX_HEIGHT_PX }}
       >
-        {entry.component(onceRef.current) as ReactNode}
+        {createElement(entry.component as ComponentType<Record<string, unknown>>, onceRef.current)}
       </div>
     </SlotBoundary>
   );

@@ -1,4 +1,6 @@
 import {
+  ComponentType,
+  createElement,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -634,10 +636,13 @@ export function Composer({
               data-pi-plugin={activeTrigger.entry.pluginId}
             >
               <SlotBoundary entry={activeTrigger.entry} slot="composerTrigger">
-                {activeTrigger.entry.component({
-                  query: activeTrigger.query,
-                  dispatch: dispatchFor(activeTrigger.entry.pluginId),
-                }) as React.ReactNode}
+                {createElement(
+                  activeTrigger.entry.component as ComponentType<Record<string, unknown>>,
+                  {
+                    query: activeTrigger.query,
+                    dispatch: dispatchFor(activeTrigger.entry.pluginId),
+                  },
+                )}
               </SlotBoundary>
             </div>
           ) : null}
