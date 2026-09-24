@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { AppSettings } from "@pi-desktop/shared";
 import { useAppStore } from "../../stores/app-store";
-import { cx } from "../../components/ui";
+import { SettingsToggle } from "../../components/ui";
 import { SettingsCard, SettingsRow } from "./primitives";
 
 export function McpControlSection({
@@ -34,17 +34,12 @@ export function McpControlSection({
         title={t("settings.mcpControlEnabled")}
         description={t("settings.mcpControlDesc")}
       >
-        <button
-          type="button"
-          className={cx("settings-toggle", enabled && "on")}
-          role="switch"
-          aria-checked={enabled}
-          aria-label={t("settings.mcpControlEnabled")}
-          disabled={saving}
-          onClick={() => void toggle()}
-        >
-          <span className="settings-toggle-thumb" />
-        </button>
+        <SettingsToggle
+          checked={enabled}
+          label={t("settings.mcpControlEnabled")}
+          busy={saving}
+          onChange={() => void toggle()}
+        />
       </SettingsRow>
     </SettingsCard>
   );

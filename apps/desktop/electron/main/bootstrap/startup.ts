@@ -102,6 +102,7 @@ export type StartupDependencies = {
     developerMode?: unknown;
   } | null) => void;
   applyDeveloperMode: (settings?: { developerMode?: unknown } | null) => void;
+  applyPreventScreenSleep: (settings?: { preventScreenSleep?: unknown } | null) => void;
   applyPluginLauncherShortcut: (keybindings?: KeybindingOverrides) => void;
   applyToggleWindowShortcut: (keybindings?: KeybindingOverrides) => void;
   ensureWindow: () => Promise<boolean>;
@@ -161,6 +162,7 @@ export function registerApplicationStartup(deps: StartupDependencies): void {
       planUiProbe,
       applyApplicationMenuSettings,
       applyDeveloperMode,
+      applyPreventScreenSleep,
       applyPluginLauncherShortcut,
       applyToggleWindowShortcut,
       ensureWindow,
@@ -312,10 +314,12 @@ export function registerApplicationStartup(deps: StartupDependencies): void {
           keybindings?: unknown;
           developerMode?: unknown;
           mcpControlEnabled?: unknown;
+          preventScreenSleep?: unknown;
         } | null;
         mcpControlEnabled ||= stored?.mcpControlEnabled === true;
         applyApplicationMenuSettings(stored);
         applyDeveloperMode(stored);
+        applyPreventScreenSleep(stored);
         await applyNetworkProxyFromAppSettings(stored);
       } catch {
         // Keep the OS-locale menu until settings can be read again, while

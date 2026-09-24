@@ -48,7 +48,7 @@ export type JsonRpcMessage = {
  * the client speak the same JSON-RPC dialect over a pipe or over HTTP.
  */
 export type McpTransport = {
-  send: (message: JsonRpcMessage) => Promise<void>;
+  send: (message: JsonRpcMessage, timeoutMs?: number, signal?: AbortSignal) => Promise<void>;
   close: () => void;
 };
 
@@ -297,11 +297,14 @@ function createHttpTransport(
   const activeControllers = new Set<AbortController>();
 
   return {
-    send: async (message) => {
+    send: async (message, timeoutMs = options.timeoutMs, signal) => {
       if (closed) throw mcpError("UNAVAILABLE", "mcp session is closed");
       const controller = new AbortController();
+      const abort = () => controller.abort();
+      if (signal?.aborted) abort();
+      else signal?.addEventListener("abort", abort, { once: true });
       activeControllers.add(controller);
-      const timer = setTimeout(() => controller.abort(), options.timeoutMs);
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
       let url = options.url;
       try {
         for (let hop = 0; ; hop += 1) {
@@ -384,6 +387,7 @@ function createHttpTransport(
         }
       } finally {
         clearTimeout(timer);
+        signal?.removeEventListener("abort", abort);
         activeControllers.delete(controller);
       }
     },
@@ -465,14 +469,31 @@ export class McpServerClient {
     return this.connecting;
   }
 
-  async callTool(toolName: string, args: unknown): Promise<unknown> {
-    await this.connect();
+  async callTool(toolName: string, args: unknown, signal?: AbortSignal): Promise<unknown> {
+    if (signal?.aborted) throw mcpError("TOOL_ABORTED", "mcp tool call aborted");
+    const connecting = this.connect();
+    if (signal) {
+      let rejectAbort!: (error: Error) => void;
+      const aborted = new Promise<never>((_, reject) => { rejectAbort = reject; });
+      const abort = () => rejectAbort(mcpError("TOOL_ABORTED", "mcp tool call aborted"));
+      signal.addEventListener("abort", abort, { once: true });
+      if (signal.aborted) abort();
+      try {
+        await Promise.race([connecting, aborted]);
+      } finally {
+        signal.removeEventListener("abort", abort);
+      }
+    } else {
+      await connecting;
+    }
+    if (signal?.aborted) throw mcpError("TOOL_ABORTED", "mcp tool call aborted");
     const started = Date.now();
     try {
       const result = (await this.request(
         "tools/call",
         { name: toolName, arguments: args ?? {} },
         this.opts.callTimeoutMs ?? MCP_CALL_TIMEOUT_MS,
+        signal,
       )) as { content?: unknown; isError?: boolean } | null;
       if (result && typeof result === "object" && result.isError) {
         throw mcpError("TOOL_FAILED", describeMcpContent(result.content) || "mcp tool failed");
@@ -483,6 +504,11 @@ export class McpServerClient {
       this.audit(false, toolName, Date.now() - started, error);
       throw error;
     }
+  }
+
+  /** Probe a live connection without changing its discovered tool catalog. */
+  async ping(timeoutMs = 5_000): Promise<void> {
+    await this.request("ping", {}, timeoutMs);
   }
 
   close(): void {
@@ -639,24 +665,40 @@ export class McpServerClient {
     }
   }
 
-  private request(method: string, params: unknown, timeoutMs: number): Promise<unknown> {
+  private request(method: string, params: unknown, timeoutMs: number, signal?: AbortSignal): Promise<unknown> {
     const transport = this.transport;
     if (!transport) {
       return Promise.reject(mcpError("UNAVAILABLE", "mcp server is not connected"));
     }
+    if (signal?.aborted) return Promise.reject(mcpError("TOOL_ABORTED", "mcp tool call aborted"));
     const id = this.nextId++;
     return new Promise<unknown>((resolvePromise, rejectPromise) => {
+      const removeAbort = () => signal?.removeEventListener("abort", abort);
+      const abort = () => {
+        if (!this.pending.delete(id)) return;
+        clearTimeout(timer);
+        removeAbort();
+        rejectPromise(mcpError("TOOL_ABORTED", "mcp tool call aborted"));
+        void transport.send({ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: id, reason: "cancelled" } }).catch(() => undefined);
+      };
       const timer = setTimeout(() => {
         this.pending.delete(id);
+        removeAbort();
         rejectPromise(mcpError("TIMEOUT", `mcp ${method} timed out after ${timeoutMs}ms`));
       }, timeoutMs);
-      this.pending.set(id, { resolve: resolvePromise, reject: rejectPromise, timer });
-      void transport.send({ jsonrpc: "2.0", id, method, params }).catch((error: Error) => {
+      this.pending.set(id, {
+        resolve: (value) => { removeAbort(); resolvePromise(value); },
+        reject: (error) => { removeAbort(); rejectPromise(error); },
+        timer,
+      });
+      signal?.addEventListener("abort", abort, { once: true });
+      if (signal?.aborted) abort();
+      void transport.send({ jsonrpc: "2.0", id, method, params }, timeoutMs, signal).catch((error: Error) => {
         const entry = this.pending.get(id);
         if (!entry) return;
         this.pending.delete(id);
         clearTimeout(entry.timer);
-        rejectPromise(error);
+        entry.reject(error);
       });
     });
   }
